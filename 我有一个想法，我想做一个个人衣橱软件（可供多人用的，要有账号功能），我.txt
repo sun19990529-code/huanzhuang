@@ -1,0 +1,1012 @@
+我有一个想法，我想做一个个人衣橱软件（可供多人用的，要有账号功能），我是pgsql，我的想法是我可以上传我的照片，然后根据我的照片要生成人物素图，然后我可以在衣柜中上传衣服自动生成衣服素图，然后我拖动衣服裤子鞋子饰品等等到人物上可以给我显示效果，并且要能够识别的出穿衣逻辑，比如我选了一件绿色的T恤然后选了件白色外套，应该是绿色T恤外面套了白色外套，而不应该直接替换，可以加一个打开外套和关闭外套的按钮（这边我不知道怎么说，你帮我构思）。还可以增加一个公共衣柜，可以由官方账号有权限添加衣服。
+
+
+
+大概是这样的想法，你帮我分析，并且持续问我问题，直到我说可以帮我输出完整的prd为止 
+
+这个产品想法非常明确，核心痛点在于穿衣层叠逻辑（Layering Engine）与服装形态解耦（Garment States）。
+
+先为你梳理这套系统的核心逻辑设计方案，随后列出第一期需求确认问题。
+
+1. 核心逻辑解构与命名建议
+图层层叠系统（Z-Index & Category Hierarchy）
+避免“外套直接替换T恤”的关键在于为服装定义层级分类权重（Layer Weight）：
+
+Layer 0 (Base): 人物素体（Avatar Mannequin）
+
+Layer 1 (Inner): 贴身打底、内搭T恤、衬衫
+
+Layer 2 (Middle/Tops): 卫衣、针织开衫、马甲
+
+Layer 3 (Outer): 夹克、大衣、羽绒服
+
+Layer 4 (Bottoms): 短裤、长裤、半身裙（需预留“塞衣角/Tuck-in”与Layer 1的相对关系）
+
+Layer 5 (Footwear): 袜子、鞋履
+
+Layer 6 (Accessories): 帽子、围巾、首饰、包袋
+
+服装形态切换（Garment State Management）
+针对你提到的“打开外套 / 关闭外套”，在产品设计中可定义为服装多态（Garment Form States）：
+
+外套形态（Outerwear State）： 敞开 (Open / Unzipped) 与 合拢 (Closed / Zipped)。
+
+敞开状态： 露出 Layer 1（内搭T恤）的胸前与下摆图案。
+
+合拢状态： 遮挡 Layer 1 的大部分区域，仅露领口或完全遮挡。
+
+下摆形态（Hem State）： 内塞 (Tucked-in) 与 外放 (Untucked)。
+
+袖口形态（Sleeve State）： 常态 (Standard) 与 卷袖/挽起 (Rolled-up)。
+
+2. 试穿呈现的技术路线选型分析
+实现拖拽试穿效果，行业内主要有两种路线，决定了开发成本与体验：
+
+维度	方案 A：2D 矢量/切片图层拼接（Paper Doll模式）	方案 B：生成式 AI 虚拟试穿（AI VTON模式）
+原理	将人像和衣服抠图标准化，通过 Canvas/WebGL 进行 2D 图层叠加与变形对齐	调用虚拟试穿扩散模型（如 IDM-VTON、CatVTON）实时生成融合照片
+交互响应	毫秒级，拖拽松手即出效果，支持实时切换打开/合拢	秒级（需排队/等待），依赖 GPU 算力
+视觉效果	类似换装小游戏或电商排版拼图，轮廓规整但缺乏自然的褶皱融合	极其真实，光影自然，但不可控性略高且算力成本高
+混合方案（推荐）	Canvas 快速拼装预览（拖拽即刻看搭配） + “一键 AI 高清试穿渲染”（选好后生成逼真成片）	
+3. 第一轮需求确认问题
+为了逐步完善并最终输出精准的 PRD 与 PostgreSQL 数据模型设计，请按顺序回复以下问题：
+
+核心渲染方案偏好： 你期望的拖拽交互是更偏向 “方案 A（毫秒级 Canvas 换装拼图）”、“方案 B（纯 AI 实时生成）”，还是 “混合方案（拼图预览 + AI 生成精修图）”？
+
+人像素图的形式： 上传个人照片后，系统生成的“素图”希望是：
+
+真实照片抠出的人物背景图（保留真实五官与体型）
+
+基于照片生成的 2D/2.5D 扁平化插画素体
+
+标准化的人体模特图（仅提取身高、体型数据匹配通用素体）
+
+衣服素图的生成流程： 用户上传衣服照片时，除了自动抠图（去除背景），是否需要 AI 自动识别分类（如自动识别为“绿色短袖T恤”、“外套”）？
+
+公共衣柜的交互权限： 普通用户对“公共衣柜”里的衣服，支持的操作是：
+
+仅用于试穿搭配
+
+可以“一键保存到我的私人衣柜”
+
+包含电商外部购买链接
+
+客户端形态： 优先规划哪个前端平台（Web 网页端、微信小程序、还是 iOS/Android App）？
+
+
+1、混合方案，先用图层放置搭配，然后搭配好后可以使用ai渲染成片。但是图层你不能只用我上传的图片抠图，你要重新生成，因为考虑到照片拍出来的衣服不符合标准。2、真实照片抠出人物，并进行背景和姿态以及素衣的生成替换。（比如说我上传的照片是不管我背景姿态动作衣服是什么样，人物素图就是白色或灰色或透明背景，正面站立双手两边打开的姿态，衣服为贴身素色衣服即可。）3、需要自动识别便于我做筛选（比如意见绿色白色条纹短袖T恤，识别出来的就要是颜色：绿色、白色，花纹：条纹，款式：T恤、短袖。要对类型细分）。4、可以“一键保存到我的私人衣柜”，包含电商外部购买链接。优先规划网页端（同时兼容pc以及移动端）以及android端，android端要使用原生android app。 
+
+对你的补充说明进行系统性技术与业务分析，这套方案在工程链路和产品逻辑上已经非常清晰。
+
+一、 核心链路与架构方案分析
+1. 服装标准化处理流水线（Garment Standardizing Pipeline）
+由于用户上传的衣服存在褶皱、俯仰角拍摄、挂拍/平铺差异，直接扣图无法用于标准化 Canvas 拼接：
+
+Step 1（识别与结构化）： 多模态大模型（Vision LLM）解析图片，提取结构化标签（分类、二级细分、主副颜色、图案花纹、领型、版型等）。
+
+Step 2（标准化生图）： 借助 ControlNet / Image-to-Image 工作流，将用户衣服重构为标准平铺/隐形模特（Ghost Mannequin）正视图。
+
+Step 3（多态资产补全）： 若判定为外套类（Outerwear），AI 工作流需自动生成两张标准图层资产：state_open（敞开）与 state_closed（合拢）。
+
+2. 人像标准化生成流水线（Avatar Normalization Pipeline）
+人脸/特征保留 + 姿态重定向： 接收任意角度/背景的用户照片，提取面部特征（Facial Embeddings）与大致体态，结合标准 A-Pose（正面直立、微张双臂）生成统一比例尺的素体人像。
+
+素衣打底： 默认渲染贴身中性素色吊带/背心与短裤，留出肩颈、四肢、腰线等关键锚点。
+
+3. 客户端技术栈匹配（Web + 原生 Android）
+Web 端（PC + 移动端 H5/PWA）： 基于 React / Vue + HTML5 Canvas（或 Fabric.js / PixiJS）处理 2D 图层拖拽、碰撞对齐与 Z-Index 动态排序。
+
+原生 Android 端： 基于 Kotlin + Jetpack Compose（利用 PointerInput 拖拽与 Canvas 图层绘制），与 Web 端共享同一套图层定位坐标规范（归一化坐标体系 Normalized Coordinates 0.0~1.0）。
+
+4. PostgreSQL 核心模型设计构想
+Plaintext
+users (用户表)
+  ├── avatars (人像表: 存储标准素体图URL、面部特征向量、体型参数)
+  ├── garments (私有/公共衣物主表: 归属者ID、分类、标签属性、电商链接、公开状态)
+  │     └── garment_assets (形态资产表: 敞开图、合拢图、锚点偏移量、层级权重)
+  ├── outfits (搭配方案表: 关联多个garment_id及对应形态状态)
+  └── vton_tasks (AI渲染任务表: 状态队列、生成成片URL、消耗Token/点数)
+二、 第二轮需求深度确认（关键细节与业务边界）
+为了进一步锁定 PRD 中的功能边界、状态流转与数据库字段，请继续确认以下 5 个核心问题：
+
+1. 服装锚点与对齐机制
+在 2D 拖拽时，衣服如何精准贴合到人物身上？
+
+选项 A（智能吸附 / 锚点绑定）： 拖拽衣服接近人物区域时，系统根据服装类型自动吸附到对应关键点（如：T恤吸附到肩颈锚点，裤子吸附到腰部锚点，鞋子吸附到脚踝）。
+
+选项 B（自由平移缩放 + 手动微调）： 拖上去后用户可手动缩放旋转与微调位置。
+
+选项 C（全自动槽位装配）： 不需要拖拽到精准位置，点击/拖入画布即自动“穿”到对应身体层级上。
+
+2. 体型与身材微调需求
+通过照片生成标准素体后，是否允许用户手动微调体型参数（如身高、体重、胸围、腰围、胖瘦滑块）来让素体更接近实际身材？还是完全交由 AI 自动估算不再二次修改？
+
+3. AI 算力与异步生成流
+生成标准衣服、标准人像、以及最终 AI 试穿成片（VTON）均需要数秒至十几秒的 GPU 算力：
+
+是否需要设计排队/异步任务通知机制（例如生成中提示进度条，生成完成后 WebSocket 推送或红点通知）？
+
+是否需要加入用户配额/积分机制（比如每日免费生成 N 次，防止算力被恶意刷爆）？
+
+4. 塞衣角（Tuck-in）等高阶搭配逻辑
+除了外套的“打开/合拢”，是否需要支持“内搭塞进裤子/外放”（即动态改变 Layer 1 内搭 与 Layer 4 下装 的 Z-Index 上下层覆盖顺序）？
+
+5. 后台管理与公共衣柜运营（CMS）
+对于官方账号维护的“公共衣柜”：
+
+是否需要独立的 Web 后台管理系统（Admin Portal）支持批量上传、类目管理、电商分佣链接配置？
+
+普通用户把公共衣柜衣服“保存到我的衣柜”后，用户是否可以修改其标签/分类？如果官方下架了该衣服，用户私人衣柜中的数据如何处理（保留副本还是失效）？
+
+1、智能吸附 / 锚点绑定以及自由平移缩放 + 手动微调，可供切换。智能吸附可以直接点击衣服就自动在人物穿上。2、在注册用户时就需要填写体型参数（也可跳过，就按照黄金比例的男性或女性参数生成，但是要有小字提醒是使用的默认参数）3、需要生成进度条，需要加入。每日免费生成20次。管理员要有用户管理面板。4、需要，并且ai生成也是需要按照搭配逻辑来生成。5、需要，可以修改，保留副本 
+
+对你补充的业务规则进行系统梳理与技术架构沉淀，并更新核心逻辑模型。
+
+一、 核心系统机制沉淀
+1. 动态层叠与形态状态机（Layering & State Matrix）
+为了保证 Canvas 拼装与后续 AI 渲染严格遵从穿衣逻辑，图层层级（Z-Index）通过计算属性动态生成：
+
+层级代号	穿戴部位	默认 Z-Index	塞衣角（Tucked-in）状态	外套（Outerwear）状态联动
+L0	人物素体 (Avatar)	0	固定在最底图层	暴露关键身体锚点
+L1	内搭/T恤/衬衫	10	切换为 10（被下装遮盖下摆）	敞开时可见胸前，合拢时遮蔽
+L2	下装（长裤/短裤/裙）	20	维持 20（覆盖 L1 塞入部分）	位于鞋袜与外衣之间
+L1-Untuck	内搭外放状态	25	切换为 25（覆盖 L2 裤头腰线）	覆盖下装腰部
+L3	中层保暖（马甲/卫衣）	30	-	覆盖 L1 / L2
+L4	外套（夹克/大衣/羽绒）	40	-	
+Open: 加载展开切片
+
+
+Closed: 加载合拢切片
+
+L5	鞋袜 / 配饰	50+	-	独立锚点定位
+2. 双模画布交互引擎（Dual-Mode Canvas Engine）
+智能吸附模式（Snap & Anchor）：
+
+点击衣柜中的衣物，系统自动将其分配至对应身体部位槽位（Slot），并应用默认比例尺与锚点坐标（如：衣领中心对齐人像肩颈关键点）。
+
+层叠冲突自动解算（如穿上长裤自动替换当前试穿的短裤，但保留内搭 T 恤）。
+
+自由微调模式（Free Transform）：
+
+激活边界盒（Bounding Box），提供八方向缩放柄与旋转柄。
+
+支持微调 X/Y 轴偏移量（Offset），用于处理不同版型（如宽松 Oversize、修身款）的个性化贴合。
+
+3. 公共资产复制与数据解耦机制（Prototype Pattern）
+Plaintext
+[官方公共衣柜 Garment Template]
+       │
+       ├─ (用户点击“保存到我的衣柜”) ──> [深度克隆 Deep Copy]
+       │                                     │
+       ▼                                     ▼
+[公共库记录: ID=1001]                  [用户私人库记录: ID=9002]
+- 官方标签/分类                        - 用户可自由修改标签/分类
+- 官方电商跳转链接                     - 继承原电商链接与形态图层
+- 若官方后台执行【删除/下架】 ──x       - 独立持久化存储，不受官方下架影响
+二、 第三轮需求确认（业务闭环与工程边界）
+请针对以下 5 个维度的关键细节进行确认：
+
+1. 搭配存档与日程管理（Outfit & OOTD）
+搭配完成并生成效果后，系统是否需要提供以下功能：
+
+搭配方案保存（Lookbook）： 保存为“我的套装”，方便日后一键整套换装。
+
+OOTD 穿搭日历： 将某套搭配绑定到特定日期（如记录“明天穿什么”或历史穿搭记录）。
+
+分享导出卡片： 导出带人物效果、单品清单、电商二维码的拼图海报。
+
+2. 账号与“多人使用”的具体边界
+你提到“可供多人用的，要有账号功能”，除标准的“用户各自独立注册/登录、拥有私有衣柜”以及“平台管理员”之外，是否包含以下社交或协同需求：
+
+完全独立模式： 用户之间互不可见，纯私密个人工具（仅共享官方公共衣柜）。
+
+好友/公开衣橱： 允许用户将自己的私人衣橱设为公开，互相查看、借穿搭配。
+
+家庭/多角色模式： 一个主账号下可创建多个子人像（如：丈夫、妻子、小孩，各自管理专属衣柜）。
+
+3. 图像上传质量校验与异常处理（Data Moderation & Fallbacks）
+当用户上传的人像或衣服照片不符合要求（如：非人像、多人同框、过度遮挡、模糊、违规内容）时：
+
+校验机制： 是否在客户端先做基础轻量识别，后端通过 Vision API 校验并直接拦截提示重拍？
+
+容错兜底： 若人像由于光线不佳无法精确提取体型，是否直接使用注册时填写的体型参数构建标准素体？
+
+4. 20次每日配额策略与消耗规则
+配额重置时间： 每日固定时间（如自然日 00:00:00）自动重置为 20 次。
+
+消耗触发点：
+
+只有在点击 “AI 渲染高清成片（VTON）” 时才扣除 1 次？
+
+上传衣服/人像时的 “AI 标准化素图生成” 是否消耗每日配额，还是不限量？
+
+超出额度后的交互： 当日 20 次用完后，仅弹窗提示“今日额度已用完，明日 00:00 刷新”，还是需要预留激励机制（如看广告、购买额外次数）？
+
+5. 原生 Android 端本地离线支持
+离线可用性： 是否要求在断网/弱网环境下，Android 端仍可打开应用浏览私人衣柜本地缓存、进行基础 2D 拖拽拼图？（仅在触发 AI 标准化和 VTON 渲染时才强依赖联网）。
+
+1、需要。2、私人衣橱可设置隐私，仅自己，好友可见，公开可见（公开可见只可看见用户允许查看的套装搭配。并且可以有多角色，但是彼此的衣服属于专属衣柜。3、是的，违规内容可不拦截，需要兜底。4、改为每日100积分，成片扣除5点，素图扣除1点积分。暂时不需要激励机制，但是可以先做前期工作。5、可以 
+
+已经将你补充的全部业务规则完整并入系统设计蓝图。以下是针对多角色、积分体系、隐私拓扑与离线同步机制的深度方案设计与技术落地方案：
+
+一、 核心架构与业务模型升级
+1. 多角色与隐私拓扑模型（Multi-Profile & Privacy Scope）
+为实现单一主账号下多角色管理，数据库需将“身份资产”下沉至 profile 层级，实现资产绝对隔离：
+
+Plaintext
+User Account (主账号: 统一认证、共享100每日积分池)
+   ├── Profile 1: "自己" (默认)
+   │     ├── Avatar 素体资产 + 体型参数 (身高/体重/三围)
+   │     ├── 私人衣柜 (专属衣物库)
+   │     └── 搭配库 (Lookbook) & OOTD 日历 (隐私: 公开/仅好友/私密)
+   ├── Profile 2: "伴侣" (独立素体、专属衣柜、独立搭配)
+   └── Profile 3: "孩子" (独立素体、专属衣柜、独立搭配)
+隐私权限流转规则：
+
+私密（Private）： 仅主账号登录后自身可见。
+
+好友可见（Friends Only）： 双向好友关系的账号可浏览该 Profile 授权的完整衣柜与搭配。
+
+公开可见（Public）： 任何用户仅能看到该 Profile 标记为“允许公开展示”的成套搭配（Outfits/Lookbook），单品衣柜列表默认不可穿透浏览，保护隐私。
+
+2. 积分经济学与异步任务调度（Credit & Job Queue）
+建立严格的原子性扣费与任务流转体系：
+
+任务类型	消耗积分	触发时机	失败与退款策略
+素图标准化	1 积分/件	用户上传人像或衣服原图，启动 Vision LLM + 姿态标准化重构	生成失败或超时（>60s）自动回滚退回 1 积分
+高清 VTON 渲染	5 积分/次	用户在画布上完成搭配后，点击“生成高清试穿照”	扩散模型生成失败自动回滚退回 5 积分
+2D Canvas 拼装	0 积分 (免费)	智能吸附、自由平移缩放、开关外套、塞衣角、更换单品	本地/前端即时算力，不限制次数
+每日重置逻辑： 每日服务器时间 00:00:00 执行定时任务（Cron Job），将所有正常状态用户的可用基础积分重置为 100（不跨日累加）。
+
+拓展预留： 数据库设计支持 permanent_credits（永久购买/赠送积分）与 daily_credits（每日刷新积分）双轨结算。
+
+3. Android 离线优先架构（Offline-First Engine）
+本地存储引擎： Android 端采用 Room (SQLite) 本地数据库，全量镜像 PostgreSQL 对应用户的 profiles、garments 和 outfits 实体。
+
+静态资源缓存： 衣服标准切片与素体透明 PNG 资产经由 Coil/Glide 自动做 Disk LRU 缓存，断网状态下照常加载。
+
+离线画布操作： 2D 拖拽、吸附定位、图层 Z-Index 变换与穿搭方案保存全部在客户端本地完成；联网后通过 Sync Engine 增量提交至服务端。
+
+二、 第四轮确认（最后细节与输出准备）
+为确保最终交付的 PRD 文档与 PostgreSQL DDL 建表脚本精准无误，请确认以下最后 3 个细节：
+
+好友系统的交互深度：
+
+好友之间是否需要支持“互相为对方搭配”（即：我可以用我好友衣柜里的衣服，拖到我好友的素体上，生成一套搭配并分享给对方）？还是仅限只读浏览？
+
+电商链接与商业化字段（公共衣柜）：
+
+公共衣柜单品跳转外部电商（如淘宝、京东、得物、独立站等）时，是否需要支持配置“渠道返利追踪参数（Affiliate ID / UTM 参数）”和“商品券后预估价”？
+
+PRD 输出范围确认：
+
+如果没有其他特殊需求，你可以回复 “可以输出完整PRD”，我将为你输出包含：
+
+完整业务流程图与状态机（Mermaid）
+
+功能模块详细需求清单（FRD & UI/UX 规则）
+
+PostgreSQL 完整 DDL 建表语句（含索引、外键级联、枚举类型约束）
+
+核心接口 API 契约设计（RESTful / WebSocket）
+
+2D Canvas 坐标对齐与图层运算算法规范
+
+1、可以。2、暂时不需要，在prd中为待选项。3、可以输出完整prd，你要完整浏览我们的上下文后完整生成prd
+
+智能虚拟衣橱与多模态试穿平台（SmartWardrobe）
+产品需求文档 (Product Requirement Document, PRD)
+文档版本	编写日期	状态	目标平台	数据层架构
+V1.0.0	2026-08-25	正式发布 (Ready for Dev)	Responsive Web (PC+H5) / 原生 Android (Kotlin)	PostgreSQL 16+ / Room (SQLite)
+一、 项目概述与系统架构
+1.1 背景与产品定位
+SmartWardrobe 是一款面向多角色的个人与家庭数字化衣橱管理及虚拟试穿应用。系统通过 2D 极速拼装画布（毫秒级 Canvas 渲染） 结合 生成式 AI 高清试穿（Diffusion VTON） 的混合架构，解决传统衣橱应用“拍图不标准、图层穿透错乱、试穿算力成本高/等待时间长”的痛点。
+
+1.2 总体业务架构图
++-----------------------------------------------------------------------------------+
+|                                  客户端展现层                                       |
+|  +------------------------------------+  +-------------------------------------+  |
+|  |     Responsive Web (PC / H5)       |  |     Native Android (Compose)        |  |
+|  |   Fabric.js / Canvas 2D 拼装引擎   |  |   Jetpack Compose Canvas 引擎 +     |  |
+|  |   WebSocket 实时任务状态推送       |  |   Room 本地离线优先存储架构         |  |
+|  +------------------------------------+  +-------------------------------------+  |
++------------------------------------------+----------------------------------------+
+                                           | HTTP/HTTPS & WSS (JWT Auth)
++------------------------------------------v----------------------------------------+
+|                                  业务服务网关层                                     |
+|  +------------------+  +------------------+  +-----------------+  +------------+  |
+|  | 账号与 Profile   |  | 衣橱与资产管理   |  | 画布与穿搭编排  |  | 社交与权限 |  |
+|  | 积分经济引擎     |  | 公共衣柜 CMS     |  | OOTD 日历       |  | 任务调度器 |  |
++------------------------------------------+----------------------------------------+
+                                           |
++------------------------------------------v----------------------------------------+
+|                              异步计算与数据持久层                                 |
+|  +------------------------------------+  +-------------------------------------+  |
+|  |        PostgreSQL 16 主数据库      |  |        AI 异步渲染管线集群          |  |
+|  | - 资产/用户/搭配数据/分布式锁      |  | - Vision LLM (属性解析/打标)        |  |
+|  | - 每日积分定时重置与流水记账       |  | - ControlNet A-Pose 素体标准化       |  |
+|  | - 归一化坐标与多态图层元数据       |  | - 隐形模特多态重构 (Open/Closed)    |  |
+|  |                                    |  | - Diffusion VTON 高清试穿生成       |  |
+|  +------------------------------------+  +-------------------------------------+  |
++-----------------------------------------------------------------------------------+
+二、 用户角色与权限拓扑体系
+2.1 角色定义
+系统管理员（Admin）： 访问独立 Web 管理后台，拥有全量用户管理、积分调控、公共衣柜资产 CRUD 及下架权限。
+
+注册用户（User Account）： 拥有独立账户系统与每日积分配额（100分/天），可在账户内创建多个独立 Profile（多角色）。
+
+好友（Friend）： 双向好友关系，经授权可查看好友 Profile 衣柜、使用好友衣物进行试穿并保存搭配。
+
+2.2 多角色（Profile）与隐私拓扑
+User Account (全局积分池: 100/日)
+   ├── Profile 1: 自己 (默认) ──> [专属衣柜] ──> [搭配库/OOTD] (隐私: 私密 / 仅好友 / 公开)
+   ├── Profile 2: 伴侣        ──> [专属衣柜] ──> [搭配库/OOTD] (隐私: 私密 / 仅好友 / 公开)
+   └── Profile 3: 孩子        ──> [专属衣柜] ──> [搭配库/OOTD] (隐私: 私密 / 仅好友 / 公开)
+隐私等级	适用对象	浏览权限	穿搭与借穿权限
+私密 (Private)	默认状态	仅主账号登录后自身可见	仅限主账号操作
+仅好友 (Friends)	双向好友	好友可浏览该 Profile 的所有单品与搭配	好友可将该 Profile 的衣服拖拽至该 Profile 的素体进行试穿并推送搭配
+公开 (Public)	全网用户	仅可查看标记为“公开”的成套搭配（Lookbook）；禁止穿透查看单品列表	仅限点赞、收藏成套搭配
+三、 功能模块详细需求（FRD）
+3.1 账号、档案与体型管理模块
+3.1.1 注册与体型录入
+注册引导流程：
+
+输入账号密码 / 快捷登录。
+
+引导创建默认 Profile（昵称、性别、年龄）。
+
+体型参数录入项： 身高（cm）、体重（kg）、胸围（cm）、腰围（cm）、臀围（cm）。
+
+跳过机制： 用户可选择“跳过”，系统自动采用内置男女黄金比例标准参数，并在素体生成界面显示小字提示：当前使用系统默认身材参数，可在“档案设置”中随时修正以提升贴合度。
+
+多角色切换： 支持在 App/Web 顶部快速切换当前操作的 Profile，不同 Profile 之间的衣橱数据、素体数据物理隔离。
+
+3.2 人像与服装标准化流水线（AI Pipeline）
+[原始照片输入]
+      │
+      ├─► 人像照片 ──► Vision 姿态估算 ──► ControlNet A-Pose ──► 贴身素衣重构 ──► [标准透明素体 PNG]
+      │
+      └─► 服装照片 ──► Vision LLM 打标 ──► 隐形模特重构 ──► 资产裂变 (Open/Closed) ──► [标准化图层切片]
+3.2.1 人像标准化（Avatar Normalization）
+上传约束： 允许任意背景、任意日常姿态、任意着装的照片。
+
+生成规范：
+
+背景强制替换为白色/浅灰/透明。
+
+姿态强制重定向为标准正面直立、双臂向两侧微张（A-Pose）。
+
+着装强制重构为中性素色贴身内衣/背心与平角短裤，露出颈部、锁骨、手腕、脚踝等关键锚点。
+
+面部与发型保留原图面部特征（Face Embeddings）。
+
+容错兜底策略： 若原图由于光线过暗、遮挡严重无法提取体态，系统自动结合 Profile 填写的身高、体重、三围数据直接生成标准身材素体。
+
+消耗： 成功生成扣除 1 积分（失败不扣除并退还）。
+
+3.2.2 服装标准化与自动打标（Garment Ingestion）
+多模态结构化打标（Vision LLM）：
+
+主类目： 上装 (Tops)、下装 (Bottoms)、外套 (Outerwear)、鞋履 (Footwear)、配饰 (Accessories)。
+
+细分类目： T恤、衬衫、卫衣、西装外套、夹克、阔腿裤、短裙、连衣裙等。
+
+颜色识别： 支持多色提取（主色、副色，标准 HEX 映射与标准中文名）。
+
+花纹与材质： 纯色、条纹、格纹、印花、波点、牛仔、皮革、针织等。
+
+版型与领型： 圆领、V领、连帽、修身、宽松（Oversize）、长款、短款。
+
+多态标准资产生成：
+
+消除拍摄褶皱与光影差异，生成统一比例尺的“隐形模特（Ghost Mannequin）”正视图。
+
+外套（Outerwear）自动裂变： AI 自动生成两套切片资产：
+
+state_open（敞开）：两侧衣襟分开，露出胸口内搭通道。
+
+state_closed（合拢）：拉链/纽扣扣合状态。
+
+消耗： 成功生成扣除 1 积分/件。
+
+3.3 双模 2D 画布穿搭编排引擎（Canvas Dressing Engine）
+3.3.1 图层层级权重（Z-Index Matrix）与运算公式
+图层在画布中的绝对层级由如下公式实时计算：
+
+Render_Z_Index=Base_Layer_Weight+ΔState_Modifier+User_Offset
+层级代号	类目名称	默认 Base Z-Index	塞衣角 (Tuck-in) 修正值	外套合拢 (Closed) 修正值	状态联动描述
+L0	人物素体 (Avatar)	0	0	0	始终位于最底层
+L1	内搭/打底/T恤/衬衫	10	0 (被 L2 遮挡下摆)	0 (被 L4 覆盖)	塞衣角时切片裁切下摆或 Z-Index 低于下装
+L1-Untuck	内搭外放状态	25	+15 (覆盖下装腰线)	0	覆盖 L2 裤腰部分
+L2	下装 (长裤/短裤/裙)	20	0	0	位于内搭与外套之间
+L3	中层保暖 (开衫/马甲)	30	0	0	覆盖 L1、L2
+L4	外套 (夹克/大衣)	40	0	+5 (完全遮挡中内层)	
+Open: 渲染敞开图
+
+
+Closed: 渲染合拢图
+
+L5	鞋袜	50	0	0	覆盖长裤脚或与腿部锚点结合
+L6	配饰 (帽子/包/首饰)	60+	0	0	最顶层覆盖
+3.3.2 交互操作模式
+智能吸附模式（Snap Mode，默认启用）：
+
+用户在衣柜列表中点击单品，系统自动识别其分类，直接将单品映射至素体预设的归一化关键锚点（Normalized Anchor Points）（如：肩颈中心点 [0.50, 0.28]，腰部中心点 [0.50, 0.55]）。
+
+自动互斥替换：穿上同层级冲突单品（如长裤换短裤），原单品自动脱下并放回衣柜，非冲突单品（如T恤）保留。
+
+自由微调模式（Free Transform Mode，可一键切换）：
+
+选中衣物出现标准 Bounding Box（支持 8 点缩放、单轴旋转柄、自由拖拽平移）。
+
+提供微调控制盘（X/Y 轴 1px 步进微调、层级临时手动升降）。
+
+形态动态控制器（State Bar）：
+
+当画布中存在外搭时，悬浮工具栏显示 【敞开 / 合拢】 切换按钮。
+
+当画布中存在内搭与下装时，显示 【塞衣角 / 外放】 切换按钮。
+
+3.4 AI 高清试穿渲染（VTON Engine）
+触发机制： 用户在 2D 画布完成满意搭配后，点击 【一键生成 AI 高清试穿照】。
+
+参数编排：
+
+系统导出当前画布配置清单：包含原人像 Profile 特征、穿戴单品列表、单品形态（Open/Closed/Tucked）。
+
+扣除账户 5 积分，生成异步任务。
+
+任务流水线状态流转：
+
+客户端展示动态百分比进度条与阶段文案（排队中... → 正在解析搭配拓扑... → 光影与褶皱融合中... → 高清渲染完成）。
+
+支持通过 WebSocket / Server-Sent Events (SSE) 实时推送状态。
+
+失败退款保护： 任务超时（>90s）或渲染异常，后端自动触发回滚事务，返还 5 积分并弹窗友好提示。
+
+3.5 公共衣柜与官方 CMS 系统
+官方管理后台（Web Admin CMS）：
+
+支持官方运营人员批量上传服装素材、触发 AI 标准化打标。
+
+配置单品基本信息：品牌、吊牌价、外部电商跳转链接（预留字段）。
+
+上架/下架开关控制。
+
+端侧公共衣柜体验：
+
+用户可按季节、风格、颜色、分类多维检索公共衣物。
+
+一键保存至我的衣柜（Prototype 深度克隆模式）： 点击后系统在用户当前 Profile 的私有衣柜中创建一条独立副本。
+
+解耦规则： 用户可自由编辑副本的标签与分类；官方下架或删除该公共单品，完全不影响用户私有衣柜中已保存的副本。
+
+3.6 搭配库（Lookbook）、OOTD 穿搭日历与社交互动
+Lookbook 搭配存档：
+
+用户可将画布中的组合一键保存为“套装”，记录包含的单品 ID 及变换矩阵。
+
+支持一键整套上身换装。
+
+OOTD 穿搭日历：
+
+日历视图展示历史/未来计划穿搭。
+
+支持指定日期绑定套装，添加穿搭心得、天气标签。
+
+好友互动（“帮TA搭配”模式）：
+
+进入好友主页，切换至好友开放了权限的 Profile。
+
+使用好友衣柜里的衣服在其素体上进行 2D 拖拽搭配。
+
+点击 【推给好友】，生成一条穿搭建议推送，好友确认后可一键收入自身 Lookbook。
+
+3.7 积分经济系统（Credit System）
+基础规则：
+
+账户共享积分池，每日服务器时间 00:00:00 (UTC+8) 自动重置为 100 积分（不跨日累计）。
+
+计费表单：
+
+2D Canvas 实时拼装与拖拽：0 积分（永久免费）
+
+上传人像生成标准素体：1 积分/次
+
+上传衣物生成标准切片：1 积分/件
+
+触发 AI 高清成片渲染（VTON）：5 积分/次
+
+商业化扩展预留： 数据库预留 permanent_credits（付费永久积分字段），结算时优先扣除 daily_credits，耗尽后再扣除 permanent_credits。
+
+3.8 原生 Android 端离线优先架构（Offline-First）
+[Android UI (Jetpack Compose)]
+          │
+          ▼
+   [Repository Layer]
+          │
+     +----+----+
+     │         │ (网络可用)
+     │         ▼
+     │   [Retrofit Remote API] ──► [PostgreSQL Server]
+     │         │ (增量同步)
+     ▼         ▼
+[Room Local SQLite Database] + [Coil Disk Cache (PNG 切片/素体)]
+本地离线可用项：
+
+离线浏览本地缓存的 Profile、私有衣柜单品列表、Lookbook 套装。
+
+离线进行 2D Canvas 智能吸附拖拽、自由变换、形态切换（切片由 Coil 自动进行 Disk LRU 缓存）。
+
+离线创建/编辑搭配方案，本地暂存至 Room 数据库并标记 sync_status = PENDING。
+
+在线同步机制：
+
+监听网络恢复，后台 WorkManager 自动触发双向增量同步，将本地新增搭配与编辑提交至服务端。
+
+触发 AI 素图标准化与 VTON 渲染时，若检测到断网，直接阻断并提示联网需求。
+
+四、 PostgreSQL 物理数据模型设计（DDL）
+以下为基于 PostgreSQL 16+ 编写的完整 DDL 脚本，包含枚举、索引、级联外键约束与触发器。
+
+SQL
+-- 启用 UUID 扩展
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- ====================================================================
+-- 1. 枚举类型定义
+-- ====================================================================
+CREATE TYPE user_role_enum AS ENUM ('USER', 'ADMIN');
+CREATE TYPE gender_enum AS ENUM ('MALE', 'FEMALE', 'OTHER');
+CREATE TYPE privacy_level_enum AS ENUM ('PRIVATE', 'FRIENDS_ONLY', 'PUBLIC');
+CREATE TYPE garment_category_enum AS ENUM ('TOPS', 'BOTTOMS', 'OUTERWEAR', 'FOOTWEAR', 'ACCESSORIES', 'ONE_PIECE');
+CREATE TYPE garment_state_enum AS ENUM ('DEFAULT', 'OPEN', 'CLOSED', 'TUCKED', 'UNTUCKED');
+CREATE TYPE task_type_enum AS ENUM ('AVATAR_NORMALIZE', 'GARMENT_NORMALIZE', 'VTON_RENDER');
+CREATE TYPE task_status_enum AS ENUM ('PENDING', 'PROCESSING', 'SUCCESS', 'FAILED', 'TIMEOUT');
+CREATE TYPE credit_tx_type_enum AS ENUM ('DAILY_RESET', 'AVATAR_GEN', 'GARMENT_GEN', 'VTON_RENDER', 'REFUND', 'MANUAL_ADJUST');
+
+-- ====================================================================
+-- 2. 用户与认证表 (users)
+-- ====================================================================
+CREATE TABLE users (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    nickname VARCHAR(100) NOT NULL,
+    avatar_url TEXT,
+    role user_role_enum NOT NULL DEFAULT 'USER',
+    daily_credits INT NOT NULL DEFAULT 100 CHECK (daily_credits >= 0),
+    permanent_credits INT NOT NULL DEFAULT 0 CHECK (permanent_credits >= 0),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_users_email ON users(email);
+
+-- ====================================================================
+-- 3. 角色档案表 (profiles - 支持多角色)
+-- ====================================================================
+CREATE TABLE profiles (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    gender gender_enum NOT NULL DEFAULT 'FEMALE',
+    is_default BOOLEAN NOT NULL DEFAULT FALSE,
+    height_cm NUMERIC(5,2) NOT NULL DEFAULT 165.00,
+    weight_kg NUMERIC(5,2) NOT NULL DEFAULT 52.00,
+    bust_cm NUMERIC(5,2) NOT NULL DEFAULT 86.00,
+    waist_cm NUMERIC(5,2) NOT NULL DEFAULT 66.00,
+    hips_cm NUMERIC(5,2) NOT NULL DEFAULT 90.00,
+    is_custom_body_params BOOLEAN NOT NULL DEFAULT FALSE,
+    privacy_level privacy_level_enum NOT NULL DEFAULT 'PRIVATE',
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_profiles_user_id ON profiles(user_id);
+
+-- ====================================================================
+-- 4. 素体资产表 (avatars)
+-- ====================================================================
+CREATE TABLE avatars (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    profile_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    original_image_url TEXT NOT NULL,
+    normalized_image_url TEXT, -- A-Pose 透明 PNG
+    face_embedding_vector JSONB, -- 人脸特征向量
+    anchor_points JSONB NOT NULL DEFAULT '{}'::jsonb, -- 关键锚点归一化坐标 {"neck": [0.5, 0.28], "waist": [0.5, 0.55]}
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_avatars_profile_id ON avatars(profile_id);
+
+-- ====================================================================
+-- 5. 衣物主表 (garments - 涵盖私有与公共衣柜)
+-- ====================================================================
+CREATE TABLE garments (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    profile_id UUID REFERENCES profiles(id) ON DELETE CASCADE, -- NULL 表示官方公共衣柜资产
+    is_public BOOLEAN NOT NULL DEFAULT FALSE,
+    cloned_from_id UUID REFERENCES garments(id) ON DELETE SET NULL, -- 追溯公共衣物源头
+    title VARCHAR(200) NOT NULL,
+    primary_category garment_category_enum NOT NULL,
+    sub_category VARCHAR(100) NOT NULL, -- e.g., 'T-Shirt', 'Blazer', 'Jeans'
+    colors JSONB NOT NULL DEFAULT '[]'::jsonb, -- e.g., ["#008000", "#FFFFFF"]
+    patterns JSONB NOT NULL DEFAULT '[]'::jsonb, -- e.g., ["STRIPED"]
+    material VARCHAR(100),
+    brand VARCHAR(100),
+    external_buy_url TEXT, -- 电商外链（待选项/预留）
+    price_cents INT, -- 预估价（分）
+    is_archived BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_garments_profile_id ON garments(profile_id);
+CREATE INDEX idx_garments_is_public ON garments(is_public);
+CREATE INDEX idx_garments_category ON garments(primary_category, sub_category);
+
+-- ====================================================================
+-- 6. 服装形态资产切片表 (garment_assets - 支持 Open/Closed/Tucked)
+-- ====================================================================
+CREATE TABLE garment_assets (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    garment_id UUID NOT NULL REFERENCES garments(id) ON DELETE CASCADE,
+    state_type garment_state_enum NOT NULL DEFAULT 'DEFAULT',
+    png_url TEXT NOT NULL, -- 标准平铺透明切片
+    bounding_box JSONB, -- 边界盒 [x, y, w, h] 归一化比例
+    default_anchor JSONB NOT NULL DEFAULT '{"x": 0.5, "y": 0.5}'::jsonb,
+    base_layer_weight INT NOT NULL DEFAULT 10,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_garment_assets_garment_id ON garment_assets(garment_id);
+
+-- ====================================================================
+-- 7. 搭配套装表 (outfits)
+-- ====================================================================
+CREATE TABLE outfits (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    profile_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    creator_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    title VARCHAR(150) NOT NULL DEFAULT '未命名搭配',
+    preview_image_url TEXT, -- 2D 画布快照或 AI VTON 最终图
+    is_vton_rendered BOOLEAN NOT NULL DEFAULT FALSE,
+    is_public BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_outfits_profile_id ON outfits(profile_id);
+CREATE INDEX idx_outfits_is_public ON outfits(is_public);
+
+-- ====================================================================
+-- 8. 搭配单品穿戴明细表 (outfit_items - 记录几何变换与层级)
+-- ====================================================================
+CREATE TABLE outfit_items (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    outfit_id UUID NOT NULL REFERENCES outfits(id) ON DELETE CASCADE,
+    garment_id UUID NOT NULL REFERENCES garments(id) ON DELETE CASCADE,
+    applied_state garment_state_enum NOT NULL DEFAULT 'DEFAULT',
+    z_index INT NOT NULL,
+    transform_matrix JSONB NOT NULL DEFAULT '{"scaleX": 1.0, "scaleY": 1.0, "offsetX": 0.0, "offsetY": 0.0, "rotation": 0.0}'::jsonb,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_outfit_items_outfit_id ON outfit_items(outfit_id);
+
+-- ====================================================================
+-- 9. OOTD 穿搭日历表 (ootd_logs)
+-- ====================================================================
+CREATE TABLE ootd_logs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    profile_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    outfit_id UUID NOT NULL REFERENCES outfits(id) ON DELETE CASCADE,
+    log_date DATE NOT NULL,
+    weather_tag VARCHAR(50),
+    notes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_profile_date UNIQUE (profile_id, log_date)
+);
+
+CREATE INDEX idx_ootd_profile_date ON ootd_logs(profile_id, log_date);
+
+-- ====================================================================
+-- 10. 好友关系表 (friendships)
+-- ====================================================================
+CREATE TABLE friendships (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    friend_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    status VARCHAR(20) NOT NULL DEFAULT 'ACCEPTED', -- 'PENDING', 'ACCEPTED', 'BLOCKED'
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_friendship UNIQUE (user_id, friend_id),
+    CONSTRAINT chk_not_self CHECK (user_id <> friend_id)
+);
+
+CREATE INDEX idx_friendships_lookup ON friendships(user_id, friend_id);
+
+-- ====================================================================
+-- 11. 异步 AI 计算任务队列表 (async_tasks)
+-- ====================================================================
+CREATE TABLE async_tasks (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    task_type task_type_enum NOT NULL,
+    status task_status_enum NOT NULL DEFAULT 'PENDING',
+    progress_percent INT NOT NULL DEFAULT 0 CHECK (progress_percent BETWEEN 0 AND 100),
+    input_payload JSONB NOT NULL,
+    output_result JSONB,
+    cost_credits INT NOT NULL DEFAULT 0,
+    error_message TEXT,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_async_tasks_user_status ON async_tasks(user_id, status);
+
+-- ====================================================================
+-- 12. 积分流水记账表 (credit_ledger)
+-- ====================================================================
+CREATE TABLE credit_ledger (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    task_id UUID REFERENCES async_tasks(id) ON DELETE SET NULL,
+    tx_type credit_tx_type_enum NOT NULL,
+    delta_daily INT NOT NULL DEFAULT 0,
+    delta_permanent INT NOT NULL DEFAULT 0,
+    balance_daily_after INT NOT NULL,
+    balance_permanent_after INT NOT NULL,
+    description VARCHAR(255),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_credit_ledger_user_id ON credit_ledger(user_id);
+五、 核心 API 契约设计
+5.1 异步任务状态长轮询与 WebSocket 规范
+WebSocket 端点： wss://api.wardrobe.domain/v1/ws/tasks?token={JWT}
+
+推送消息体结构（JSON）：
+
+JSON
+{
+  "event": "TASK_PROGRESS_UPDATED",
+  "data": {
+    "taskId": "7e9b08f4-2c1a-4d92-9382-3e2840d21e56",
+    "taskType": "VTON_RENDER",
+    "status": "PROCESSING",
+    "progress": 68,
+    "currentStage": "Blending garment light and shadow...",
+    "resultUrl": null,
+    "error": null
+  }
+}
+5.2 核心 RESTful 端点定义
+1. 提交服装上传与标准化
+POST /v1/garments/upload
+
+Content-Type: multipart/form-data
+
+Request Params:
+
+profileId (UUID, optional - 为空时管理员操作视为公共衣物)
+
+imageFile (Binary)
+
+Response (202 Accepted):
+
+JSON
+{
+  "code": 200,
+  "message": "衣物上传成功，标准化分析任务已进入队列",
+  "data": {
+    "taskId": "4a7f05b1-12ec-4993-87a2-f8d9758112d4",
+    "estimatedTimeSeconds": 8
+  }
+}
+2. 公共衣柜单品深度克隆（保存到我的衣柜）
+POST /v1/garments/public/{garmentId}/clone
+
+Request Body:
+
+JSON
+{
+  "targetProfileId": "c4d3b2a1-0000-0000-0000-123456789abc"
+}
+Response (201 Created):
+
+JSON
+{
+  "code": 200,
+  "message": "已成功复制到您的专属衣橱",
+  "data": {
+    "clonedGarmentId": "9f8e7d6c-5b4a-3210-fedc-ba9876543210",
+    "title": "经典复古白绿条纹短袖T恤",
+    "primaryCategory": "TOPS",
+    "assets": [
+      {
+        "stateType": "DEFAULT",
+        "pngUrl": "https://cdn.wardrobe.domain/assets/garments/ghost_9f8e_default.png",
+        "baseLayerWeight": 10
+      }
+    ]
+  }
+}
+3. 提交 2D 画布编排并发起 AI VTON 高清试穿
+POST /v1/outfits/render-vton
+
+Request Body:
+
+JSON
+{
+  "profileId": "c4d3b2a1-0000-0000-0000-123456789abc",
+  "canvasSnapshotBase64": "data:image/png;base64,iVBORw0KGgo...",
+  "items": [
+    {
+      "garmentId": "9f8e7d6c-5b4a-3210-fedc-ba9876543210",
+      "appliedState": "TUCKED",
+      "zIndex": 10,
+      "transformMatrix": { "scaleX": 1.0, "scaleY": 1.0, "offsetX": 0.0, "offsetY": 0.02, "rotation": 0.0 }
+    },
+    {
+      "garmentId": "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+      "appliedState": "OPEN",
+      "zIndex": 40,
+      "transformMatrix": { "scaleX": 1.05, "scaleY": 1.05, "offsetX": 0.0, "offsetY": 0.0, "rotation": 0.0 }
+    }
+  ]
+}
+Response (202 Accepted):
+
+JSON
+{
+  "code": 200,
+  "message": "试穿任务已提交，已锁定扣除 5 积分",
+  "data": {
+    "taskId": "7e9b08f4-2c1a-4d92-9382-3e2840d21e56",
+    "remainingDailyCredits": 94
+  }
+}
+4. 好友互动：为好友提交穿搭推荐
+POST /v1/friends/{friendUserId}/profiles/{friendProfileId}/suggest-outfit
+
+Request Body:
+
+JSON
+{
+  "title": "周末休闲条纹叠穿风",
+  "garmentIds": [
+    "9f8e7d6c-5b4a-3210-fedc-ba9876543210",
+    "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d"
+  ],
+  "previewImageUrl": "https://cdn.wardrobe.domain/snapshots/outfit_preview_123.png"
+}
+Response (200 OK):
+
+JSON
+{
+  "code": 200,
+  "message": "已成功向好友推送穿搭建议"
+}
+六、 2D 坐标系对齐算法规范（Web & Android 跨端统一）
+为了保证 PC Web、手机 H5 以及原生 Android Jetpack Compose 渲染效果像素级一致，画布采用归一化虚拟坐标系（Normalized Coordinate Space: 0.0000 ~ 1.0000）。
+
+6.1 坐标转换公式
+设画布实际渲染物理宽度为 W 
+px
+​
+ ，物理高度为 H 
+px
+​
+ ：
+
+Pixel_X=Normalized_X×W 
+px
+​
+ 
+Pixel_Y=Normalized_Y×H 
+px
+​
+ 
+6.2 锚点吸附对齐算法（Snap Calculation）
+当拖拽衣物切片松手时，计算衣物基准点与素体骨骼锚点的欧几里得距离：
+
+Dist= 
+(X 
+garment
+​
+ −X 
+anchor
+​
+ ) 
+2
+ +(Y 
+garment
+​
+ −Y 
+anchor
+​
+ ) 
+2
+ 
+
+​
+ 
+若 Dist<0.08（吸附阈值，即 8% 相对距离），触发自动对齐吸附：
+
+X 
+garment_final
+​
+ =X 
+anchor
+​
+ +Offset_X 
+preset
+​
+ 
+Y 
+garment_final
+​
+ =Y 
+anchor
+​
+ +Offset_Y 
+preset
+​
+ 
+七、 非功能性需求与性能指标 (NFR)
+2D 画布交互流畅度：
+
+Web 端与 Android 原生端 2D 拖拽、缩放、形态切换帧率 ≥60 FPS。
+
+单品吸附响应延迟 ≤16 ms。
+
+AI 计算响应时延 SLA：
+
+人像/服装标准化（Vision + ControlNet）：P95 ≤10 秒。
+
+高清 VTON 试穿成片渲染：P95 ≤15 秒。
+
+数据库并发与原子性：
+
+每日 00:00 积分重置采用批量分页更新（Cursor Batch Update），避免死锁与连接池耗尽。
+
+积分扣减与返还严格包裹在 PostgreSQL 事务中（SELECT ... FOR UPDATE），杜绝并发超扣。
+
+Android 离线存储配额：
+
+本地 Room 数据库仅存结构化元数据（限制在 50MB 以内）。
+
+静态切片图片启用 LRU 磁盘缓存策略，默认上限设为 500MB，支持用户手动一键清理。
+
+八、 研发里程碑与实施路径规划
++-------------------------------------------------------------------------------+
+| Phase 1: 数据底座与 2D 画布引擎 (第 1-3 周)                                    |
+| - PostgreSQL 完整 Schema 建表与索引优化                                       |
+| - Web (Fabric.js) & Android (Compose Canvas) 归一化双模画布实现                |
+| - 静态图层 Z-Index 矩阵与 Open/Closed/Tuck-in 状态机联动                      |
++-------------------------------------------------------------------------------+
+                                │
+                                ▼
++-------------------------------------------------------------------------------+
+| Phase 2: AI 管线集成与积分调度 (第 4-6 周)                                    |
+| - Vision LLM 多色、花纹、类目自动提取打标服务对接                              |
+| - ControlNet A-Pose 人像标准化与 Ghost Mannequin 服装切片自动化               |
+| - 异步任务队列、WebSocket 推送与 100 积分原子扣除/退款系统                    |
++-------------------------------------------------------------------------------+
+                                │
+                                ▼
++-------------------------------------------------------------------------------+
+| Phase 3: 多角色、公共衣柜 CMS 与社交借穿 (第 7-8 周)                           |
+| - 多 Profile 隔离与隐私拓扑控制                                               |
+| - Admin CMS 后台（公共衣物 CRUD、克隆解耦逻辑）                               |
+| - 好友“帮TA搭配”与 OOTD 日历功能闭环                                          |
++-------------------------------------------------------------------------------+
+                                │
+                                ▼
++-------------------------------------------------------------------------------+
+| Phase 4: Android 离线优先同步与 VTON 终验 (第 9-10 周)                        |
+| - Android Room + Coil 离线缓存与增量同步引擎                                   |
+| - Diffusion VTON 高清试穿渲染流集成调优                                       |
+| - 端到端压测、安全审计与上线发布                                             |
++-------------------------------------------------------------------------------+

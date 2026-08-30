@@ -1,0 +1,26 @@
+{
+  "name": "@smart-wardrobe/shared",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "SmartWardrobe shared types, normalized coordinate math, and layer z-index matrix",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "node --test tests/core.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  }
+}

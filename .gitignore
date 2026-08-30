@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+web/node_modules/
+server/node_modules/
+shared/node_modules/
+
+# Build artifacts
+dist/
+web/dist/
+server/dist/
+shared/dist/
+
+# Logs and environment
+*.log
+.env
+.env.local
+.DS_Store
+Thumbs.db
+
+# IDE & Editor
+.vscode/
+.idea/
+
+# Dynamic data
+database/users.json
+database/profiles.json
+database/garments.json
+database/outfits.json
+database/avatars.json
+database/lookbooks.json
+database/ledgers.json
+database/public_requests.json
+database/friend_requests.json
+database/shared_access.json

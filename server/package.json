@@ -1,0 +1,26 @@
+{
+  "name": "@smart-wardrobe/server",
+  "version": "1.0.0",
+  "description": "SmartWardrobe backend API & WebSocket task pipeline service",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "test": "node --loader ts-node/esm tests/api.test.ts || node --test tests/api.test.ts"
+  },
+  "dependencies": {
+    "@smart-wardrobe/shared": "file:../shared",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.10",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  }
+}

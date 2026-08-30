@@ -1,0 +1,33 @@
+{
+  "name": "smart-wardrobe-workspace",
+  "version": "1.0.0",
+  "description": "SmartWardrobe monorepo workspace for AI Virtual Wardrobe & VTON Platform",
+  "private": true,
+  "workspaces": [
+    "shared",
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "build:shared": "npm --prefix shared run build",
+    "build:server": "npm --prefix server run build",
+    "build:web": "npm --prefix web run build",
+    "build": "npm run build:shared; npm run build:server; npm run build:web",
+    "test:shared": "npm --prefix shared test",
+    "test:server": "npm --prefix server test",
+    "test": "npm run test:shared; npm run test:server",
+    "server": "npm --prefix server start",
+    "web": "npm --prefix web run dev"
+  },
+  "keywords": [
+    "vton",
+    "smart-wardrobe",
+    "canvas",
+    "fashion-ai"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "playwright": "^1.62.1"
+  }
+}
