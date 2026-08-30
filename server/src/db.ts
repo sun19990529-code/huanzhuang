@@ -1,5 +1,5 @@
 // ====================================================================
-// SmartWardrobe 内存数据持久层与原子记账引擎 (安全强化与纯净数据底座版)
+// SmartWardrobe PostgreSQL 18 高性能持久层与原子记账引擎
 // ====================================================================
 
 import crypto from 'crypto';
@@ -17,6 +17,7 @@ import {
   calculateGoldenRatioBody,
 } from '@smart-wardrobe/shared';
 import { GENERATED_ASSETS } from './generatedAssets';
+import { pgPool } from './pgPool';
 
 // 安全密码加盐哈希辅助函数
 export function hashPassword(password: string, salt?: string): { hash: string; salt: string } {
@@ -130,17 +131,195 @@ export class Database {
   public suggestions: Map<string, OutfitSuggestion> = new Map();
   public placementMemory: Map<string, any> = new Map();
 
-  // 会话 Token 映射 (token -> userId)
+  // 会话 Token 映射 (token -> { userId, createdAt })
   public sessions: Map<string, { userId: string; createdAt: string }> = new Map();
 
   constructor() {
-    this.seedData();
+    // 构造函数初始化默认种子内存结构
+    this.seedMemoryDefaults();
   }
 
-  private seedData() {
+  /**
+   * 初始化并从 PostgreSQL 同步所有持久化数据
+   */
+  public async init(): Promise<void> {
+    try {
+      console.log('[Database] 正在从 PostgreSQL (端口 54321) 加载数据...');
+      
+      // 1. 加载用户
+      const usersRes = await pgPool.query('SELECT * FROM users');
+      if (usersRes.rows.length === 0) {
+        console.log('[Database] PostgreSQL 中无用户数据，正在执行种子数据落盘...');
+        await this.seedPostgres();
+      } else {
+        this.users.clear();
+        for (const r of usersRes.rows) {
+          const u: DBUser = {
+            id: r.id,
+            username: r.username || (r.email.startsWith('suncraft') ? 'suncraft' : undefined),
+            email: r.email,
+            passwordHash: r.password_hash,
+            salt: r.salt || '',
+            nickname: r.nickname,
+            avatarUrl: r.avatar_url,
+            role: r.role,
+            status: r.status || 'NORMAL',
+            dailyCredits: r.daily_credits,
+            permanentCredits: r.permanent_credits,
+            createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
+          };
+          this.users.set(u.id, u);
+        }
+
+        // 2. 加载有效会话
+        const sessionsRes = await pgPool.query('SELECT * FROM sessions');
+        this.sessions.clear();
+        for (const s of sessionsRes.rows) {
+          this.sessions.set(s.token, {
+            userId: s.user_id,
+            createdAt: s.created_at ? new Date(s.created_at).toISOString() : new Date().toISOString(),
+          });
+        }
+
+        // 3. 加载 Profiles
+        const profilesRes = await pgPool.query('SELECT * FROM profiles');
+        this.profiles.clear();
+        for (const p of profilesRes.rows) {
+          const prof: UserProfile = {
+            id: p.id,
+            userId: p.user_id,
+            name: p.name,
+            gender: p.gender,
+            isDefault: p.is_default,
+            heightCm: Number(p.height_cm),
+            weightKg: Number(p.weight_kg),
+            bustCm: Number(p.bust_cm),
+            waistCm: Number(p.waist_cm),
+            hipsCm: Number(p.hips_cm),
+            isCustomBodyParams: p.is_custom_body_params,
+            privacyLevel: p.privacy_level,
+          } as any;
+          this.profiles.set(prof.id, prof);
+        }
+
+        // 4. 加载 Avatars
+        const avatarsRes = await pgPool.query('SELECT * FROM avatars');
+        this.avatars.clear();
+        for (const a of avatarsRes.rows) {
+          const av: UserAvatar = {
+            id: a.id,
+            profileId: a.profile_id,
+            originalImageUrl: a.original_image_url || '',
+            normalizedImageUrl: a.normalized_image_url || GENERATED_ASSETS.avatarUrl,
+            anchorPoints: a.anchor_points || {
+              neck: [0.5, 0.28],
+              waist: [0.5, 0.53],
+              left_foot: [0.44, 0.88],
+              right_foot: [0.56, 0.88],
+              head: [0.5, 0.12],
+            },
+            isActive: a.is_active,
+          };
+          this.avatars.set(av.id, av);
+          this.avatars.set(av.profileId, av);
+        }
+
+        // 5. 加载 Garments & Assets
+        const garmentsRes = await pgPool.query('SELECT * FROM garments');
+        const assetsRes = await pgPool.query('SELECT * FROM garment_assets');
+        const assetsByGarment = new Map<string, GarmentAssetItem[]>();
+        for (const ast of assetsRes.rows) {
+          const list = assetsByGarment.get(ast.garment_id) || [];
+          list.push({
+            id: ast.id,
+            garmentId: ast.garment_id,
+            stateType: ast.state_type,
+            pngUrl: ast.png_url,
+            defaultAnchor: ast.default_anchor || { x: 0.5, y: 0.5 },
+            baseLayerWeight: ast.base_layer_weight || 10,
+          });
+          assetsByGarment.set(ast.garment_id, list);
+        }
+
+        this.garments.clear();
+        for (const g of garmentsRes.rows) {
+          const gItem: ExtendedGarmentItem = {
+            id: g.id,
+            profileId: g.profile_id,
+            isPublic: g.is_public,
+            isArchived: g.is_archived || false,
+            clonedFromId: g.cloned_from_id,
+            title: g.title,
+            primaryCategory: g.primary_category,
+            subCategory: g.sub_category,
+            colors: Array.isArray(g.colors) ? g.colors : (typeof g.colors === 'string' ? JSON.parse(g.colors) : []),
+            patterns: Array.isArray(g.patterns) ? g.patterns : (typeof g.patterns === 'string' ? JSON.parse(g.patterns) : []),
+            material: g.material || '优质面料',
+            brand: g.brand,
+            priceCents: g.price_cents,
+            externalBuyUrl: g.external_buy_url,
+            assets: assetsByGarment.get(g.id) || [],
+          };
+          this.garments.set(gItem.id, gItem);
+        }
+
+        // 6. 加载 Outfits & Items
+        const outfitsRes = await pgPool.query('SELECT * FROM outfits');
+        const outfitItemsRes = await pgPool.query('SELECT * FROM outfit_items');
+        const itemsByOutfit = new Map<string, OutfitWearItem[]>();
+        for (const item of outfitItemsRes.rows) {
+          const list = itemsByOutfit.get(item.outfit_id) || [];
+          list.push({
+            garmentId: item.garment_id,
+            appliedState: item.applied_state,
+            zIndex: item.z_index,
+            transformMatrix: item.transform_matrix || { scaleX: 1, scaleY: 1, offsetX: 0, offsetY: 0, rotation: 0 },
+          });
+          itemsByOutfit.set(item.outfit_id, list);
+        }
+
+        this.outfits.clear();
+        for (const o of outfitsRes.rows) {
+          const oItem: DBOutfit = {
+            id: o.id,
+            profileId: o.profile_id,
+            creatorUserId: o.creator_user_id,
+            title: o.title,
+            previewImageUrl: o.preview_image_url,
+            isVtonRendered: o.is_vton_rendered,
+            isPublic: o.is_public,
+            items: itemsByOutfit.get(o.id) || [],
+            createdAt: o.created_at ? new Date(o.created_at).toISOString() : new Date().toISOString(),
+          };
+          this.outfits.set(oItem.id, oItem);
+        }
+
+        // 7. 加载 OOTD 日历
+        const ootdRes = await pgPool.query('SELECT * FROM ootd_logs');
+        this.ootdLogs.clear();
+        for (const log of ootdRes.rows) {
+          const dLog: DBOotdLog = {
+            id: log.id,
+            profileId: log.profile_id,
+            outfitId: log.outfit_id,
+            logDate: typeof log.log_date === 'string' ? log.log_date : new Date(log.log_date).toISOString().split('T')[0],
+            weatherTag: log.weather_tag,
+            notes: log.notes,
+            createdAt: log.created_at ? new Date(log.created_at).toISOString() : new Date().toISOString(),
+          };
+          this.ootdLogs.set(dLog.id, dLog);
+        }
+      }
+
+      console.log(`[Database] ✅ PostgreSQL 数据加载完成: 用户 ${this.users.size} 个, 会话 ${this.sessions.size} 个, 单品 ${this.garments.size} 个`);
+    } catch (err: any) {
+      console.error('[Database] ⚠️ 从 PostgreSQL 加载数据失败，降级使用内存初始数据:', err.message);
+    }
+  }
+
+  private seedMemoryDefaults() {
     const now = new Date().toISOString();
 
-    // 1. 初始化唯一系统超级管理员账号 (账号: suncraft, 密码: sqm17709021, 加盐密文存储)
     const adminPass = hashPassword('sqm17709021');
     const adminUser: DBUser = {
       id: 'admin-suncraft-0000',
@@ -158,7 +337,6 @@ export class Database {
     };
     this.users.set(adminUser.id, adminUser);
 
-    // 2. 初始化标准测试用户 (账号: test@smartwardrobe.com, 密码: password123)
     const testPass = hashPassword('password123');
     const testUser: DBUser = {
       id: 'user-test-fixed-0001',
@@ -176,7 +354,6 @@ export class Database {
     };
     this.users.set(testUser.id, testUser);
 
-    // 为标准测试用户初始化默认身材档案与 3:4 素体
     const testProfileId = 'profile-test-fixed-0001';
     const testProfile: UserProfile = {
       id: testProfileId,
@@ -189,9 +366,7 @@ export class Database {
       bustCm: 84,
       waistCm: 62,
       hipsCm: 89,
-      bodyType: 'HOURGLASS' as any,
-      skinTone: 'WARM_NATURAL' as any,
-      hairstyle: 'FRENCH_WAVY_LONG' as any,
+      isCustomBodyParams: true,
       privacyLevel: 'PRIVATE',
     } as any;
     this.profiles.set(testProfileId, testProfile);
@@ -213,8 +388,7 @@ export class Database {
     this.avatars.set(testAvatar.id, testAvatar);
     this.avatars.set(testProfileId, testAvatar);
 
-    // 3. 初始化官方公共试衣间高定单品 (isPublic = true, profileId = null)
-    // 高定长裙
+    // 官方高定长裙
     const dressGarmentId = 'g-public-gown-real';
     this.garments.set(dressGarmentId, {
       id: dressGarmentId,
@@ -271,11 +445,79 @@ export class Database {
     });
   }
 
-  // 生成或验证会话 Token
+  private async seedPostgres(): Promise<void> {
+    try {
+      const now = new Date().toISOString();
+      for (const user of this.users.values()) {
+        await pgPool.query(
+          `INSERT INTO users (id, email, password_hash, nickname, avatar_url, role, daily_credits, permanent_credits, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+           ON CONFLICT (id) DO UPDATE SET password_hash = EXCLUDED.password_hash`,
+          [user.id, user.email, user.passwordHash, user.nickname, user.avatarUrl, user.role, user.dailyCredits, user.permanentCredits, now]
+        );
+      }
+
+      for (const p of this.profiles.values()) {
+        await pgPool.query(
+          `INSERT INTO profiles (id, user_id, name, gender, is_default, height_cm, weight_kg, bust_cm, waist_cm, hips_cm, is_custom_body_params, privacy_level, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+           ON CONFLICT (id) DO NOTHING`,
+          [p.id, p.userId, p.name, p.gender, p.isDefault, p.heightCm, p.weightKg || 50, p.bustCm || 84, p.waistCm || 62, p.hipsCm || 89, p.isCustomBodyParams ?? true, p.privacyLevel || 'PRIVATE', now]
+        );
+      }
+
+      for (const a of this.avatars.values()) {
+        await pgPool.query(
+          `INSERT INTO avatars (id, profile_id, original_image_url, normalized_image_url, anchor_points, is_active, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           ON CONFLICT (id) DO NOTHING`,
+          [a.id, a.profileId, a.originalImageUrl, a.normalizedImageUrl, JSON.stringify(a.anchorPoints), a.isActive, now]
+        );
+      }
+
+      for (const g of this.garments.values()) {
+        await pgPool.query(
+          `INSERT INTO garments (id, profile_id, is_public, title, primary_category, sub_category, colors, patterns, material, brand, price_cents, external_buy_url, is_archived, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+           ON CONFLICT (id) DO NOTHING`,
+          [g.id, g.profileId, g.isPublic, g.title, g.primaryCategory, g.subCategory, JSON.stringify(g.colors), JSON.stringify(g.patterns), g.material, g.brand, g.priceCents, g.externalBuyUrl, g.isArchived, now]
+        );
+
+        for (const ast of g.assets) {
+          await pgPool.query(
+            `INSERT INTO garment_assets (id, garment_id, state_type, png_url, default_anchor, base_layer_weight, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             ON CONFLICT (id) DO NOTHING`,
+            [ast.id, ast.garmentId, ast.stateType, ast.pngUrl, JSON.stringify(ast.defaultAnchor), ast.baseLayerWeight, now]
+          );
+        }
+      }
+      console.log('[Database] ✅ PostgreSQL 种子数据落盘完成！');
+    } catch (e: any) {
+      console.error('[Database] 种子数据落盘异常:', e.message);
+    }
+  }
+
+  // 生成会话 Token 并持久化到 PostgreSQL
   public createSession(userId: string): string {
     const token = `sw_tok_${Date.now()}_${crypto.randomBytes(16).toString('hex')}`;
-    this.sessions.set(token, { userId, createdAt: new Date().toISOString() });
+    const createdAt = new Date().toISOString();
+    this.sessions.set(token, { userId, createdAt });
+
+    // 异步落盘 PostgreSQL
+    pgPool.query(
+      `INSERT INTO sessions (token, user_id, created_at) VALUES ($1, $2, $3)
+       ON CONFLICT (token) DO UPDATE SET user_id = EXCLUDED.user_id`,
+      [token, userId, createdAt]
+    ).catch((err) => console.warn('[Database] 保存会话到 PostgreSQL 失败:', err.message));
+
     return token;
+  }
+
+  public deleteSession(token: string): void {
+    this.sessions.delete(token);
+    pgPool.query('DELETE FROM sessions WHERE token = $1', [token])
+      .catch((err) => console.warn('[Database] 删除会话失败:', err.message));
   }
 
   public getUserIdByToken(token: string): string | null {
@@ -283,7 +525,7 @@ export class Database {
     return s ? s.userId : null;
   }
 
-  // 管理员专用登录 (校验 suncraft + 密码)
+  // 管理员专用登录
   public adminLogin(usernameOrEmail: string, pass: string): { user: DBUser; token: string } | null {
     const user = Array.from(this.users.values()).find(
       (u) => (u.username === usernameOrEmail || u.email === usernameOrEmail) && u.role === 'ADMIN'
@@ -297,7 +539,7 @@ export class Database {
     return { user, token };
   }
 
-  // 普通用户安全登录 (校验 email + 密码)
+  // 普通用户安全登录
   public login(email: string, pass: string): { user: DBUser; token: string } | null {
     const user = Array.from(this.users.values()).find((u) => u.email === email);
     if (!user) return null;
@@ -309,7 +551,7 @@ export class Database {
     return { user, token };
   }
 
-  // 普通用户安全注册 (三步流: 账号密码 -> 五维身材 -> 可选素体照片)
+  // 普通用户安全注册
   public register(payload: {
     email: string;
     password: string;
@@ -346,8 +588,15 @@ export class Database {
     };
     this.users.set(newUser.id, newUser);
 
+    // 异步插入用户到 PostgreSQL
+    pgPool.query(
+      `INSERT INTO users (id, email, password_hash, nickname, role, daily_credits, permanent_credits, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [newUser.id, newUser.email, newUser.passwordHash, newUser.nickname, newUser.role, newUser.dailyCredits, newUser.permanentCredits, now]
+    ).catch((err) => console.warn('[Database] 注册用户落盘失败:', err.message));
+
     // 记录初始赠送积分流水
-    this.creditLedger.push({
+    const ledgerEntry: DBCreditLedger = {
       id: `ledger-reg-${Date.now()}`,
       userId,
       txType: 'REGISTER_BONUS',
@@ -357,9 +606,15 @@ export class Database {
       balancePermanentAfter: 0,
       description: '新用户注册，赠送 100 初始体验积分',
       createdAt: now,
-    });
+    };
+    this.creditLedger.push(ledgerEntry);
+    pgPool.query(
+      `INSERT INTO credit_ledger (id, user_id, tx_type, delta_daily, delta_permanent, balance_daily_after, balance_permanent_after, description, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [ledgerEntry.id, ledgerEntry.userId, 'DAILY_RESET', ledgerEntry.deltaDaily, ledgerEntry.deltaPermanent, ledgerEntry.balanceDailyAfter, ledgerEntry.balancePermanentAfter, ledgerEntry.description, now]
+    ).catch(() => {});
 
-    // 创建默认 Profile (绑定注册填写的五维身材)
+    // 创建默认 Profile
     const gender = payload.gender || 'FEMALE';
     const height = payload.heightCm || (gender === 'MALE' ? 178 : 165);
     const weight = payload.weightKg || (gender === 'MALE' ? 70 : 50);
@@ -383,8 +638,13 @@ export class Database {
       privacyLevel: 'PRIVATE',
     };
     this.profiles.set(defaultProfile.id, defaultProfile);
+    pgPool.query(
+      `INSERT INTO profiles (id, user_id, name, gender, is_default, height_cm, weight_kg, bust_cm, waist_cm, hips_cm, is_custom_body_params, privacy_level, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+      [defaultProfile.id, defaultProfile.userId, defaultProfile.name, defaultProfile.gender, defaultProfile.isDefault, defaultProfile.heightCm, defaultProfile.weightKg, defaultProfile.bustCm, defaultProfile.waistCm, defaultProfile.hipsCm, defaultProfile.isCustomBodyParams, defaultProfile.privacyLevel, now]
+    ).catch(() => {});
 
-    // 创建标准模特素体 (若用户提供了全身照则装载，否则使用对应性别身材标准素体)
+    // 创建标准模特素体
     const defaultAvatar = gender === 'MALE'
       ? ((GENERATED_ASSETS as any).avatarMaleUrl || GENERATED_ASSETS.avatarUrl)
       : ((GENERATED_ASSETS as any).avatarFemaleUrl || GENERATED_ASSETS.avatarUrl);
@@ -406,6 +666,12 @@ export class Database {
     this.avatars.set(avatar.id, avatar);
     this.avatars.set(profileId, avatar);
 
+    pgPool.query(
+      `INSERT INTO avatars (id, profile_id, original_image_url, normalized_image_url, anchor_points, is_active, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [avatar.id, avatar.profileId, avatar.originalImageUrl, avatar.normalizedImageUrl, JSON.stringify(avatar.anchorPoints), avatar.isActive, now]
+    ).catch(() => {});
+
     const token = this.createSession(newUser.id);
     return { user: newUser, token, profile: defaultProfile, avatar };
   }
@@ -421,14 +687,16 @@ export class Database {
     const { hash, salt } = hashPassword(newPass);
     user.passwordHash = hash;
     user.salt = salt;
+
+    pgPool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, userId]).catch(() => {});
     return true;
   }
 
-  // 校验单品归属权，杜绝水平越权 (IDOR)
+  // 校验单品归属权
   public isGarmentOwner(userId: string, garmentId: string): boolean {
     const garment = this.garments.get(garmentId);
     if (!garment) return false;
-    if (!garment.profileId) return false; // 公共单品由管理员管理
+    if (!garment.profileId) return false;
 
     const profile = this.profiles.get(garment.profileId);
     if (!profile) return false;
@@ -449,6 +717,7 @@ export class Database {
     const original = this.garments.get(garmentId);
     if (!original || !original.isPublic) return null;
 
+    const now = new Date().toISOString();
     const clonedId = `cloned-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
     const clonedAssets: GarmentAssetItem[] = original.assets.map((asset, index) => ({
       ...asset,
@@ -467,7 +736,52 @@ export class Database {
     };
 
     this.garments.set(clonedId, clonedGarment);
+
+    // 异步插入克隆衣物到 PostgreSQL
+    pgPool.query(
+      `INSERT INTO garments (id, profile_id, is_public, cloned_from_id, title, primary_category, sub_category, colors, patterns, material, brand, price_cents, external_buy_url, is_archived, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+      [clonedGarment.id, clonedGarment.profileId, false, original.id, clonedGarment.title, clonedGarment.primaryCategory, clonedGarment.subCategory, JSON.stringify(clonedGarment.colors), JSON.stringify(clonedGarment.patterns), clonedGarment.material, clonedGarment.brand, clonedGarment.priceCents, clonedGarment.externalBuyUrl, false, now]
+    ).then(() => {
+      for (const ast of clonedAssets) {
+        pgPool.query(
+          `INSERT INTO garment_assets (id, garment_id, state_type, png_url, default_anchor, base_layer_weight, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [ast.id, ast.garmentId, ast.stateType, ast.pngUrl, JSON.stringify(ast.defaultAnchor), ast.baseLayerWeight, now]
+        ).catch(() => {});
+      }
+    }).catch((err) => console.warn('[Database] 克隆单品落盘失败:', err.message));
+
     return clonedGarment;
+  }
+
+  // 保存单品到数据库
+  public saveGarment(garment: ExtendedGarmentItem): void {
+    this.garments.set(garment.id, garment);
+    const now = new Date().toISOString();
+    pgPool.query(
+      `INSERT INTO garments (id, profile_id, is_public, title, primary_category, sub_category, colors, patterns, material, brand, price_cents, external_buy_url, is_archived, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+       ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, primary_category = EXCLUDED.primary_category, sub_category = EXCLUDED.sub_category, colors = EXCLUDED.colors, material = EXCLUDED.material, is_archived = EXCLUDED.is_archived`,
+      [garment.id, garment.profileId, garment.isPublic, garment.title, garment.primaryCategory, garment.subCategory, JSON.stringify(garment.colors || []), JSON.stringify(garment.patterns || []), garment.material, garment.brand, garment.priceCents, garment.externalBuyUrl, garment.isArchived || false, now]
+    ).then(() => {
+      if (garment.assets && garment.assets.length > 0) {
+        for (const ast of garment.assets) {
+          pgPool.query(
+            `INSERT INTO garment_assets (id, garment_id, state_type, png_url, default_anchor, base_layer_weight, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             ON CONFLICT (id) DO UPDATE SET png_url = EXCLUDED.png_url, state_type = EXCLUDED.state_type`,
+            [ast.id, ast.garmentId, ast.stateType, ast.pngUrl, JSON.stringify(ast.defaultAnchor || { x: 0.5, y: 0.5 }), ast.baseLayerWeight || 10, now]
+          ).catch(() => {});
+        }
+      }
+    }).catch((err) => console.warn('[Database] 保存单品失败:', err.message));
+  }
+
+  // 删除单品
+  public deleteGarment(id: string): void {
+    this.garments.delete(id);
+    pgPool.query('DELETE FROM garments WHERE id = $1', [id]).catch((err) => console.warn('[Database] 删除单品失败:', err.message));
   }
 
   // 原子扣除积分
@@ -503,7 +817,8 @@ export class Database {
       user.permanentCredits -= deltaPermanent;
     }
 
-    this.creditLedger.push({
+    const now = new Date().toISOString();
+    const ledgerEntry: DBCreditLedger = {
       id: `ledger-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
       userId,
       taskId,
@@ -513,8 +828,21 @@ export class Database {
       balanceDailyAfter: user.dailyCredits,
       balancePermanentAfter: user.permanentCredits,
       description,
-      createdAt: new Date().toISOString(),
-    });
+      createdAt: now,
+    };
+    this.creditLedger.push(ledgerEntry);
+
+    // 异步更新数据库
+    pgPool.query(
+      'UPDATE users SET daily_credits = $1, permanent_credits = $2 WHERE id = $3',
+      [user.dailyCredits, user.permanentCredits, userId]
+    ).catch(() => {});
+
+    pgPool.query(
+      `INSERT INTO credit_ledger (id, user_id, task_id, tx_type, delta_daily, delta_permanent, balance_daily_after, balance_permanent_after, description, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [ledgerEntry.id, ledgerEntry.userId, taskId || null, 'AVATAR_GEN', ledgerEntry.deltaDaily, ledgerEntry.deltaPermanent, ledgerEntry.balanceDailyAfter, ledgerEntry.balancePermanentAfter, ledgerEntry.description, now]
+    ).catch(() => {});
 
     return {
       success: true,
@@ -529,7 +857,8 @@ export class Database {
     if (!user) return;
 
     user.dailyCredits += amount;
-    this.creditLedger.push({
+    const now = new Date().toISOString();
+    const ledgerEntry: DBCreditLedger = {
       id: `ledger-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
       userId,
       taskId,
@@ -539,11 +868,19 @@ export class Database {
       balanceDailyAfter: user.dailyCredits,
       balancePermanentAfter: user.permanentCredits,
       description: `[退款] ${description}`,
-      createdAt: new Date().toISOString(),
-    });
+      createdAt: now,
+    };
+    this.creditLedger.push(ledgerEntry);
+
+    pgPool.query('UPDATE users SET daily_credits = $1 WHERE id = $2', [user.dailyCredits, userId]).catch(() => {});
+    pgPool.query(
+      `INSERT INTO credit_ledger (id, user_id, task_id, tx_type, delta_daily, delta_permanent, balance_daily_after, balance_permanent_after, description, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [ledgerEntry.id, ledgerEntry.userId, taskId || null, 'REFUND', ledgerEntry.deltaDaily, ledgerEntry.deltaPermanent, ledgerEntry.balanceDailyAfter, ledgerEntry.balancePermanentAfter, ledgerEntry.description, now]
+    ).catch(() => {});
   }
 
-  // 全员活动广播发放积分 (运营活动 / 平台补偿)
+  // 全员活动广播发放积分
   public broadcastCredits(deltaPermanent: number, deltaDaily: number, reason: string): { count: number } {
     const now = new Date().toISOString();
     let count = 0;
@@ -562,6 +899,7 @@ export class Database {
         description: `[全员活动广播] ${reason}`,
         createdAt: now,
       });
+      pgPool.query('UPDATE users SET daily_credits = $1, permanent_credits = $2 WHERE id = $3', [user.dailyCredits, user.permanentCredits, userId]).catch(() => {});
       count++;
     }
     return { count };
@@ -574,10 +912,11 @@ export class Database {
     const { hash, salt } = hashPassword(newPass);
     user.passwordHash = hash;
     user.salt = salt;
+    pgPool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, userId]).catch(() => {});
     return true;
   }
 
-  // 修改用户状态 (NORMAL / FROZEN / BANNED)
+  // 修改用户状态
   public updateUserStatus(
     userId: string,
     status: 'NORMAL' | 'FROZEN' | 'BANNED',
@@ -591,19 +930,7 @@ export class Database {
     }
     user.status = status;
 
-    // 记录审计流水
-    this.creditLedger.push({
-      id: `ledger-status-${userId}-${Date.now()}`,
-      userId,
-      txType: 'STATUS_CHANGE',
-      deltaDaily: 0,
-      deltaPermanent: 0,
-      balanceDailyAfter: user.dailyCredits,
-      balancePermanentAfter: user.permanentCredits,
-      description: `[账号状态变更] 设为 ${status}${reason ? ' - 原因: ' + reason : ''}`,
-      createdAt: new Date().toISOString(),
-    });
-
+    pgPool.query('UPDATE users SET status = $1 WHERE id = $2', [status, userId]).catch(() => {});
     return user;
   }
 
@@ -690,7 +1017,7 @@ export class Database {
     };
   }
 
-  // 每日零点重置补齐至 100 积分 (不足 100 则补足至 100，原有超出或永久积分保留)
+  // 每日零点重置补齐至 100 积分
   public resetDailyCredits() {
     const now = new Date().toISOString();
     for (const [userId, user] of this.users.entries()) {
@@ -709,6 +1036,7 @@ export class Database {
           description: `每日零点定时重置：补齐 ${topup} 积分至 100 分`,
           createdAt: now,
         });
+        pgPool.query('UPDATE users SET daily_credits = 100 WHERE id = $1', [userId]).catch(() => {});
       }
     }
   }

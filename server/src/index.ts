@@ -1339,9 +1339,19 @@ server.setTimeout(300000);
 server.keepAliveTimeout = 300000;
 server.headersTimeout = 310000;
 
-server.listen(PORT, () => {
-  console.log(`[SmartWardrobe Server] Running on http://localhost:${PORT}`);
-  console.log(`[SmartWardrobe WS] WebSocket task stream ready at ws://localhost:${PORT}/v1/ws/tasks`);
-});
+async function bootstrap() {
+  try {
+    await db.init();
+  } catch (err: any) {
+    console.warn('[Bootstrap] 数据库初始化提示:', err.message);
+  }
+
+  server.listen(PORT, () => {
+    console.log(`[SmartWardrobe Server] Running on http://localhost:${PORT}`);
+    console.log(`[SmartWardrobe WS] WebSocket task stream ready at ws://localhost:${PORT}/v1/ws/tasks`);
+  });
+}
+
+bootstrap();
 
 export { app, server };
