@@ -180,6 +180,9 @@ export const App: React.FC = () => {
   // 普通用户登录成功
   const handleLoginSuccess = async (loggedInUser: CurrentUser) => {
     setUser(loggedInUser);
+    setWornItems([]);
+    setRenderedImageUrl(null);
+    setIsRendering(false);
     await loadUserData(loggedInUser);
     setActiveView('STUDIO');
   };
@@ -187,6 +190,9 @@ export const App: React.FC = () => {
   // 管理员隐藏登录成功
   const handleAdminLoginSuccess = async (adminUser: CurrentUser) => {
     setUser(adminUser);
+    setWornItems([]);
+    setRenderedImageUrl(null);
+    setIsRendering(false);
     await loadUserData(adminUser);
     setActiveView('CMS');
   };
@@ -199,6 +205,8 @@ export const App: React.FC = () => {
     setCurrentAvatar(null);
     setGarments([]);
     setWornItems([]);
+    setRenderedImageUrl(null);
+    setIsRendering(false);
     setActiveView('AUTH');
   };
 
@@ -213,6 +221,8 @@ export const App: React.FC = () => {
   const handleSelectProfile = async (profile: UserProfile) => {
     setCurrentProfile(profile);
     setWornItems([]);
+    setRenderedImageUrl(null);
+    setIsRendering(false);
     await loadProfileData(profile);
   };
 
@@ -334,6 +344,7 @@ export const App: React.FC = () => {
     try {
       const av = await uploadAvatarAsset(currentProfile.id, file);
       setCurrentAvatar(av);
+      setRenderedImageUrl(null);
       if (user) {
         setUser({ ...user, dailyCredits: Math.max(0, user.dailyCredits - 1) });
       }
@@ -571,7 +582,10 @@ export const App: React.FC = () => {
               onUpdateWornItem={handleUpdateWornItem}
               onWearGarment={handleWearGarment}
               onRemoveWornItem={handleRemoveWornItem}
-              onClearCanvas={() => setWornItems([])}
+              onClearCanvas={() => {
+                setWornItems([]);
+                setRenderedImageUrl(null);
+              }}
               onSaveLookbook={handleSaveLookbook}
               onRenderVton={handleRenderVton}
               onSuggestToFriend={handleSuggestToFriend}

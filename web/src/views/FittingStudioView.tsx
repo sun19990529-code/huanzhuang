@@ -1336,11 +1336,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
         {/* 画布中央模特舞台 (3:4 黄金画幅) */}
         <div className="absolute inset-0 flex items-center justify-center p-4 pointer-events-none">
           <div
-            onClick={(e) => {
-              if (e.target === e.currentTarget) {
-                setSelectedItemId(null);
-              }
-            }}
+            onClick={() => setSelectedItemId(null)}
             className="relative h-[85vh] max-h-[860px] aspect-[3/4] rounded-3xl border border-stone-200/80 bg-white/95 shadow-2xl shadow-stone-300/40 flex items-center justify-center overflow-hidden pointer-events-auto transition-all"
           >
             {/* 模特景深光晕底座 */}
@@ -1433,21 +1429,23 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
                   return (
                     <div
                       key={worn.garment.id}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedItemId(worn.garment.id);
-                      }}
                       style={{
                         zIndex: isSelected ? 80 : worn.zIndex,
                         transform: `translate(${offX}px, ${offY}px) scale(${scX}, ${scY})`,
                       }}
-                      className="absolute inset-0 flex items-center justify-center pointer-events-auto cursor-pointer"
+                      className="absolute inset-0 flex items-center justify-center pointer-events-none"
                     >
-                      <div className="relative inline-flex items-center justify-center">
+                      <div
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedItemId(worn.garment.id);
+                        }}
+                        className="relative inline-flex items-center justify-center pointer-events-auto cursor-pointer"
+                      >
                         <img
                           src={activeAsset?.pngUrl || worn.garment.assets?.[0]?.pngUrl}
                           alt={worn.garment.title}
-                          className="max-h-[580px] max-w-[340px] object-contain filter drop-shadow-sm pointer-events-auto"
+                          className="max-h-[580px] max-w-[340px] object-contain filter drop-shadow-sm pointer-events-auto select-none"
                         />
 
                         {/* Figma Pro 级交互式微调与缩放选框 (视口解耦，绝对恒定尺寸与清晰度) */}
