@@ -137,18 +137,13 @@ class TaskPipelineService {
         const avatar = db.avatars.get(inputPayload.profileId);
         const referenceImages: string[] = [];
 
-        // 模特素体原图作为 Reference Image 1
+        // 模特素体原图作为 Image 1 (Target Model)
         if (avatar?.normalizedImageUrl) {
           referenceImages.push(avatar.normalizedImageUrl);
         } else if (avatar?.originalImageUrl) {
           referenceImages.push(avatar.originalImageUrl);
         } else {
           referenceImages.push(GENERATED_ASSETS.avatarUrl);
-        }
-
-        // 2D 拼搭先验图作为 Reference Image 2 (若前端大画布提供了快照)
-        if (inputPayload.canvasSnapshotBase64 && typeof inputPayload.canvasSnapshotBase64 === 'string' && inputPayload.canvasSnapshotBase64.startsWith('data:image')) {
-          referenceImages.push(inputPayload.canvasSnapshotBase64);
         }
 
         const garmentDetailsList: Array<{

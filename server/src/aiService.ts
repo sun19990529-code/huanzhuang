@@ -495,11 +495,28 @@ Return ONLY a valid JSON object in the following format:
     else if (aspectRatio === '9:16') size = '720x1280';
     else if (aspectRatio === '1:1') size = '1024x1024';
 
-    const sendGenerateRequest = async (userPrompt: string): Promise<string> => {
+    // 提取有效参考图（模特底图 + 单品切片图）
+    const validImages = referenceImages.filter(
+      (img) => img && (img.startsWith('data:image') || img.startsWith('http'))
+    );
+
+    const sendGenerateRequest = async (userPrompt: string, images: string[]): Promise<string> => {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 240000);
       try {
-        console.log(`[AI Gen] 正在向 ${IMAGE_GENERATION_MODEL} 发起 8K 生图请求 (比例: ${aspectRatio}, 尺寸: ${size})...`);
+        console.log(`[AI Gen] 正在向 ${IMAGE_GENERATION_MODEL} 发起生图请求 (比例: ${aspectRatio}, 尺寸: ${size}, 参考图: ${images.length}张)...`);
+        
+        const userContent: any =
+          images.length > 0
+            ? [
+                { type: 'text', text: userPrompt },
+                ...images.map((img) => ({
+                  type: 'image_url',
+                  image_url: { url: img },
+                })),
+              ]
+            : userPrompt;
+
         const response = await fetch(`${AI_BASE_URL}/chat/completions`, {
           method: 'POST',
           headers: {
@@ -510,7 +527,7 @@ Return ONLY a valid JSON object in the following format:
             model: IMAGE_GENERATION_MODEL,
             size: size,
             extra_body: { size },
-            messages: [{ role: 'user', content: userPrompt }],
+            messages: [{ role: 'user', content: userContent }],
           }),
           signal: controller.signal,
         });
@@ -549,14 +566,14 @@ Return ONLY a valid JSON object in the following format:
       return '';
     };
 
-    // 首次生图调用
-    let generatedImage = await sendGenerateRequest(prompt);
+    // 首次多模态生图调用 (带模特与单品切片参考图)
+    let generatedImage = await sendGenerateRequest(prompt, validImages);
 
-    // 容灾重试机制：若首次未能返回图像，以精炼聚焦提示词自动重试
+    // 容灾重试机制：若首次未能返回图像，以精炼指令快速重试
     if (!generatedImage) {
-      console.warn(`[AI Gen] 初次生成未返回有效图像，正在执行自动精简重试...`);
+      console.warn(`[AI Gen] 初次多模态生成未返回有效图像，正在执行自动精简重试...`);
       const fallbackPrompt = `${prompt}\n(Ultra-realistic 8k studio fashion photography, master quality, vertical 3:4 shot)`;
-      generatedImage = await sendGenerateRequest(fallbackPrompt);
+      generatedImage = await sendGenerateRequest(fallbackPrompt, validImages);
     }
 
     return generatedImage || '';
@@ -696,22 +713,22 @@ ${appearancePrompt}
 
     const itemCount = garmentDetailsList?.length || 1;
 
-    const prompt = `[CRITICAL MANDATE: ULTRA-HIGH DEFINITION FULL-BODY 3:4 8K FASHION EDITORIAL PHOTOGRAPH & VIRTUAL TRY-ON]
-A high-end editorial commercial fashion studio photograph of a gorgeous 20-year-old young East Asian ${gender.toLowerCase()} model (${profileName}, youthful authentic East Asian facial features, elegant neat hair, delicate skin complexion, ${bodyStr}) wearing all ${itemCount} pieces of the coordinated fashion outfit:
+    const prompt = `[CRITICAL MANDATE: HIGH-FIDELITY VIRTUAL TRY-ON & 3D FASHION EDITORIAL PHOTOGRAPH]
+Generate a high-end commercial fashion studio portrait of the young East Asian ${gender.toLowerCase()} model shown in Image 1 (${profileName}, ${bodyStr}) realistically, seamlessly, and naturally WEARING the exact coordinated outfit shown in the reference garment images:
 
 ${garmentsDetailedText}
 
-[FULL-BODY COMPOSITION & CAMERA FRAMING (STRICT 3:4 VERTICAL)]:
-- Full-length full-body shot in vertical 3:4 orientation from head to toe. The entire model figure MUST be completely visible in frame from top of hair down to feet and shoes.
-- Realistic 3D cloth physics & tailoring: The clothing pieces are physically tailored and draped onto the body with authentic gravity drapery, silk/fabric wrinkles, and natural shadow cast.
-- If outerwear is styled open, it is realistically unbuttoned and parted open to display the inner top.
-- Setting: Luxury minimalist fashion photography studio, clean neutral soft gray-white seamless background, soft diffused 3-point studio lighting, Hasselblad 35mm master quality, 8k resolution.
-- Negative constraints: half-body, cropped feet, waist-up portrait, cropped head, deformed anatomy, extra limbs, blurry, low resolution, cartoon, 2d sticker.`;
+[FIDELITY & 3D PHYSICS MANDATES]:
+- Image 1 is the TARGET MODEL. Strictly preserve her face, hair, and body physique.
+- Image 2 and subsequent images are the EXACT GARMENTS. Strictly preserve their original colors, patterns, embroidery, silhouette, and textures. Do NOT alter the clothes or invent new items!
+- The clothing pieces must be physically tailored and draped onto the 3D body with authentic cloth physics, natural fabric drapery, organic folds, and realistic studio shadows.
+- Full-length full-body shot in vertical 3:4 orientation from head to toe, centered framing, neutral luxury studio background, Hasselblad 35mm master quality, 8k resolution.
+- Negative constraints: flat 2d sticker, collage seams, ugly, deformed anatomy, extra limbs, bad hands, mutated fingers, blurry, low resolution, cartoon.`;
 
     const generated = await this.callImageGeneration(
       prompt,
       '3:4',
-      []
+      referenceImages
     );
     if (!generated) {
       throw new Error(`AI 3D 试穿大片生成服务 (${IMAGE_GENERATION_MODEL}) 未返回有效大片图像`);
