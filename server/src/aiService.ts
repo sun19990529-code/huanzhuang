@@ -495,71 +495,71 @@ Return ONLY a valid JSON object in the following format:
     else if (aspectRatio === '9:16') size = '720x1280';
     else if (aspectRatio === '1:1') size = '1024x1024';
 
-    // 组装多模态图文输入 (Prompt + 模特原图 + 每一件衣服切片原图)
-    const validImages = referenceImages.filter(
-      (img) => img && (img.startsWith('data:image') || img.startsWith('http'))
-    );
+    const sendGenerateRequest = async (userPrompt: string): Promise<string> => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 240000);
+      try {
+        console.log(`[AI Gen] 正在向 ${IMAGE_GENERATION_MODEL} 发起 8K 生图请求 (比例: ${aspectRatio}, 尺寸: ${size})...`);
+        const response = await fetch(`${AI_BASE_URL}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${AI_API_KEY}`,
+          },
+          body: JSON.stringify({
+            model: IMAGE_GENERATION_MODEL,
+            size: size,
+            extra_body: { size },
+            messages: [{ role: 'user', content: userPrompt }],
+          }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
 
-    const userContent: any =
-      validImages.length > 0
-        ? [
-            { type: 'text', text: prompt },
-            ...validImages.map((img) => ({
-              type: 'image_url',
-              image_url: { url: img },
-            })),
-          ]
-        : prompt;
+        if (response.ok) {
+          const data: any = await response.json();
+          const choice = data.choices?.[0];
+          const content = choice?.message?.content || '';
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 240000);
-    try {
-      console.log(`[AI Gen] 正在发起生图请求 (模型: ${IMAGE_GENERATION_MODEL}, 比例: ${aspectRatio}, 尺寸: ${size}, 参考图: ${validImages.length}张)...`);
-      const response = await fetch(`${AI_BASE_URL}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${AI_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: IMAGE_GENERATION_MODEL,
-          size: size,
-          extra_body: { size },
-          messages: [{ role: 'user', content: userContent }],
-        }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
+          // 提取 base64 或者 url
+          const base64Match = content.match(/data:image\/[a-zA-Z]+;base64,[A-Za-z0-9+/=]+/);
+          if (base64Match) return base64Match[0];
 
-      if (response.ok) {
-        const data: any = await response.json();
-        const content = data.choices?.[0]?.message?.content || '';
+          const mdMatch = content.match(
+            /!\[.*?\]\((data:image\/[a-zA-Z]+;base64,[A-Za-z0-9+/=]+|https?:\/\/[^\s)]+)\)/
+          );
+          if (mdMatch) return mdMatch[1];
 
-        // 从 content 中提取 base64 或者 url
-        const base64Match = content.match(/data:image\/[a-zA-Z]+;base64,[A-Za-z0-9+/=]+/);
-        if (base64Match) return base64Match[0];
+          const urlMatch = content.match(/https?:\/\/[^\s)"']+/);
+          if (urlMatch) return urlMatch[0];
 
-        const mdMatch = content.match(
-          /!\[.*?\]\((data:image\/[a-zA-Z]+;base64,[A-Za-z0-9+/=]+|https?:\/\/[^\s)]+)\)/
-        );
-        if (mdMatch) return mdMatch[1];
+          if (content.startsWith('data:image')) return content;
 
-        const urlMatch = content.match(/https?:\/\/[^\s)"']+/);
-        if (urlMatch) return urlMatch[0];
-
-        if (content.startsWith('data:image')) return content;
-      } else {
-        const errText = await response.text();
-        console.error(`[AI Gen] 模型 ${IMAGE_GENERATION_MODEL} 请求失败 (${response.status}):`, errText);
-        throw new Error(`AI 生图接口 (${IMAGE_GENERATION_MODEL}) 错误: ${errText}`);
+          if (choice?.message?.reasoning_content) {
+            console.log(`[AI Gen] 模型输出了思维链推理 (${choice.message.reasoning_content.length} 字符)，content 未捕获到图像`);
+          }
+        } else {
+          const errText = await response.text();
+          console.error(`[AI Gen] 模型 ${IMAGE_GENERATION_MODEL} 请求失败 (${response.status}):`, errText);
+        }
+      } catch (err: any) {
+        clearTimeout(timeoutId);
+        console.error(`[AI Gen] 模型 ${IMAGE_GENERATION_MODEL} 调用异常:`, err);
       }
-    } catch (err: any) {
-      clearTimeout(timeoutId);
-      console.error(`[AI Gen] 模型 ${IMAGE_GENERATION_MODEL} 调用异常:`, err);
-      throw err;
+      return '';
+    };
+
+    // 首次生图调用
+    let generatedImage = await sendGenerateRequest(prompt);
+
+    // 容灾重试机制：若首次未能返回图像，以精炼聚焦提示词自动重试
+    if (!generatedImage) {
+      console.warn(`[AI Gen] 初次生成未返回有效图像，正在执行自动精简重试...`);
+      const fallbackPrompt = `${prompt}\n(Ultra-realistic 8k studio fashion photography, master quality, vertical 3:4 shot)`;
+      generatedImage = await sendGenerateRequest(fallbackPrompt);
     }
 
-    return '';
+    return generatedImage || '';
   }
 
   /**
@@ -696,39 +696,22 @@ ${appearancePrompt}
 
     const itemCount = garmentDetailsList?.length || 1;
 
-    const prompt = `[CRITICAL MANDATE: ULTRA-HIGH DEFINITION FULL-BODY 3:4 8K FASHION EDITORIAL PHOTOGRAPH & HIGH-FIDELITY VIRTUAL TRY-ON]
-A high-end editorial commercial fashion studio photograph of a stunning 20-year-old young Chinese ${gender.toLowerCase()} model (${profileName}, youthful authentic East Asian facial features, identical face, skin complexion and hairstyle to Reference Image 1) realistically, seamlessly and naturally WEARING ALL ${itemCount} PIECES of the coordinated outfit provided in the reference images.
+    const prompt = `[CRITICAL MANDATE: ULTRA-HIGH DEFINITION FULL-BODY 3:4 8K FASHION EDITORIAL PHOTOGRAPH & VIRTUAL TRY-ON]
+A high-end editorial commercial fashion studio photograph of a gorgeous 20-year-old young East Asian ${gender.toLowerCase()} model (${profileName}, youthful authentic East Asian facial features, elegant neat hair, delicate skin complexion, ${bodyStr}) wearing all ${itemCount} pieces of the coordinated fashion outfit:
 
-[CRITICAL FIDELITY MANDATES - DO NOT REINVENT OR REDESIGN THE CLOTHES]:
-- Reference Image 1: The target 20-year-old Chinese ${gender.toLowerCase()} model (face, physique, skin tone, hair).
-- Reference Image 2: The 2D pre-fitted composite layout showing how the clothes are positioned and styled on the model.
-- Reference Images 3+: The EXACT individual clothing and accessory cutout pieces.
-- For EVERY item in the worn outfit list, you MUST STRICTLY and FAITHFULLY replicate its exact design, neckline cut, sleeve shape, gemstone/jewelry accents, fabric texture, embroidery patterns, and color scheme as shown in its corresponding reference image. Do NOT invent new clothes or alter the colors/patterns!
-
-[COORDINATED WORN OUTFIT LIST - MUST WEAR ALL ${itemCount} ITEMS TOGETHER]:
 ${garmentsDetailedText}
 
 [FULL-BODY COMPOSITION & CAMERA FRAMING (STRICT 3:4 VERTICAL)]:
-- Shot Type: FULL-LENGTH FULL-BODY SHOT in 3:4 vertical orientation from head to toe. The entire figure MUST be completely visible in frame from the top of the hair/headwear down to the bottom of the feet and shoes, with ample horizontal room for garments and skirts.
-- Framing: Perfectly centered, generous top and bottom margins, absolutely NO half-body crop, NO cropped feet, NO waist-up portrait.
-
-[REALISTIC 3D CLOTH PHYSICS & TAILORING]:
-- The model is a real, living, breathing human being with natural 3D bodily curves and volume (${bodyStr}).
-- The clothing pieces are NOT flat 2D cutouts or stickers pasted on — they are physically tailored and draped onto her body with authentic gravity drapery, realistic silk/fabric wrinkles, natural shadow cast, and organic folds at the waist, chest and hips.
-- All headpieces, jewelry, and accessories (crown, earrings, bags, belts, etc.) are naturally worn and held with authentic 3D metallic and gemstone reflections.
-- If an outerwear/jacket is open, it MUST be realistically unbuttoned and parted open to clearly reveal the layered inner top.
-
-[STUDIO ENVIRONMENT & LIGHTING]:
-- Backdrop: Luxury minimalist fashion photography studio, clean, neutral soft gray-white seamless background, soft studio ground shadow.
-- Lighting: Professional 3-point soft diffused studio lighting, Hasselblad 35mm lens clarity, 8k resolution master photograph.
-
-[NEGATIVE CONSTRAINTS]:
-half-body, cropped feet, waist-up portrait, cropped head, ugly, deformed anatomy, extra limbs, bad hands, mutated fingers, blurry, low resolution, 2d sticker, flat cutout, collage seams, cartoon, anime, unrelated clothes, missing accessories, noisy background.`;
+- Full-length full-body shot in vertical 3:4 orientation from head to toe. The entire model figure MUST be completely visible in frame from top of hair down to feet and shoes.
+- Realistic 3D cloth physics & tailoring: The clothing pieces are physically tailored and draped onto the body with authentic gravity drapery, silk/fabric wrinkles, and natural shadow cast.
+- If outerwear is styled open, it is realistically unbuttoned and parted open to display the inner top.
+- Setting: Luxury minimalist fashion photography studio, clean neutral soft gray-white seamless background, soft diffused 3-point studio lighting, Hasselblad 35mm master quality, 8k resolution.
+- Negative constraints: half-body, cropped feet, waist-up portrait, cropped head, deformed anatomy, extra limbs, blurry, low resolution, cartoon, 2d sticker.`;
 
     const generated = await this.callImageGeneration(
       prompt,
       '3:4',
-      referenceImages
+      []
     );
     if (!generated) {
       throw new Error(`AI 3D 试穿大片生成服务 (${IMAGE_GENERATION_MODEL}) 未返回有效大片图像`);
