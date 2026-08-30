@@ -490,8 +490,8 @@ Return ONLY a valid JSON object in the following format:
     aspectRatio: '3:4' | '9:16' | '1:1' = '3:4',
     referenceImages: string[] = []
   ): Promise<string> {
-    let size = '768x1024';
-    if (aspectRatio === '3:4') size = '768x1024';
+    let size = '896x1216';
+    if (aspectRatio === '3:4') size = '896x1216';
     else if (aspectRatio === '9:16') size = '720x1280';
     else if (aspectRatio === '1:1') size = '1024x1024';
 
@@ -523,6 +523,7 @@ Return ONLY a valid JSON object in the following format:
         },
         body: JSON.stringify({
           model: IMAGE_GENERATION_MODEL,
+          size: size,
           extra_body: { size },
           messages: [{ role: 'user', content: userContent }],
         }),

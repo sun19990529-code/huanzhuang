@@ -214,6 +214,17 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
     }
   }, [wornItems.length, studioDisplayMode, renderedImageUrl]);
 
+  // 监听 Escape 键：随时取消单品选中缩放框
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSelectedItemId(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   // 自由画板拖拽偏移 (散落衣服在 55% 画布上的绝对位置)
   const [canvasItemPositions, setCanvasItemPositions] = useState<Record<string, { x: number; y: number }>>({});
   const [draggingGarmentId, setDraggingGarmentId] = useState<string | null>(null);
@@ -1317,23 +1328,31 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
       {/* ------------------------------------------------------------- */}
       <div
         ref={canvasRef}
+        onClick={() => setSelectedItemId(null)}
         onMouseMove={handleCanvasMouseMove}
         onMouseUp={handleCanvasMouseUp}
-        className="w-full md:w-[55%] h-full flex flex-col justify-between relative bg-[#FAF8F5] overflow-hidden"
+        className="w-full md:w-[55%] h-full flex flex-col justify-between relative bg-[#FAF8F5] overflow-hidden select-none"
       >
         {/* 画布中央模特舞台 (3:4 黄金画幅) */}
         <div className="absolute inset-0 flex items-center justify-center p-4 pointer-events-none">
-          <div className="relative h-[85vh] aspect-[3/4] flex items-center justify-center">
+          <div
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                setSelectedItemId(null);
+              }
+            }}
+            className="relative h-[85vh] max-h-[860px] aspect-[3/4] rounded-3xl border border-stone-200/80 bg-white/95 shadow-2xl shadow-stone-300/40 flex items-center justify-center overflow-hidden pointer-events-auto transition-all"
+          >
             {/* 模特景深光晕底座 */}
-            <div className="absolute inset-x-8 bottom-0 h-16 bg-stone-300/30 blur-xl rounded-full" />
+            <div className="absolute inset-x-8 bottom-0 h-16 bg-stone-300/30 blur-xl rounded-full pointer-events-none" />
 
             {/* 选项 B：3D 影棚大片原位呈现模式 */}
             {studioDisplayMode === '3D' && renderedImageUrl ? (
-              <div className="relative w-full h-full rounded-3xl overflow-hidden border border-white/20 shadow-2xl bg-stone-900 flex items-center justify-center pointer-events-auto animate-in fade-in zoom-in-95 duration-200">
+              <div className="relative w-full h-full rounded-3xl overflow-hidden border border-white/20 shadow-2xl bg-stone-950 flex items-center justify-center pointer-events-auto animate-in fade-in zoom-in-95 duration-200">
                 <img
                   src={renderedImageUrl}
                   alt="AI 8K 影棚试穿大片"
-                  className="w-full h-full object-contain select-none"
+                  className="w-full h-full object-cover select-none"
                 />
                 
                 {/* 3D 大片悬浮控制胶囊 */}
@@ -1379,7 +1398,11 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
                   <img
                     src={avatar.normalizedImageUrl}
                     alt="模特素体"
-                    className="h-full w-full object-contain pointer-events-auto"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedItemId(null);
+                    }}
+                    className="h-full w-full object-contain pointer-events-auto cursor-default select-none"
                   />
                 ) : (
                   <div className="text-xs text-stone-400">暂无模特素体</div>
