@@ -158,7 +158,62 @@ export class Database {
     };
     this.users.set(adminUser.id, adminUser);
 
-    // 2. 初始化官方公共试衣间高定单品 (isPublic = true, profileId = null)
+    // 2. 初始化标准测试用户 (账号: test@smartwardrobe.com, 密码: password123)
+    const testPass = hashPassword('password123');
+    const testUser: DBUser = {
+      id: 'user-test-fixed-0001',
+      username: 'testuser',
+      email: 'test@smartwardrobe.com',
+      passwordHash: testPass.hash,
+      salt: testPass.salt,
+      nickname: '标准测试用户',
+      avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100',
+      role: 'USER',
+      status: 'NORMAL',
+      dailyCredits: 100,
+      permanentCredits: 500,
+      createdAt: now,
+    };
+    this.users.set(testUser.id, testUser);
+
+    // 为标准测试用户初始化默认身材档案与 3:4 素体
+    const testProfileId = 'profile-test-fixed-0001';
+    const testProfile: UserProfile = {
+      id: testProfileId,
+      userId: testUser.id,
+      name: '我的身材档案',
+      gender: 'FEMALE',
+      isDefault: true,
+      heightCm: 168,
+      weightKg: 50,
+      bustCm: 84,
+      waistCm: 62,
+      hipsCm: 89,
+      bodyType: 'HOURGLASS' as any,
+      skinTone: 'WARM_NATURAL' as any,
+      hairstyle: 'FRENCH_WAVY_LONG' as any,
+      privacyLevel: 'PRIVATE',
+    } as any;
+    this.profiles.set(testProfileId, testProfile);
+
+    const testAvatar: UserAvatar = {
+      id: `avatar-${testProfileId}`,
+      profileId: testProfileId,
+      originalImageUrl: '',
+      normalizedImageUrl: GENERATED_ASSETS.avatarFemaleUrl || GENERATED_ASSETS.avatarUrl,
+      anchorPoints: {
+        neck: [0.5, 0.28],
+        waist: [0.5, 0.53],
+        left_foot: [0.44, 0.88],
+        right_foot: [0.56, 0.88],
+        head: [0.5, 0.12],
+      },
+      isActive: true,
+    };
+    this.avatars.set(testAvatar.id, testAvatar);
+    this.avatars.set(testProfileId, testAvatar);
+
+    // 3. 初始化官方公共试衣间高定单品 (isPublic = true, profileId = null)
     // 高定长裙
     const dressGarmentId = 'g-public-gown-real';
     this.garments.set(dressGarmentId, {
