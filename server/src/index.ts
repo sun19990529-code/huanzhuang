@@ -541,8 +541,7 @@ app.post('/v1/profiles/:id/avatar/upload', requireAuth, async (req: Request, res
       isActive: true,
     };
 
-    db.avatars.set(avatar.id, avatar);
-    db.avatars.set(profileId, avatar);
+    db.saveAvatar(avatar);
 
     res.status(201).json({
       code: 200,
@@ -577,6 +576,7 @@ app.post('/v1/profiles/:id/regenerate-avatar-by-params', requireAuth, async (req
   if (bodyType) (profile as any).bodyType = bodyType;
   if (skinTone) (profile as any).skinTone = skinTone;
   if (hairstyle) (profile as any).hairstyle = hairstyle;
+  db.saveProfile(profile);
 
   const deduction = db.deductCredits(req.user!.id, 1, '基于五维身材参数 AI 重塑模特素体');
   if (!deduction.success) {
@@ -617,8 +617,7 @@ app.post('/v1/profiles/:id/regenerate-avatar-by-params', requireAuth, async (req
       isActive: true,
     };
 
-    db.avatars.set(avatar.id, avatar);
-    db.avatars.set(profileId, avatar);
+    db.saveAvatar(avatar);
 
     res.json({
       code: 200,
@@ -758,7 +757,7 @@ app.post('/v1/garments/auto-detect-upload', requireAuth, async (req: Request, re
           assets,
         };
 
-        db.garments.set(garmentId, newGarment);
+        db.saveGarment(newGarment);
         return newGarment;
       })
     );
@@ -880,7 +879,7 @@ app.delete('/v1/garments/:id', requireAuth, (req: Request, res: Response) => {
     return res.status(403).json({ code: 403, message: '无权删除此单品：非本账号私有资产' });
   }
 
-  db.garments.delete(garmentId);
+  db.deleteGarment(garmentId);
   res.json({ code: 200, message: '单品已成功从您的衣橱删除' });
 });
 
@@ -930,7 +929,7 @@ app.post('/v1/cms/garments/upload-official', requireAdmin, async (req: Request, 
     assets,
   };
 
-  db.garments.set(garmentId, newOfficialGarment);
+  db.saveGarment(newOfficialGarment);
 
   res.status(201).json({
     code: 200,
@@ -1198,7 +1197,7 @@ app.post('/v1/outfits', requireAuth, (req: Request, res: Response) => {
     createdAt: new Date().toISOString(),
   };
 
-  db.outfits.set(outfitId, newOutfit);
+  db.saveOutfit(newOutfit);
   res.status(201).json({ code: 200, message: '搭配套装保存成功', data: newOutfit });
 });
 

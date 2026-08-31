@@ -766,24 +766,41 @@ export class Database {
     return clonedGarment;
   }
 
-  // 保存单品到数据库
+// 保存单品到数据库 (内存 + PostgreSQL 实时落盘)
   public saveGarment(garment: ExtendedGarmentItem): void {
     this.garments.set(garment.id, garment);
     const now = new Date().toISOString();
     pgPool.query(
-      `INSERT INTO garments (id, profile_id, is_public, title, primary_category, sub_category, colors, patterns, material, brand, price_cents, external_buy_url, is_archived, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-       ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, primary_category = EXCLUDED.primary_category, sub_category = EXCLUDED.sub_category, colors = EXCLUDED.colors, material = EXCLUDED.material, is_archived = EXCLUDED.is_archived`,
-      [garment.id, garment.profileId, garment.isPublic, garment.title, garment.primaryCategory, garment.subCategory, JSON.stringify(garment.colors || []), JSON.stringify(garment.patterns || []), garment.material, garment.brand, garment.priceCents, garment.externalBuyUrl, garment.isArchived || false, now]
+      `INSERT INTO garments (id, profile_id, is_public, title, primary_category, sub_category, colors, patterns, material, brand, price_cents, external_buy_url, is_archived, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+       ON CONFLICT (id) DO UPDATE SET
+         profile_id = EXCLUDED.profile_id,
+         is_public = EXCLUDED.is_public,
+         title = EXCLUDED.title,
+         primary_category = EXCLUDED.primary_category,
+         sub_category = EXCLUDED.sub_category,
+         colors = EXCLUDED.colors,
+         patterns = EXCLUDED.patterns,
+         material = EXCLUDED.material,
+         brand = EXCLUDED.brand,
+         price_cents = EXCLUDED.price_cents,
+         external_buy_url = EXCLUDED.external_buy_url,
+         is_archived = EXCLUDED.is_archived,
+         updated_at = EXCLUDED.updated_at`,
+      [garment.id, garment.profileId || null, !!garment.isPublic, garment.title, garment.primaryCategory, garment.subCategory || null, JSON.stringify(garment.colors || []), JSON.stringify(garment.patterns || []), garment.material || '优质面料', garment.brand || null, garment.priceCents || null, garment.externalBuyUrl || null, !!garment.isArchived, now, now]
     ).then(() => {
       if (garment.assets && garment.assets.length > 0) {
         for (const ast of garment.assets) {
           pgPool.query(
             `INSERT INTO garment_assets (id, garment_id, state_type, png_url, default_anchor, base_layer_weight, created_at)
              VALUES ($1, $2, $3, $4, $5, $6, $7)
-             ON CONFLICT (id) DO UPDATE SET png_url = EXCLUDED.png_url, state_type = EXCLUDED.state_type`,
-            [ast.id, ast.garmentId, ast.stateType, ast.pngUrl, JSON.stringify(ast.defaultAnchor || { x: 0.5, y: 0.5 }), ast.baseLayerWeight || 10, now]
-          ).catch(() => {});
+             ON CONFLICT (id) DO UPDATE SET
+               png_url = EXCLUDED.png_url,
+               state_type = EXCLUDED.state_type,
+               default_anchor = EXCLUDED.default_anchor,
+               base_layer_weight = EXCLUDED.base_layer_weight`,
+            [ast.id, garment.id, ast.stateType || 'DEFAULT', ast.pngUrl, JSON.stringify(ast.defaultAnchor || { x: 0.5, y: 0.5 }), ast.baseLayerWeight || 10, now]
+          ).catch((e) => console.warn('[Database] 保存切片资产失败:', e.message));
         }
       }
     }).catch((err) => console.warn('[Database] 保存单品失败:', err.message));
@@ -792,7 +809,99 @@ export class Database {
   // 删除单品
   public deleteGarment(id: string): void {
     this.garments.delete(id);
+    pgPool.query('DELETE FROM garment_assets WHERE garment_id = $1', [id]).catch(() => {});
     pgPool.query('DELETE FROM garments WHERE id = $1', [id]).catch((err) => console.warn('[Database] 删除单品失败:', err.message));
+  }
+
+  // 保存模特素体 (内存 + PostgreSQL 实时落盘)
+  public saveAvatar(avatar: UserAvatar): void {
+    this.avatars.set(avatar.id, avatar);
+    this.avatars.set(avatar.profileId, avatar);
+    const now = new Date().toISOString();
+    pgPool.query(
+      `INSERT INTO avatars (id, profile_id, original_image_url, normalized_image_url, anchor_points, is_active, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (id) DO UPDATE SET
+         original_image_url = EXCLUDED.original_image_url,
+         normalized_image_url = EXCLUDED.normalized_image_url,
+         anchor_points = EXCLUDED.anchor_points,
+         is_active = EXCLUDED.is_active`,
+      [avatar.id, avatar.profileId, avatar.originalImageUrl || '', avatar.normalizedImageUrl, JSON.stringify(avatar.anchorPoints || {}), avatar.isActive, now]
+    ).catch((err) => console.warn('[Database] 保存模特素体到 PostgreSQL 失败:', err.message));
+  }
+
+  // 保存用户角色 Profile
+  public saveProfile(profile: UserProfile): void {
+    this.profiles.set(profile.id, profile);
+    const now = new Date().toISOString();
+    pgPool.query(
+      `INSERT INTO profiles (id, user_id, name, gender, is_default, height_cm, weight_kg, bust_cm, waist_cm, hips_cm, is_custom_body_params, privacy_level, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+       ON CONFLICT (id) DO UPDATE SET
+         name = EXCLUDED.name,
+         gender = EXCLUDED.gender,
+         is_default = EXCLUDED.is_default,
+         height_cm = EXCLUDED.height_cm,
+         weight_kg = EXCLUDED.weight_kg,
+         bust_cm = EXCLUDED.bust_cm,
+         waist_cm = EXCLUDED.waist_cm,
+         hips_cm = EXCLUDED.hips_cm,
+         is_custom_body_params = EXCLUDED.is_custom_body_params,
+         privacy_level = EXCLUDED.privacy_level,
+         updated_at = EXCLUDED.updated_at`,
+      [profile.id, profile.userId, profile.name, profile.gender, !!profile.isDefault, profile.heightCm, profile.weightKg || 50, profile.bustCm || 84, profile.waistCm || 62, profile.hipsCm || 89, profile.isCustomBodyParams ?? true, profile.privacyLevel || 'PRIVATE', now, now]
+    ).catch((err) => console.warn('[Database] 保存角色档案到 PostgreSQL 失败:', err.message));
+  }
+
+  // 保存套装 Lookbook
+  public saveOutfit(outfit: DBOutfit): void {
+    this.outfits.set(outfit.id, outfit);
+    const now = new Date().toISOString();
+    pgPool.query(
+      `INSERT INTO outfits (id, profile_id, creator_user_id, title, preview_image_url, is_vton_rendered, is_public, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       ON CONFLICT (id) DO UPDATE SET
+         title = EXCLUDED.title,
+         preview_image_url = EXCLUDED.preview_image_url,
+         is_vton_rendered = EXCLUDED.is_vton_rendered,
+         is_public = EXCLUDED.is_public,
+         updated_at = EXCLUDED.updated_at`,
+      [outfit.id, outfit.profileId, outfit.creatorUserId, outfit.title, outfit.previewImageUrl || null, !!outfit.isVtonRendered, !!outfit.isPublic, outfit.createdAt || now, now]
+    ).then(() => {
+      pgPool.query('DELETE FROM outfit_items WHERE outfit_id = $1', [outfit.id]).then(() => {
+        if (Array.isArray(outfit.items)) {
+          for (let idx = 0; idx < outfit.items.length; idx++) {
+            const item = outfit.items[idx];
+            pgPool.query(
+              `INSERT INTO outfit_items (id, outfit_id, garment_id, applied_state, z_index, transform_matrix, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+              [`oi-${outfit.id}-${idx}`, outfit.id, item.garmentId, item.appliedState || 'DEFAULT', item.zIndex || idx, JSON.stringify(item.transformMatrix || {}), now]
+            ).catch(() => {});
+          }
+        }
+      }).catch(() => {});
+    }).catch((err) => console.warn('[Database] 保存套装到 PostgreSQL 失败:', err.message));
+  }
+
+  // 删除套装
+  public deleteOutfit(outfitId: string): void {
+    this.outfits.delete(outfitId);
+    pgPool.query('DELETE FROM outfit_items WHERE outfit_id = $1', [outfitId]).catch(() => {});
+    pgPool.query('DELETE FROM outfits WHERE id = $1', [outfitId]).catch((err) => console.warn('[Database] 删除套装失败:', err.message));
+  }
+
+  // 保存 OOTD 日记
+  public saveOotdLog(log: DBOotdLog): void {
+    this.ootdLogs.set(log.id, log);
+    const now = new Date().toISOString();
+    pgPool.query(
+      `INSERT INTO ootd_logs (id, profile_id, outfit_id, log_date, weather_tag, notes, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (id) DO UPDATE SET
+         weather_tag = EXCLUDED.weather_tag,
+         notes = EXCLUDED.notes`,
+      [log.id, log.profileId, log.outfitId, log.logDate, log.weatherTag || null, log.notes || null, log.createdAt || now]
+    ).catch((err) => console.warn('[Database] 保存 OOTD 日历到 PostgreSQL 失败:', err.message));
   }
 
   // 原子扣除积分
