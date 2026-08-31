@@ -236,12 +236,13 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  startScaleY: number;
  } | null>(null);
 
- useEffect(() => {
- if (renderedImageUrl && !isRendering) {
- setStudioDisplayMode('3D');
- setIsOutfitChangedSinceRender(false);
- }
- }, [renderedImageUrl, isRendering]);
+  useEffect(() => {
+    if (renderedImageUrl && !isRendering) {
+      setStudioDisplayMode('3D');
+      setIsOutfitChangedSinceRender(false);
+      showToast('✨ AI 8K 影棚试穿大片已生成完毕，已呈现在画布中央！', 'info');
+    }
+  }, [renderedImageUrl, isRendering]);
 
  // 监听穿戴衣物或微调变动：若在 3D 模式下有改动，自动平滑切回 2D 拼搭模式并提示可重新生成
  const prevWornCountRef = useRef(wornItems.length);
