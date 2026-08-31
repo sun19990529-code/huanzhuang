@@ -1,3 +1,4 @@
+import { BrandLogo } from '../components/BrandLogo';
 import React, { useState } from 'react';
 import { ShieldCheck, Lock, User, ArrowRight, Sparkles, KeyRound } from 'lucide-react';
 import { adminLogin, CurrentUser } from '../api';

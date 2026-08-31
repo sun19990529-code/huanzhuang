@@ -1,5 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { GarmentItem, GarmentCategory } from '@smart-wardrobe/shared';
+import { GarmentDetailDrawer } from '../components/GarmentDetailDrawer';
+import { showToast, showConfirm } from '../components/Toast';
 import {
   UploadCloud,
   Plus,
@@ -18,6 +20,10 @@ import {
   Square,
   Edit2,
   Wand2,
+  ChevronUp,
+  ChevronDown,
+  Eye,
+  Trash2,
 } from 'lucide-react';
 
 interface WardrobeGalleryViewProps {
@@ -29,6 +35,7 @@ interface WardrobeGalleryViewProps {
   onUploadGarmentWithFile: (file: File, title: string, category: GarmentCategory) => void;
   onUploadBatchWithFile: (file: File) => void;
   onNavigateToStudio: () => void;
+  onDeleteGarment?: (garmentId: string) => void;
   onNavigateToSlotMachine?: () => void;
 }
 
@@ -41,7 +48,11 @@ export const WardrobeGalleryView: React.FC<WardrobeGalleryViewProps> = ({
   onUploadGarmentWithFile,
   onUploadBatchWithFile,
   onNavigateToStudio,
+  onDeleteGarment,
 }) => {
+  const [selectedGarmentForDrawer, setSelectedGarmentForDrawer] = useState<GarmentItem | null>(null);
+  const [isBannerCollapsed, setIsBannerCollapsed] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string>('ALL');
   const [tabType, setTabType] = useState<'PRIVATE' | 'PUBLIC'>('PRIVATE');
   const [searchQuery, setSearchQuery] = useState('');
@@ -144,7 +155,7 @@ export const WardrobeGalleryView: React.FC<WardrobeGalleryViewProps> = ({
         ];
         setBatchItems(detected);
         setBatchCostCredits(2);
-        setBatchMessage('🌸 哇！一次性捕获了 3 件心动单品，已享打包优惠（仅消耗 2 积分）～');
+        setBatchMessage('一次性智能捕获了 3 件心动单品，已享打包优惠（仅消耗 2 积分）～');
         setIsBatchModal(true);
       };
       reader.readAsDataURL(file);
@@ -197,7 +208,7 @@ export const WardrobeGalleryView: React.FC<WardrobeGalleryViewProps> = ({
         <div className="lg:col-span-5 bg-white/95 p-6 md:p-8 rounded-[28px] border border-[#EAE6DF] shadow-xs flex flex-col justify-between space-y-4">
           <div className="space-y-2">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-50 text-[#D63031] text-xs font-bold shadow-xs border border-rose-100">
-              <Heart className="w-3.5 h-3.5 fill-[#D63031] text-[#D63031]" />
+              <Sparkles className="w-3.5 h-3.5 text-[#D63031]" />
               数字化胶囊衣橱
             </div>
             <h2 className="text-2xl md:text-3xl font-extrabold text-stone-800">
@@ -301,12 +312,23 @@ export const WardrobeGalleryView: React.FC<WardrobeGalleryViewProps> = ({
       <div>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-extrabold text-stone-800 uppercase tracking-wide">
-            {tabType === 'PRIVATE' ? '🌸 我的专属单品' : '🛍️ 官方公共衣柜灵感'} ({filtered.length})
+            {tabType === 'PRIVATE' ? '我的私有衣橱' : '官方公共衣柜'} ({filtered.length})
           </h3>
           <span className="text-xs text-stone-400">点击【穿上试衣】即可直接上身</span>
         </div>
 
-        {filtered.length === 0 ? (
+                {isUploading ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={'sk-' + i} className="bg-white rounded-[24px] border border-[#EAE6DF] p-3 space-y-3 animate-pulse">
+                <div className="h-4 bg-stone-200 rounded-full w-1/3" />
+                <div className="h-32 bg-stone-200/70 rounded-2xl" />
+                <div className="h-4 bg-stone-200 rounded-full w-2/3" />
+                <div className="h-7 bg-stone-200 rounded-xl w-full" />
+              </div>
+            ))}
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="text-center py-16 bg-white/60 rounded-[32px] border border-[#EAE6DF] space-y-3">
             <span className="text-4xl"></span>
             <p className="text-stone-500 text-xs">暂无此分类单品，快去点击上方上传你的衣服吧！</p>
@@ -337,7 +359,7 @@ export const WardrobeGalleryView: React.FC<WardrobeGalleryViewProps> = ({
                     />
                   </div>
 
-                  <div className="h-32 rounded-2xl bg-[#FAF8F5] flex items-center justify-center p-2 mb-2 relative overflow-hidden border border-[#EAE6DF]">
+                  <div onClick={() => setSelectedGarmentForDrawer(item)} className="h-32 rounded-2xl bg-[#FAF8F5] flex items-center justify-center p-2 mb-2 relative overflow-hidden border border-[#EAE6DF] cursor-pointer hover:border-stone-400 transition-colors" title="点击查看单品 360° 档案详情">
                     {item.assets?.[0]?.pngUrl ? (
                       <img
                         src={item.assets[0].pngUrl}

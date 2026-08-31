@@ -20,6 +20,7 @@ Thumbs.db
 # IDE & Editor
 .vscode/
 .idea/
+scratch/
 
 # Dynamic data
 database/users.json

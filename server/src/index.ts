@@ -1182,7 +1182,7 @@ app.get('/v1/outfits', requireAuth, (req: Request, res: Response) => {
 });
 
 app.post('/v1/outfits', requireAuth, (req: Request, res: Response) => {
-  const { profileId, title, previewImageUrl, items } = req.body;
+  const { profileId, title, previewImageUrl, items, sceneTag } = req.body;
   const outfitId = `outfit-${Date.now()}`;
 
   const newOutfit = {
@@ -1193,6 +1193,7 @@ app.post('/v1/outfits', requireAuth, (req: Request, res: Response) => {
     previewImageUrl: previewImageUrl || '',
     isVtonRendered: false,
     isPublic: false,
+    sceneTag: sceneTag || 'CASUAL',
     items: items || [],
     createdAt: new Date().toISOString(),
   };
@@ -1320,13 +1321,99 @@ app.post('/v1/ootd', requireAuth, (req: Request, res: Response) => {
   res.status(201).json({ code: 200, message: 'OOTD 日历记录已保存', data: entry });
 });
 
-app.get('/v1/friends', requireAuth, (req: Request, res: Response) => {
-  res.json({ code: 200, data: [] });
+// --------------------------------------------------------------------
+// 7. 好友社交与跨衣橱穿搭 (Friendships & Mutual Dressing)
+// --------------------------------------------------------------------
+app.get('/v1/friends/my-code', requireAuth, (req: Request, res: Response) => {
+  const code = db.getFriendCode(req.user!.id);
+  res.json({ code: 200, data: { friendCode: code } });
 });
 
-app.get('/v1/suggestions', requireAuth, (req: Request, res: Response) => {
-  const list = Array.from(db.suggestions.values()).filter((s) => s.targetUserId === req.user!.id);
+app.get('/v1/friends', requireAuth, (req: Request, res: Response) => {
+  const friends = db.getFriends(req.user!.id);
+  res.json({ code: 200, data: friends });
+});
+
+app.post('/v1/friends/add', requireAuth, (req: Request, res: Response) => {
+  const { friendCode } = req.body;
+  try {
+    const friend = db.addFriendByCode(req.user!.id, friendCode);
+    res.json({ code: 200, message: '🎉 已成功添加好友并授权衣橱！', data: friend });
+  } catch (err: any) {
+    res.status(400).json({ code: 400, message: err.message || '添加好友失败' });
+  }
+});
+
+app.delete('/v1/friends/:friendUserId', requireAuth, (req: Request, res: Response) => {
+  db.removeFriend(req.user!.id, req.params.friendUserId);
+  res.json({ code: 200, message: '已解除好友关系' });
+});
+
+// 获取好友的专属模特与开放单品以进行“为TA搭配”
+// 获取指定好友的 Lookbook 搭配集 (Defect 16)
+app.get('/v1/friends/:friendUserId/outfits', requireAuth, (req: Request, res: Response) => {
+  const outfits = db.getFriendOutfits(req.params.friendUserId);
+  res.json({ code: 200, data: outfits });
+});
+
+app.get('/v1/friends/:friendUserId/profile-data', requireAuth, (req: Request, res: Response) => {
+  const { friendUserId } = req.params;
+  const friendProfiles = Array.from(db.profiles.values()).filter((p) => p.userId === friendUserId);
+  const def = friendProfiles.find((p) => p.isDefault) || friendProfiles[0] || null;
+  const av = def ? db.avatars.get(def.id) : null;
+  const garments = def ? Array.from(db.garments.values()).filter((g) => g.profileId === def.id && !g.isArchived) : [];
+  res.json({ code: 200, data: { profile: def, avatar: av, garments } });
+});
+
+// 推送穿搭方案给好友
+app.post('/v1/friends/suggest-outfit', requireAuth, (req: Request, res: Response) => {
+  const { targetUserId, targetProfileId, title, garmentIds, previewImageUrl, notes } = req.body;
+  if (!targetUserId || !targetProfileId) {
+    return res.status(400).json({ code: 400, message: '必须指定目标好友和角色档案' });
+  }
+  const sug = db.suggestOutfit({
+    fromUserId: req.user!.id,
+    fromNickname: req.user!.nickname,
+    targetUserId,
+    targetProfileId,
+    title,
+    garmentIds: garmentIds || [],
+    previewImageUrl,
+    notes,
+  });
+  res.json({ code: 200, message: '✨ 搭配方案已成功推送给好友！', data: sug });
+});
+
+app.get('/v1/friends/suggestions', requireAuth, (req: Request, res: Response) => {
+  const list = db.getSuggestions(req.user!.id);
   res.json({ code: 200, data: list });
+});
+
+app.post('/v1/friends/suggestions/:id/accept', requireAuth, (req: Request, res: Response) => {
+  try {
+    const newOutfit = db.acceptSuggestion(req.params.id, req.user!.id);
+    res.json({ code: 200, message: '✨ 已成功采纳好友建议并存入我的 Lookbook 套装库！', data: newOutfit });
+  } catch (err: any) {
+    res.status(400).json({ code: 400, message: err.message || '采纳建议失败' });
+  }
+});
+
+// 外部图片 CORS 去白底代理 (Defect 7)
+app.get('/v1/proxy/image', async (req: Request, res: Response) => {
+  const url = req.query.url as string;
+  if (!url) return res.status(400).send('Missing url');
+  try {
+    const fetched = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!fetched.ok) return res.status(fetched.status).send('Failed to fetch image');
+    const contentType = fetched.headers.get('content-type') || 'image/png';
+    const buffer = Buffer.from(await fetched.arrayBuffer());
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.send(buffer);
+  } catch (err: any) {
+    res.status(500).send('Image proxy error: ' + err.message);
+  }
 });
 
 // --------------------------------------------------------------------

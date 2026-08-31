@@ -38,6 +38,7 @@ export interface DBUser {
   passwordHash: string;
   salt: string;
   nickname: string;
+  friendCode?: string;
   avatarUrl?: string;
   role: 'USER' | 'ADMIN';
   status: 'NORMAL' | 'FROZEN' | 'BANNED';
@@ -54,6 +55,7 @@ export interface DBOutfit {
   previewImageUrl?: string;
   isVtonRendered: boolean;
   isPublic: boolean;
+  sceneTag?: string;
   items: OutfitWearItem[];
   createdAt: string;
 }
@@ -96,6 +98,14 @@ export interface DBCreditLedger {
   createdAt: string;
 }
 
+export interface DBFriendship {
+  id: string;
+  userId: string;
+  friendUserId: string;
+  status: 'ACCEPTED' | 'PENDING';
+  createdAt: string;
+}
+
 export interface OutfitSuggestion {
   id: string;
   fromUserId: string;
@@ -129,6 +139,7 @@ export class Database {
   public asyncTasks: Map<string, DBAsyncTask> = new Map();
   public creditLedger: DBCreditLedger[] = [];
   public suggestions: Map<string, OutfitSuggestion> = new Map();
+  public friendships: Map<string, DBFriendship> = new Map();
   public placementMemory: Map<string, any> = new Map();
 
   // 会话 Token 映射 (token -> { userId, createdAt })
@@ -1015,6 +1026,182 @@ export class Database {
       totalPermanentPool,
       totalLedgerTransactions: this.creditLedger.length,
     };
+  }
+
+
+  // 获取或生成用户的 6 位专属衣橱邀请码 (如 SW-8869)
+  public getFriendCode(userId: string): string {
+    const user = this.users.get(userId);
+    if (!user) return 'SW-0000';
+    if (user.friendCode) return user.friendCode;
+    
+    // 生成基于用户 ID 或随机的 6 位大写码
+    const hash = crypto.createHash('md5').update(userId).digest('hex').slice(0, 4).toUpperCase();
+    const code = `SW-${hash}`;
+    user.friendCode = code;
+    pgPool.query('UPDATE users SET friend_code = $1 WHERE id = $2', [code, userId]).catch(() => {});
+    return code;
+  }
+
+  // 通过邀请码或用户名/邮箱添加好友 (双向关联，Defect 4 修复)
+  public addFriendByCode(userId: string, codeOrKeyword: string): { friendUser: DBUser; roleTag: string; garmentCount: number } {
+    const trimmed = (codeOrKeyword || '').trim();
+    if (!trimmed) throw new Error('请输入好友的 6 位邀请码或邮箱');
+
+    const targetUser = Array.from(this.users.values()).find(
+      (u) =>
+        (u.friendCode && u.friendCode.toUpperCase() === trimmed.toUpperCase()) ||
+        (u.email && u.email.toLowerCase() === trimmed.toLowerCase()) ||
+        (u.username && u.username.toLowerCase() === trimmed.toLowerCase())
+    );
+
+    if (!targetUser) {
+      throw new Error('未找到匹配的好友，请核对 6 位邀请码或邮箱');
+    }
+
+    if (targetUser.id === userId) {
+      throw new Error('不能添加自己为好友');
+    }
+
+    const now = new Date().toISOString();
+    const fId1 = `friend-${userId}-${targetUser.id}`;
+    const fId2 = `friend-${targetUser.id}-${userId}`;
+
+    const f1: DBFriendship = { id: fId1, userId, friendUserId: targetUser.id, status: 'ACCEPTED', createdAt: now };
+    const f2: DBFriendship = { id: fId2, userId: targetUser.id, friendUserId: userId, status: 'ACCEPTED', createdAt: now };
+
+    this.friendships.set(f1.id, f1);
+    this.friendships.set(f2.id, f2);
+
+    // 异步落盘 PostgreSQL
+    pgPool.query(
+      `INSERT INTO friendships (id, user_id, friend_user_id, status, created_at)
+       VALUES ($1, $2, $3, $4, $5), ($6, $7, $8, $9, $10)
+       ON CONFLICT (user_id, friend_user_id) DO UPDATE SET status = 'ACCEPTED'`,
+      [f1.id, f1.userId, f1.friendUserId, f1.status, f1.createdAt, f2.id, f2.userId, f2.friendUserId, f2.status, f2.createdAt]
+    ).catch(() => {});
+
+    const targetProfiles = Array.from(this.profiles.values()).filter((p) => p.userId === targetUser.id);
+    const defProf = targetProfiles.find((p) => p.isDefault) || targetProfiles[0] || null;
+    const gCount = Array.from(this.garments.values()).filter((g) => g.profileId === defProf?.id && !g.isArchived).length;
+
+    return {
+      friendUser: targetUser,
+      roleTag: defProf ? `${defProf.gender === 'MALE' ? '男士' : '女士'} · 专属模特` : '法式极简 · 时尚达人',
+      garmentCount: gCount,
+    };
+  }
+
+  // 获取真实好友列表
+  public getFriends(userId: string) {
+    const friendIds = Array.from(this.friendships.values())
+      .filter((f) => f.userId === userId && f.status === 'ACCEPTED')
+      .map((f) => f.friendUserId);
+
+    return friendIds.map((fId) => {
+      const fUser = this.users.get(fId);
+      const fProfiles = Array.from(this.profiles.values()).filter((p) => p.userId === fId);
+      const defProf = fProfiles.find((p) => p.isDefault) || fProfiles[0] || null;
+      const gCount = Array.from(this.garments.values()).filter((g) => g.profileId === defProf?.id && !g.isArchived).length;
+
+      return {
+        id: `f-${fId}`,
+        friendUserId: fId,
+        name: fUser?.nickname || '衣橱好友',
+        username: fUser?.username,
+        avatarUrl: fUser?.avatarUrl,
+        friendCode: this.getFriendCode(fId),
+        roleTag: defProf ? `${defProf.gender === 'MALE' ? '男士' : '女士'} · 专属模特` : '法式极简 · 时尚达人',
+        garmentCount: gCount,
+        defaultProfileId: defProf?.id || null,
+      };
+    });
+  }
+
+  // 解除好友关系
+  public removeFriend(userId: string, friendUserId: string): boolean {
+    const fId1 = `friend-${userId}-${friendUserId}`;
+    const fId2 = `friend-${friendUserId}-${userId}`;
+    this.friendships.delete(fId1);
+    this.friendships.delete(fId2);
+    pgPool.query('DELETE FROM friendships WHERE (user_id = $1 AND friend_user_id = $2) OR (user_id = $2 AND friend_user_id = $1)', [userId, friendUserId]).catch(() => {});
+    return true;
+  }
+
+  // 跨衣橱为好友推送穿搭方案
+  public suggestOutfit(payload: {
+    fromUserId: string;
+    fromNickname: string;
+    targetUserId: string;
+    targetProfileId: string;
+    title: string;
+    garmentIds: string[];
+    previewImageUrl?: string;
+    notes?: string;
+  }): OutfitSuggestion {
+    const id = `sug-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+    const sug: OutfitSuggestion = {
+      id,
+      fromUserId: payload.fromUserId,
+      fromNickname: payload.fromNickname,
+      targetUserId: payload.targetUserId,
+      targetProfileId: payload.targetProfileId,
+      title: payload.title || '好友为你定制的灵感搭配',
+      garmentIds: payload.garmentIds,
+      previewImageUrl: payload.previewImageUrl,
+      isAccepted: false,
+      createdAt: new Date().toISOString(),
+    };
+    this.suggestions.set(id, sug);
+    pgPool.query(
+      `INSERT INTO outfit_suggestions (id, from_user_id, from_nickname, target_user_id, target_profile_id, title, garment_ids, preview_image_url, notes, is_accepted, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      [sug.id, sug.fromUserId, sug.fromNickname, sug.targetUserId, sug.targetProfileId, sug.title, JSON.stringify(sug.garmentIds), sug.previewImageUrl, payload.notes || '', sug.isAccepted, sug.createdAt]
+    ).catch(() => {});
+    return sug;
+  }
+
+  // 采纳好友推送的穿搭方案
+  public acceptSuggestion(suggestionId: string, recipientUserId: string): DBOutfit {
+    const sug = this.suggestions.get(suggestionId);
+    if (!sug) throw new Error('搭配建议不存在');
+    if (sug.targetUserId !== recipientUserId) throw new Error('无权采纳此建议');
+
+    sug.isAccepted = true;
+    pgPool.query('UPDATE outfit_suggestions SET is_accepted = true WHERE id = $1', [suggestionId]).catch(() => {});
+
+    // 创建对应 Outfit
+    const outfitId = `outfit-sug-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+    const newOutfit: DBOutfit = {
+      id: outfitId,
+      profileId: sug.targetProfileId,
+      creatorUserId: recipientUserId,
+      title: `[好友灵感] ${sug.title}`,
+      previewImageUrl: sug.previewImageUrl,
+      isVtonRendered: !!sug.previewImageUrl,
+      isPublic: false,
+      sceneTag: 'CASUAL',
+      items: sug.garmentIds.map((gId, idx) => ({
+        garmentId: gId,
+        appliedState: 'DEFAULT' as any,
+        zIndex: idx + 1,
+        transformMatrix: { scaleX: 1, scaleY: 1, offsetX: 0, offsetY: 0, rotation: 0 },
+      })),
+      createdAt: new Date().toISOString(),
+    };
+    this.outfits.set(newOutfit.id, newOutfit);
+    return newOutfit;
+  }
+
+  // 获取好友的 Lookbook 搭配库 (Defect 16)
+  public getFriendOutfits(friendUserId: string): DBOutfit[] {
+    const friendProfiles = Array.from(this.profiles.values()).filter((p) => p.userId === friendUserId);
+    const profileIds = new Set(friendProfiles.map((p) => p.id));
+    return Array.from(this.outfits.values()).filter((o) => profileIds.has(o.profileId) || o.creatorUserId === friendUserId);
+  }
+
+  public getSuggestions(userId: string): OutfitSuggestion[] {
+    return Array.from(this.suggestions.values()).filter((s) => s.targetUserId === userId);
   }
 
   // 每日零点重置补齐至 100 积分

@@ -439,6 +439,7 @@ export async function saveOutfit(payload: {
   profileId: string;
   title: string;
   previewImageUrl?: string;
+  sceneTag?: string;
   items: OutfitWearItem[];
 }): Promise<OutfitData> {
   const res = await fetch(`${API_BASE}/outfits`, {
@@ -479,8 +480,21 @@ export interface OutfitData {
   previewImageUrl?: string;
   isVtonRendered: boolean;
   isPublic?: boolean;
+  sceneTag?: string;
   items: OutfitWearItem[];
   createdAt: string;
+}
+
+export interface FriendItem {
+  id: string;
+  friendUserId: string;
+  name: string;
+  username?: string;
+  avatarUrl?: string;
+  friendCode: string;
+  roleTag: string;
+  garmentCount: number;
+  defaultProfileId?: string | null;
 }
 
 export interface OotdEntry {
@@ -528,28 +542,84 @@ export async function logOotdEntry(payload: {
   return data.data;
 }
 
-export async function suggestOutfitToFriend(
-  friendUserId: string,
-  friendProfileId: string,
-  payload: { title: string; garmentIds: string[]; previewImageUrl?: string }
-): Promise<any> {
-  const res = await fetch(`${API_BASE}/friends/${friendUserId}/profiles/${friendProfileId}/suggest-outfit`, {
+export async function fetchMyFriendCode(): Promise<string> {
+  const res = await fetch(`${API_BASE}/friends/my-code`, { headers: authHeaders() });
+  const data = await res.json();
+  return data.data?.friendCode || 'SW-0000';
+}
+
+export async function fetchFriends(): Promise<FriendItem[]> {
+  const res = await fetch(`${API_BASE}/friends`, { headers: authHeaders() });
+  const data = await res.json();
+  return data.data || [];
+}
+
+export async function addFriendByCode(friendCode: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/friends/add`, {
+    method: 'POST',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ friendCode }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || '添加好友失败');
+  return data.data;
+}
+
+export async function removeFriend(friendUserId: string): Promise<void> {
+  await fetch(`${API_BASE}/friends/${friendUserId}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+}
+
+export async function fetchFriendOutfits(friendUserId: string): Promise<OutfitData[]> {
+  const res = await fetch(`${API_BASE}/friends/${friendUserId}/outfits`, { headers: authHeaders() });
+  const data = await res.json();
+  return data.data || [];
+}
+
+export async function fetchFriendProfileData(friendUserId: string): Promise<{ profile: any; avatar: any; garments: any[] }> {
+  const res = await fetch(`${API_BASE}/friends/${friendUserId}/profile-data`, { headers: authHeaders() });
+  const data = await res.json();
+  return data.data;
+}
+
+export async function fetchReceivedSuggestions(): Promise<OutfitSuggestionData[]> {
+  const res = await fetch(`${API_BASE}/friends/suggestions`, { headers: authHeaders() });
+  const data = await res.json();
+  return data.data || [];
+}
+
+export async function sendOutfitSuggestion(payload: {
+  targetUserId: string;
+  targetProfileId: string;
+  title: string;
+  garmentIds: string[];
+  previewImageUrl?: string;
+  notes?: string;
+}): Promise<any> {
+  const res = await fetch(`${API_BASE}/friends/suggest-outfit`, {
     method: 'POST',
     headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(payload),
   });
   const data = await res.json();
+  if (!res.ok) throw new Error(data.message || '推送建议失败');
   return data.data;
 }
 
-export async function acceptOutfitSuggestion(suggestionId: string): Promise<OutfitData> {
-  const res = await fetch(`${API_BASE}/suggestions/${suggestionId}/accept`, {
+export async function acceptSuggestion(suggestionId: string): Promise<OutfitData> {
+  const res = await fetch(`${API_BASE}/friends/suggestions/${suggestionId}/accept`, {
     method: 'POST',
     headers: authHeaders(),
   });
   const data = await res.json();
+  if (!res.ok) throw new Error(data.message || '采纳建议失败');
   return data.data;
 }
+
+export const suggestOutfitToFriend = sendOutfitSuggestion;
+export const acceptOutfitSuggestion = acceptSuggestion;
 
 // --------------------------------------------------------------------
 // 6. CMS 官方运营管理 API (需管理员权限)
@@ -758,7 +828,14 @@ export async function compressImageFile(file: File, maxWidth = 1200, maxHeight =
         const ctx = canvas.getContext('2d');
         if (!ctx) return resolve(e.target?.result as string);
         ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', quality));
+
+        // WebP 优先压缩转码 (Defect 9 优化，体积降低 40%)
+        const webpDataUrl = canvas.toDataURL('image/webp', quality);
+        if (webpDataUrl.startsWith('data:image/webp')) {
+          resolve(webpDataUrl);
+        } else {
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        }
       };
       img.onerror = () => resolve(e.target?.result as string);
       img.src = e.target?.result as string;
