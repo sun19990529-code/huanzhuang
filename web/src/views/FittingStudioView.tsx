@@ -45,7 +45,7 @@ import {
   Maximize2,
 } from 'lucide-react';
 import { CapsuleSlotMachine } from '../components/CapsuleSlotMachine';
-import { autoDetectUploadGarments, updateGarmentAsset, compressImageFile, matchGarmentPlacement, GarmentPlacementResult } from '../api';
+import { autoDetectUploadGarments, updateGarmentAsset, compressImageFile } from '../api';
 import { cropImageRegion, getCategoryDefaultOffsets, removeWhiteBackground } from '../utils/imageProcess';
 
 export interface WornItemData {
@@ -159,11 +159,50 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
   const [studioDisplayMode, setStudioDisplayMode] = useState<'2D' | '3D'>('2D');
   const [isOutfitChangedSinceRender, setIsOutfitChangedSinceRender] = useState(false);
 
-  // 用户个性化微调记忆库 (单品ID -> 用户手动微调参数)
+  // 严格按账号与角色隔离的微调记忆库 (存储键: sw_adjustments_${userId}_${profileId})
+  const getStorageKey = () => {
+    if (!profile?.userId || !profile?.id) return 'sw_adjustments_guest';
+    return `sw_adjustments_${profile.userId}_${profile.id}`;
+  };
+
   const [customAdjustments, setCustomAdjustments] = useState<
     Record<string, { offsetX: number; offsetY: number; scale: number; scaleX: number; scaleY: number }>
-  >({});
-  const [reMatchingGarmentId, setReMatchingGarmentId] = useState<string | null>(null);
+  >(() => {
+    try {
+      const key = profile?.userId && profile?.id ? `sw_adjustments_${profile.userId}_${profile.id}` : 'sw_adjustments_guest';
+      const raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  // 当 profile (切换用户或切换角色) 改变时，重新加载对应的微调记忆，100% 账号隔离
+  useEffect(() => {
+    const key = getStorageKey();
+    try {
+      const raw = localStorage.getItem(key);
+      setCustomAdjustments(raw ? JSON.parse(raw) : {});
+    } catch {
+      setCustomAdjustments({});
+    }
+  }, [profile?.userId, profile?.id]);
+
+  // 同步更新并落盘微调参数
+  const saveCustomAdjustment = (
+    garmentId: string,
+    adj: { offsetX: number; offsetY: number; scale: number; scaleX: number; scaleY: number }
+  ) => {
+    setCustomAdjustments((prev) => {
+      const next = { ...prev, [garmentId]: adj };
+      try {
+        localStorage.setItem(getStorageKey(), JSON.stringify(next));
+      } catch (e) {
+        console.warn('保存微调记忆失败:', e);
+      }
+      return next;
+    });
+  };
 
   // 弹窗与控制面板
   const [isSlotMachineOpen, setIsSlotMachineOpen] = useState(false);
@@ -174,11 +213,6 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
   const [transformMode, setTransformMode] = useState<'SNAP' | 'FREE'>('SNAP');
   const [canvasScale, setCanvasScale] = useState(1);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
-
-  // AI 像素级解剖定位与微调状态映射 (garmentId -> placement details)
-  const [placementInfoMap, setPlacementInfoMap] = useState<
-    Record<string, { anchor: string; confidence: number; isAi: boolean }>
-  >({});
 
   // 交互式微调框 (Figma Pro 级手柄拖拽与缩放拉伸)
   const [transformDrag, setTransformDrag] = useState<{
@@ -214,16 +248,20 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
     }
   }, [wornItems.length, studioDisplayMode, renderedImageUrl]);
 
-  // 监听 Escape 键：随时取消单品选中缩放框
+  // 监听键盘事件：Escape 取消选中，Delete / Backspace 快捷脱下单品
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const isInputActive = ['INPUT', 'TEXTAREA'].includes((document.activeElement?.tagName || '').toUpperCase());
       if (e.key === 'Escape') {
+        setSelectedItemId(null);
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && !isInputActive && selectedItemId) {
+        onRemoveWornItem(selectedItemId);
         setSelectedItemId(null);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [selectedItemId, onRemoveWornItem]);
 
   // 自由画板拖拽偏移 (散落衣服在 55% 画布上的绝对位置)
   const [canvasItemPositions, setCanvasItemPositions] = useState<Record<string, { x: number; y: number }>>({});
@@ -458,7 +496,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
     setDetectedGarmentsToConfirm(null);
   };
 
-  // 穿上单品并触发 AI 解剖学像素级对准计算 (优先恢复用户自定义微调)
+  // 穿上单品并装载历史微调记忆 (优先恢复用户自定义微调)
   const handleWearWithPlacement = async (garment: GarmentItem) => {
     // 自动提取透明通道消除白底
     if (garment.assets && garment.assets[0]?.pngUrl && !garment.assets[0].pngUrl.startsWith('data:image/png')) {
@@ -475,7 +513,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
     onWearGarment(garment);
     setSelectedItemId(garment.id);
 
-    // 如果用户曾手动微调过此单品，优先恢复用户的自定义微调记忆 (0ms 极速加载)
+    // 如果用户曾手动微调过此单品，优先恢复该账号该角色的自定义微调记忆
     const userAdjust = customAdjustments[garment.id];
     if (userAdjust) {
       onUpdateWornItem(garment.id, {
@@ -485,127 +523,19 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
         scaleX: userAdjust.scaleX,
         scaleY: userAdjust.scaleY,
       });
-      setPlacementInfoMap((prev) => ({
-        ...prev,
-        [garment.id]: {
-          anchor: 'USER_CUSTOM_ADJUSTED',
-          confidence: 100,
-          isAi: true,
-        },
-      }));
-      return;
-    }
-
-    try {
-      console.log('📡 [Studio] 正在发起多模态 AI 像素级解剖对准请求: ', garment.title);
-      const res = await matchGarmentPlacement({
-        avatarId: avatar?.id,
-        avatarImageUrl: avatar?.normalizedImageUrl,
-        garmentId: garment.id,
-        garmentImageUrl: garment.assets?.[0]?.pngUrl,
-        garmentTitle: garment.title,
-        garmentCategory: garment.primaryCategory,
-        garmentSubCategory: garment.subCategory,
-        box_2d: (garment as any).box_2d,
-        avatarProfile: profile
-          ? {
-              gender: profile.gender,
-              heightCm: profile.heightCm,
-              weightKg: profile.weightKg,
-              bustCm: profile.bustCm,
-              waistCm: profile.waistCm,
-              hipsCm: profile.hipsCm,
-            }
-          : undefined,
-        stageWidth: 390,
-        stageHeight: 680,
-      });
-
-      console.log('✨ [Studio] AI 解剖对准计算完成:', res);
-
-      onUpdateWornItem(garment.id, {
-        offsetX: res.offsetX ?? 0,
-        offsetY: res.offsetY ?? 0,
-        scale: res.scale,
-        scaleX: res.scaleX ?? res.scale,
-        scaleY: res.scaleY ?? res.scale,
-      });
-
-      setPlacementInfoMap((prev) => ({
-        ...prev,
-        [garment.id]: {
-          anchor: res.anatomicalAnchor,
-          confidence: res.confidence,
-          isAi: true,
-        },
-      }));
-    } catch (err) {
-      console.warn('AI placement match error:', err);
     }
   };
 
-  // 重新启动多模态 AI 智能像素级对准 (清除人工微调，向视觉大模型重新计算)
-  const handleReMatchAIPlacement = async (garment: GarmentItem) => {
-    setCustomAdjustments((prev) => {
-      const next = { ...prev };
-      delete next[garment.id];
-      return next;
-    });
-
-    setReMatchingGarmentId(garment.id);
-    try {
-      console.log('🔄 [Studio] 正在重新启动多模态 AI 像素级解剖对准: ', garment.title);
-      const res = await matchGarmentPlacement({
-        avatarId: avatar?.id,
-        avatarImageUrl: avatar?.normalizedImageUrl,
-        garmentId: garment.id,
-        garmentImageUrl: garment.assets?.[0]?.pngUrl,
-        garmentTitle: garment.title,
-        garmentCategory: garment.primaryCategory,
-        garmentSubCategory: garment.subCategory,
-        box_2d: (garment as any).box_2d,
-        avatarProfile: profile
-          ? {
-              gender: profile.gender,
-              heightCm: profile.heightCm,
-              weightKg: profile.weightKg,
-              bustCm: profile.bustCm,
-              waistCm: profile.waistCm,
-              hipsCm: profile.hipsCm,
-            }
-          : undefined,
-        stageWidth: 390,
-        stageHeight: 680,
-      });
-
-      onUpdateWornItem(garment.id, {
-        offsetX: res.offsetX ?? 0,
-        offsetY: res.offsetY ?? 0,
-        scale: res.scale,
-        scaleX: res.scaleX ?? res.scale,
-        scaleY: res.scaleY ?? res.scale,
-      });
-
-      setPlacementInfoMap((prev) => ({
-        ...prev,
-        [garment.id]: {
-          anchor: res.anatomicalAnchor,
-          confidence: res.confidence,
-          isAi: true,
-        },
-      }));
-    } catch (err) {
-      console.warn('Re-match AI placement error:', err);
-    } finally {
-      setReMatchingGarmentId(null);
-    }
-  };
-
-  // 重置单品为默认解剖吸附尺寸
+  // 重置单品为默认解剖吸附尺寸并清理持久化微调记忆
   const handleResetPlacement = (garment: GarmentItem) => {
     setCustomAdjustments((prev) => {
       const next = { ...prev };
       delete next[garment.id];
+      try {
+        localStorage.setItem(getStorageKey(), JSON.stringify(next));
+      } catch (e) {
+        console.warn('清理微调记忆失败:', e);
+      }
       return next;
     });
 
@@ -693,16 +623,13 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
           offsetX: newOffX,
           offsetY: newOffY,
         });
-        setCustomAdjustments((prev) => ({
-          ...prev,
-          [garmentId]: {
-            offsetX: newOffX,
-            offsetY: newOffY,
-            scale: prev[garmentId]?.scale ?? startScale,
-            scaleX: prev[garmentId]?.scaleX ?? startScaleX,
-            scaleY: prev[garmentId]?.scaleY ?? startScaleY,
-          },
-        }));
+        saveCustomAdjustment(garmentId, {
+          offsetX: newOffX,
+          offsetY: newOffY,
+          scale: customAdjustments[garmentId]?.scale ?? startScale,
+          scaleX: customAdjustments[garmentId]?.scaleX ?? startScaleX,
+          scaleY: customAdjustments[garmentId]?.scaleY ?? startScaleY,
+        });
       } else if (type === 'RESIZE_BR') {
         const diagDelta = (deltaX + deltaY) / 2;
         const scaleDelta = diagDelta * 0.0035;
@@ -712,16 +639,13 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
           scaleX: newScale,
           scaleY: newScale,
         });
-        setCustomAdjustments((prev) => ({
-          ...prev,
-          [garmentId]: {
-            offsetX: prev[garmentId]?.offsetX ?? startOffsetX,
-            offsetY: prev[garmentId]?.offsetY ?? startOffsetY,
-            scale: newScale,
-            scaleX: newScale,
-            scaleY: newScale,
-          },
-        }));
+        saveCustomAdjustment(garmentId, {
+          offsetX: customAdjustments[garmentId]?.offsetX ?? startOffsetX,
+          offsetY: customAdjustments[garmentId]?.offsetY ?? startOffsetY,
+          scale: newScale,
+          scaleX: newScale,
+          scaleY: newScale,
+        });
       } else if (type === 'STRETCH_R' || type === 'STRETCH_L') {
         const factor = type === 'STRETCH_R' ? 1 : -1;
         const scaleXDelta = deltaX * 0.0035 * factor;
@@ -729,16 +653,13 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
         onUpdateWornItem(garmentId, {
           scaleX: newScaleX,
         });
-        setCustomAdjustments((prev) => ({
-          ...prev,
-          [garmentId]: {
-            offsetX: prev[garmentId]?.offsetX ?? startOffsetX,
-            offsetY: prev[garmentId]?.offsetY ?? startOffsetY,
-            scale: prev[garmentId]?.scale ?? startScale,
-            scaleX: newScaleX,
-            scaleY: prev[garmentId]?.scaleY ?? startScaleY,
-          },
-        }));
+        saveCustomAdjustment(garmentId, {
+          offsetX: customAdjustments[garmentId]?.offsetX ?? startOffsetX,
+          offsetY: customAdjustments[garmentId]?.offsetY ?? startOffsetY,
+          scale: customAdjustments[garmentId]?.scale ?? startScale,
+          scaleX: newScaleX,
+          scaleY: customAdjustments[garmentId]?.scaleY ?? startScaleY,
+        });
       } else if (type === 'STRETCH_B' || type === 'STRETCH_T') {
         const factor = type === 'STRETCH_B' ? 1 : -1;
         const scaleYDelta = deltaY * 0.0035 * factor;
@@ -746,16 +667,13 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
         onUpdateWornItem(garmentId, {
           scaleY: newScaleY,
         });
-        setCustomAdjustments((prev) => ({
-          ...prev,
-          [garmentId]: {
-            offsetX: prev[garmentId]?.offsetX ?? startOffsetX,
-            offsetY: prev[garmentId]?.offsetY ?? startOffsetY,
-            scale: prev[garmentId]?.scale ?? startScale,
-            scaleX: prev[garmentId]?.scaleX ?? startScaleX,
-            scaleY: newScaleY,
-          },
-        }));
+        saveCustomAdjustment(garmentId, {
+          offsetX: customAdjustments[garmentId]?.offsetX ?? startOffsetX,
+          offsetY: customAdjustments[garmentId]?.offsetY ?? startOffsetY,
+          scale: customAdjustments[garmentId]?.scale ?? startScale,
+          scaleX: customAdjustments[garmentId]?.scaleX ?? startScaleX,
+          scaleY: newScaleY,
+        });
       }
     };
 
@@ -1337,7 +1255,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
         <div className="absolute inset-0 flex items-center justify-center p-4 pointer-events-none">
           <div
             onClick={() => setSelectedItemId(null)}
-            className="relative h-[85vh] max-h-[860px] aspect-[3/4] rounded-3xl border border-stone-200/80 bg-white/95 shadow-2xl shadow-stone-300/40 flex items-center justify-center overflow-hidden pointer-events-auto transition-all"
+            className="relative h-[85vh] max-h-[860px] aspect-[3/4] rounded-3xl border border-stone-200/80 bg-white/95 shadow-2xl shadow-stone-300/40 flex items-center justify-center overflow-visible pointer-events-auto transition-all"
           >
             {/* 模特景深光晕底座 */}
             <div className="absolute inset-x-8 bottom-0 h-16 bg-stone-300/30 blur-xl rounded-full pointer-events-none" />
@@ -1398,7 +1316,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
                       e.stopPropagation();
                       setSelectedItemId(null);
                     }}
-                    className="h-full w-full object-contain pointer-events-auto cursor-default select-none"
+                    className="h-full w-full object-contain pointer-events-auto cursor-default select-none rounded-3xl"
                   />
                 ) : (
                   <div className="text-xs text-stone-400">暂无模特素体</div>
@@ -1417,11 +1335,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
                   const scX = worn.scaleX !== undefined && worn.scaleX !== 1 ? worn.scaleX : (worn.scale !== 1 ? worn.scale : defaultOffs.scale);
                   const scY = worn.scaleY !== undefined && worn.scaleY !== 1 ? worn.scaleY : (worn.scale !== 1 ? worn.scale : defaultOffs.scale);
                   const isSelected = selectedItemId === worn.garment.id;
-                  const placement = placementInfoMap[worn.garment.id];
-                  const rawConf = placement?.confidence ?? 98;
-                  const confidence = Math.round(rawConf > 1 ? rawConf : rawConf * 100);
                   const activeAsset = worn.garment.assets?.find((a) => a.stateType === worn.state) || worn.garment.assets?.[0];
-                  const isUserCustom = !!customAdjustments[worn.garment.id];
                   const invScX = 1 / Math.max(0.01, scX);
                   const invScY = 1 / Math.max(0.01, scY);
                   const invScMin = 1 / Math.max(0.01, Math.min(scX, scY));
@@ -1430,55 +1344,34 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
                     <div
                       key={worn.garment.id}
                       style={{
-                        zIndex: isSelected ? 80 : worn.zIndex,
+                        zIndex: isSelected ? 90 : worn.zIndex,
                         transform: `translate(${offX}px, ${offY}px) scale(${scX}, ${scY})`,
                       }}
-                      className="absolute inset-0 flex items-center justify-center pointer-events-none"
+                      className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-visible"
                     >
                       <div
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedItemId(worn.garment.id);
-                        }}
-                        className="relative inline-flex items-center justify-center pointer-events-auto cursor-pointer"
+                        onMouseDown={(e) => handleTransformMouseDown(e, worn.garment.id, 'MOVE')}
+                        className="relative inline-flex items-center justify-center pointer-events-auto cursor-move select-none"
                       >
                         <img
                           src={activeAsset?.pngUrl || worn.garment.assets?.[0]?.pngUrl}
                           alt={worn.garment.title}
+                          draggable={false}
                           className="max-h-[580px] max-w-[340px] object-contain filter drop-shadow-sm pointer-events-auto select-none"
                         />
 
                         {/* Figma Pro 级交互式微调与缩放选框 (视口解耦，绝对恒定尺寸与清晰度) */}
                         {isSelected && (
                           <div
-                            onMouseDown={(e) => handleTransformMouseDown(e, worn.garment.id, 'MOVE')}
                             style={{
                               borderWidth: `${Math.max(1.5, 2 * invScMin)}px`,
                             }}
-                            className="absolute -inset-2.5 border-dashed border-[#D63031] rounded-2xl cursor-move pointer-events-auto bg-[#D63031]/5"
+                            className="absolute -inset-3 border-2 border-dashed border-[#D63031] rounded-2xl cursor-move pointer-events-auto bg-[#D63031]/5 z-50 overflow-visible"
                           >
-                            {/* 顶部 AI 像素对准状态胶囊 (固定 12px 文字，恒定视口大小) */}
-                            <div
-                              style={{
-                                top: `${-22 * invScY}px`,
-                                transform: `translate(-50%, -100%) scale(${invScX}, ${invScY})`,
-                                transformOrigin: 'center bottom',
-                              }}
-                              className="absolute left-1/2 bg-[#D63031] text-white px-3 py-1 rounded-full text-xs font-bold shadow-md flex items-center gap-1.5 whitespace-nowrap pointer-events-none z-30"
-                            >
-                              <Sparkles className={`w-3.5 h-3.5 ${reMatchingGarmentId === worn.garment.id ? 'animate-spin' : ''}`} />
-                              <span>
-                                {reMatchingGarmentId === worn.garment.id
-                                  ? '正在重新多模态 AI 对准...'
-                                  : isUserCustom
-                                  ? '✨ 用户微调记忆 (已锁定)'
-                                  : `📐 AI 像素级对准 (${confidence}%)`}
-                              </span>
-                            </div>
-
-                            {/* 右上角删除/脱下单品按钮 (固定 28px 圆形尺寸，恒定易点) */}
+                            {/* 右上角删除/脱下单品按钮 (固定 28px 圆形尺寸，红底白色 X) */}
                             <button
                               type="button"
+                              onMouseDown={(e) => e.stopPropagation()}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 onRemoveWornItem(worn.garment.id);
@@ -1490,13 +1383,13 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
                                 transform: `scale(${invScX}, ${invScY})`,
                                 transformOrigin: 'center center',
                               }}
-                              className="absolute w-7 h-7 bg-[#D63031] hover:bg-[#b02526] text-white rounded-full flex items-center justify-center shadow-lg hover:scale-110 active:scale-95 transition-transform z-30"
-                              title="脱下此单品"
+                              className="absolute w-7 h-7 bg-[#D63031] hover:bg-[#b02526] text-white rounded-full flex items-center justify-center shadow-lg hover:scale-110 active:scale-95 transition-transform z-50 cursor-pointer"
+                              title="脱下此单品 (或按 Delete / Backspace 键)"
                             >
                               <X className="w-4 h-4 stroke-[3]" />
                             </button>
 
-                            {/* 右下角等比缩放手柄 (固定 28px 圆形尺寸，恒定易握) */}
+                            {/* 右下角等比缩放手柄 (固定 28px 圆形尺寸) */}
                             <div
                               onMouseDown={(e) => handleTransformMouseDown(e, worn.garment.id, 'RESIZE_BR')}
                               style={{
@@ -1505,20 +1398,20 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
                                 transform: `scale(${invScX}, ${invScY})`,
                                 transformOrigin: 'center center',
                               }}
-                              className="absolute w-7 h-7 bg-[#D63031] hover:bg-[#b02526] text-white rounded-full flex items-center justify-center shadow-lg cursor-nwse-resize hover:scale-110 active:scale-95 transition-transform z-30"
+                              className="absolute w-7 h-7 bg-[#D63031] hover:bg-[#b02526] text-white rounded-full flex items-center justify-center shadow-lg cursor-nwse-resize hover:scale-110 active:scale-95 transition-transform z-50"
                               title="拖拽等比缩放"
                             >
                               <Maximize2 className="w-3.5 h-3.5 stroke-[2.5]" />
                             </div>
 
-                            {/* 四边拉伸控制点 (上下左右，固定物理尺寸) */}
+                            {/* 四边拉伸控制点 (上下左右) */}
                             <div
                               onMouseDown={(e) => handleTransformMouseDown(e, worn.garment.id, 'STRETCH_T')}
                               style={{
                                 top: `${-4 * invScY}px`,
                                 transform: `translate(-50%, -50%) scale(${invScX}, ${invScY})`,
                               }}
-                              className="absolute left-1/2 w-4 h-1.5 bg-[#D63031] rounded-full cursor-ns-resize z-20"
+                              className="absolute left-1/2 w-6 h-2 bg-[#D63031] rounded-full cursor-ns-resize z-40 border border-white shadow-xs"
                               title="上下拉伸"
                             />
                             <div
@@ -1527,7 +1420,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
                                 bottom: `${-4 * invScY}px`,
                                 transform: `translate(-50%, 50%) scale(${invScX}, ${invScY})`,
                               }}
-                              className="absolute left-1/2 w-4 h-1.5 bg-[#D63031] rounded-full cursor-ns-resize z-20"
+                              className="absolute left-1/2 w-6 h-2 bg-[#D63031] rounded-full cursor-ns-resize z-40 border border-white shadow-xs"
                               title="上下拉伸"
                             />
                             <div
@@ -1536,7 +1429,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
                                 left: `${-4 * invScX}px`,
                                 transform: `translate(-50%, -50%) scale(${invScX}, ${invScY})`,
                               }}
-                              className="absolute top-1/2 w-1.5 h-4 bg-[#D63031] rounded-full cursor-ew-resize z-20"
+                              className="absolute top-1/2 w-2 h-6 bg-[#D63031] rounded-full cursor-ew-resize z-40 border border-white shadow-xs"
                               title="左右拉伸"
                             />
                             <div
@@ -1545,27 +1438,28 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
                                 right: `${-4 * invScX}px`,
                                 transform: `translate(50%, -50%) scale(${invScX}, ${invScY})`,
                               }}
-                              className="absolute top-1/2 w-1.5 h-4 bg-[#D63031] rounded-full cursor-ew-resize z-20"
+                              className="absolute top-1/2 w-2 h-6 bg-[#D63031] rounded-full cursor-ew-resize z-40 border border-white shadow-xs"
                               title="左右拉伸"
                             />
 
-                            {/* 底部微调控制胶囊组：复位 + 重新启动 AI 对准 (固定物理尺寸与字号，清晰易点) */}
+                            {/* 底部极简控制胶囊：磁吸复位 + 一键脱下 */}
                             <div
                               style={{
-                                bottom: `${-22 * invScY}px`,
+                                bottom: `${-24 * invScY}px`,
                                 transform: `translate(-50%, 100%) scale(${invScX}, ${invScY})`,
                                 transformOrigin: 'center top',
                               }}
-                              className="absolute left-1/2 flex items-center gap-1.5 pointer-events-auto z-30"
+                              className="absolute left-1/2 flex items-center gap-2 pointer-events-auto z-50"
                             >
                               <button
                                 type="button"
+                                onMouseDown={(e) => e.stopPropagation()}
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleResetPlacement(worn.garment);
                                 }}
-                                className="bg-white hover:bg-stone-50 text-stone-700 hover:text-stone-900 border border-[#EAE6DF] px-3 py-1 rounded-full text-xs font-bold shadow-md flex items-center gap-1 whitespace-nowrap transition-colors"
-                                title="恢复至默认解剖吸附尺寸"
+                                className="bg-white hover:bg-stone-50 text-stone-700 hover:text-stone-900 border border-[#EAE6DF] px-3 py-1 rounded-full text-xs font-bold shadow-md flex items-center gap-1 whitespace-nowrap transition-colors cursor-pointer"
+                                title="恢复至默认人体工学基准位"
                               >
                                 <RotateCcw className="w-3 h-3" />
                                 <span>磁吸复位</span>
@@ -1573,16 +1467,17 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
 
                               <button
                                 type="button"
+                                onMouseDown={(e) => e.stopPropagation()}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleReMatchAIPlacement(worn.garment);
+                                  onRemoveWornItem(worn.garment.id);
+                                  setSelectedItemId(null);
                                 }}
-                                disabled={reMatchingGarmentId === worn.garment.id}
-                                className="bg-[#D63031] hover:bg-[#b02526] text-white px-3 py-1 rounded-full text-xs font-bold shadow-md flex items-center gap-1 whitespace-nowrap transition-colors disabled:opacity-50"
-                                title="清除微调，重新发起多模态 AI 像素级对齐计算"
+                                className="bg-rose-50 hover:bg-rose-100 text-[#D63031] border border-rose-200 px-3 py-1 rounded-full text-xs font-bold shadow-md flex items-center gap-1 whitespace-nowrap transition-colors cursor-pointer"
+                                title="脱下此单品"
                               >
-                                <Sparkles className="w-3 h-3" />
-                                <span>重新 AI 对准</span>
+                                <Trash2 className="w-3 h-3" />
+                                <span>脱下</span>
                               </button>
                             </div>
                           </div>
@@ -1676,24 +1571,20 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
         <div className="p-3 bg-white/95 backdrop-blur-md border-t border-[#EAE6DF] flex flex-wrap items-center justify-between gap-2 z-30 pointer-events-auto">
           {(() => {
             const selectedWorn = wornItems.find((i) => i.garment.id === selectedItemId);
-            const placement = selectedItemId ? placementInfoMap[selectedItemId] : null;
             const isUserCustom = selectedItemId ? !!customAdjustments[selectedItemId] : false;
 
             if (selectedWorn) {
-              const rawConf = placement?.confidence ?? 98;
-              const confidence = Math.round(rawConf <= 1 ? rawConf * 100 : rawConf);
-
               return (
                 <>
                   <div className="flex items-center gap-2">
                     <span className="text-[#D63031] font-bold text-xs">✦ {selectedWorn.garment.title}</span>
-                    <span className="bg-rose-50 text-[#D63031] px-2 py-0.5 rounded-lg border border-rose-100 font-mono font-bold text-[10px]">
-                      {isUserCustom
-                        ? '✨ 用户微调记忆 (已锁定)'
-                        : `📐 AI 像素级对准 (${confidence}%)`}
-                    </span>
+                    {isUserCustom && (
+                      <span className="bg-rose-50 text-[#D63031] px-2 py-0.5 rounded-lg border border-rose-100 font-mono font-bold text-[10px]">
+                        ✨ 个人微调已保存
+                      </span>
+                    )}
                     <span className="text-stone-400 text-[10px] hidden lg:inline">
-                      🖐️ 拖拽定位, 右下角等比缩放, 四边拉伸高矮胖瘦
+                      🖐️ 直接按住单品拖动 · 右下角等比缩放 · 四边拉伸 · 按 Esc 取消选中
                     </span>
                   </div>
 
