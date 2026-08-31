@@ -263,6 +263,20 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedItemId, onRemoveWornItem]);
 
+  // 监听选中单品有效性：如果单品已被脱下或画布清空，自动清理悬空幽灵选中态
+  useEffect(() => {
+    if (selectedItemId && !wornItems.some((i) => i.garment.id === selectedItemId)) {
+      setSelectedItemId(null);
+    }
+  }, [wornItems, selectedItemId]);
+
+  // 监听 3D 模式切换：进入 3D 影棚大片模式时自动脱焦 2D 选框
+  useEffect(() => {
+    if (studioDisplayMode === '3D') {
+      setSelectedItemId(null);
+    }
+  }, [studioDisplayMode]);
+
   // 自由画板拖拽偏移 (散落衣服在 55% 画布上的绝对位置)
   const [canvasItemPositions, setCanvasItemPositions] = useState<Record<string, { x: number; y: number }>>({});
   const [draggingGarmentId, setDraggingGarmentId] = useState<string | null>(null);
@@ -496,8 +510,17 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
     setDetectedGarmentsToConfirm(null);
   };
 
-  // 穿上单品并装载历史微调记忆 (优先恢复用户自定义微调)
+  // 穿上单品并装载历史微调记忆 (若已穿戴则脱下并清理选中态)
   const handleWearWithPlacement = async (garment: GarmentItem) => {
+    const isAlreadyWorn = wornItems.some((i) => i.garment.id === garment.id);
+    if (isAlreadyWorn) {
+      onWearGarment(garment);
+      if (selectedItemId === garment.id) {
+        setSelectedItemId(null);
+      }
+      return;
+    }
+
     // 自动提取透明通道消除白底
     if (garment.assets && garment.assets[0]?.pngUrl && !garment.assets[0].pngUrl.startsWith('data:image/png')) {
       try {
@@ -524,6 +547,42 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
         scaleY: userAdjust.scaleY,
       });
     }
+  };
+
+  // 调整单品图层层级 (上移一层 / 下移一层 / 置顶 / 置底)
+  const handleAdjustZIndex = (garmentId: string, direction: 'UP' | 'DOWN' | 'TOP' | 'BOTTOM') => {
+    const item = wornItems.find((i) => i.garment.id === garmentId);
+    if (!item) return;
+
+    const sorted = [...wornItems].sort((a, b) => a.zIndex - b.zIndex);
+    const currentIndex = sorted.findIndex((i) => i.garment.id === garmentId);
+    if (currentIndex === -1) return;
+
+    let targetZIndex = item.zIndex;
+
+    if (direction === 'UP') {
+      if (currentIndex < sorted.length - 1) {
+        const nextItem = sorted[currentIndex + 1];
+        targetZIndex = Math.max(item.zIndex + 5, nextItem.zIndex + 2);
+      } else {
+        targetZIndex = item.zIndex + 5;
+      }
+    } else if (direction === 'DOWN') {
+      if (currentIndex > 0) {
+        const prevItem = sorted[currentIndex - 1];
+        targetZIndex = Math.min(item.zIndex - 5, Math.max(1, prevItem.zIndex - 2));
+      } else {
+        targetZIndex = Math.max(1, item.zIndex - 5);
+      }
+    } else if (direction === 'TOP') {
+      const maxZ = Math.max(...wornItems.map((i) => i.zIndex), 10);
+      targetZIndex = maxZ + 10;
+    } else if (direction === 'BOTTOM') {
+      const minZ = Math.min(...wornItems.map((i) => i.zIndex), 10);
+      targetZIndex = Math.max(1, minZ - 5);
+    }
+
+    onUpdateWornItem(garmentId, { zIndex: targetZIndex });
   };
 
   // 重置单品为默认解剖吸附尺寸并清理持久化微调记忆
@@ -1351,6 +1410,10 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
                     >
                       <div
                         onMouseDown={(e) => handleTransformMouseDown(e, worn.garment.id, 'MOVE')}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedItemId(worn.garment.id);
+                        }}
                         className="relative inline-flex items-center justify-center pointer-events-auto cursor-move select-none"
                       >
                         <img
@@ -1363,6 +1426,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
                         {/* Figma Pro 级交互式微调与缩放选框 (视口解耦，绝对恒定尺寸与清晰度) */}
                         {isSelected && (
                           <div
+                            onClick={(e) => e.stopPropagation()}
                             style={{
                               borderWidth: `${Math.max(1.5, 2 * invScMin)}px`,
                             }}
@@ -1392,6 +1456,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
                             {/* 右下角等比缩放手柄 (固定 28px 圆形尺寸) */}
                             <div
                               onMouseDown={(e) => handleTransformMouseDown(e, worn.garment.id, 'RESIZE_BR')}
+                              onClick={(e) => e.stopPropagation()}
                               style={{
                                 bottom: `${-14 * invScY}px`,
                                 right: `${-14 * invScX}px`,
@@ -1407,6 +1472,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
                             {/* 四边拉伸控制点 (上下左右) */}
                             <div
                               onMouseDown={(e) => handleTransformMouseDown(e, worn.garment.id, 'STRETCH_T')}
+                              onClick={(e) => e.stopPropagation()}
                               style={{
                                 top: `${-4 * invScY}px`,
                                 transform: `translate(-50%, -50%) scale(${invScX}, ${invScY})`,
@@ -1416,6 +1482,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
                             />
                             <div
                               onMouseDown={(e) => handleTransformMouseDown(e, worn.garment.id, 'STRETCH_B')}
+                              onClick={(e) => e.stopPropagation()}
                               style={{
                                 bottom: `${-4 * invScY}px`,
                                 transform: `translate(-50%, 50%) scale(${invScX}, ${invScY})`,
@@ -1425,6 +1492,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
                             />
                             <div
                               onMouseDown={(e) => handleTransformMouseDown(e, worn.garment.id, 'STRETCH_L')}
+                              onClick={(e) => e.stopPropagation()}
                               style={{
                                 left: `${-4 * invScX}px`,
                                 transform: `translate(-50%, -50%) scale(${invScX}, ${invScY})`,
@@ -1434,6 +1502,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
                             />
                             <div
                               onMouseDown={(e) => handleTransformMouseDown(e, worn.garment.id, 'STRETCH_R')}
+                              onClick={(e) => e.stopPropagation()}
                               style={{
                                 right: `${-4 * invScX}px`,
                                 transform: `translate(50%, -50%) scale(${invScX}, ${invScY})`,
@@ -1442,14 +1511,15 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
                               title="左右拉伸"
                             />
 
-                            {/* 底部极简控制胶囊：磁吸复位 + 一键脱下 */}
+                            {/* 底部极简控制胶囊：磁吸复位 + 图层层级微调 + 一键脱下 */}
                             <div
+                              onClick={(e) => e.stopPropagation()}
                               style={{
                                 bottom: `${-24 * invScY}px`,
                                 transform: `translate(-50%, 100%) scale(${invScX}, ${invScY})`,
                                 transformOrigin: 'center top',
                               }}
-                              className="absolute left-1/2 flex items-center gap-2 pointer-events-auto z-50"
+                              className="absolute left-1/2 flex items-center gap-1.5 pointer-events-auto z-50"
                             >
                               <button
                                 type="button"
@@ -1470,10 +1540,38 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
                                 onMouseDown={(e) => e.stopPropagation()}
                                 onClick={(e) => {
                                   e.stopPropagation();
+                                  handleAdjustZIndex(worn.garment.id, 'UP');
+                                }}
+                                className="bg-white hover:bg-stone-50 text-stone-700 hover:text-stone-900 border border-[#EAE6DF] px-2.5 py-1 rounded-full text-xs font-bold shadow-md flex items-center gap-0.5 whitespace-nowrap transition-colors cursor-pointer"
+                                title="图层上移 (移向更外层)"
+                              >
+                                <ChevronUp className="w-3 h-3 text-[#D63031]" />
+                                <span>上移</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleAdjustZIndex(worn.garment.id, 'DOWN');
+                                }}
+                                className="bg-white hover:bg-stone-50 text-stone-700 hover:text-stone-900 border border-[#EAE6DF] px-2.5 py-1 rounded-full text-xs font-bold shadow-md flex items-center gap-0.5 whitespace-nowrap transition-colors cursor-pointer"
+                                title="图层下移 (移向更内层)"
+                              >
+                                <ChevronDown className="w-3 h-3 text-[#D63031]" />
+                                <span>下移</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   onRemoveWornItem(worn.garment.id);
                                   setSelectedItemId(null);
                                 }}
-                                className="bg-rose-50 hover:bg-rose-100 text-[#D63031] border border-rose-200 px-3 py-1 rounded-full text-xs font-bold shadow-md flex items-center gap-1 whitespace-nowrap transition-colors cursor-pointer"
+                                className="bg-rose-50 hover:bg-rose-100 text-[#D63031] border border-rose-200 px-2.5 py-1 rounded-full text-xs font-bold shadow-md flex items-center gap-1 whitespace-nowrap transition-colors cursor-pointer"
                                 title="脱下此单品"
                               >
                                 <Trash2 className="w-3 h-3" />
@@ -1491,15 +1589,36 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
           </div>
         </div>
 
-        {/* 顶部工具条 (含原位 2D/3D 分段模式切换器) */}
-        <div className="p-4 flex items-center justify-between z-30 pointer-events-auto">
+        {/* 顶部工具条 (含原位 2D/3D 分段模式切换器 与 图层面板开关) */}
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="p-4 flex items-center justify-between z-30 pointer-events-auto"
+        >
           <div className="flex items-center gap-2">
             <button
+              type="button"
               onClick={onOpenProfileSettings}
               className="px-3.5 py-1.5 bg-white/90 backdrop-blur-md border border-[#EAE6DF] hover:border-stone-400 text-stone-800 rounded-xl text-xs font-bold shadow-2xs flex items-center gap-1.5 transition-colors"
             >
               <Sliders className="w-3.5 h-3.5 stroke-[1.75]" />
               <span>身材设置</span>
+            </button>
+
+            {/* 图层管理抽屉开关 */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsLayerPanelOpen(!isLayerPanelOpen);
+              }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 ${
+                isLayerPanelOpen
+                  ? 'bg-[#D63031] text-white border-[#D63031] shadow-xs'
+                  : 'bg-white/90 backdrop-blur-md border-[#EAE6DF] hover:border-stone-400 text-stone-800 shadow-2xs'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5 stroke-[1.75]" />
+              <span>图层 ({wornItems.length})</span>
             </button>
 
             {/* 选项 B：原位 2D 搭配 / 3D 真人大片分段切换器 */}
@@ -1541,6 +1660,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
 
           <div className="flex items-center gap-2">
             <button
+              type="button"
               onClick={onClearCanvas}
               className="p-2 bg-white/90 backdrop-blur-md border border-[#EAE6DF] hover:bg-stone-50 text-stone-600 rounded-xl text-xs font-bold shadow-2xs transition-colors"
               title="清空画布"
@@ -1549,6 +1669,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
             </button>
 
             <button
+              type="button"
               onClick={() => setIsLookbookModalOpen(true)}
               className="px-3.5 py-1.5 bg-white/90 backdrop-blur-md border border-[#EAE6DF] hover:border-stone-400 text-stone-800 rounded-xl text-xs font-bold shadow-2xs flex items-center gap-1.5 transition-colors"
             >
@@ -1557,6 +1678,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
             </button>
 
             <button
+              type="button"
               onClick={() => onRenderVton()}
               disabled={isRendering}
               className="px-4 py-1.5 bg-[#D63031] hover:bg-[#c0392b] text-white rounded-xl text-xs font-bold shadow-xs flex items-center gap-1.5 transition-colors disabled:opacity-50"
@@ -1567,8 +1689,104 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
           </div>
         </div>
 
+        {/* 图层管理浮动抽屉 (Layer Stack Panel) */}
+        {isLayerPanelOpen && (
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="absolute top-16 right-4 z-40 w-72 bg-white/95 backdrop-blur-xl border border-[#EAE6DF] rounded-3xl p-4 shadow-2xl space-y-3 animate-in fade-in zoom-in-95 duration-150 text-left"
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-[#EAE6DF]">
+              <div className="flex items-center gap-1.5">
+                <Layers className="w-4 h-4 text-[#D63031]" />
+                <h4 className="text-xs font-extrabold text-stone-900">穿戴图层拓扑</h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsLayerPanelOpen(false)}
+                className="text-stone-400 hover:text-stone-700"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {wornItems.length === 0 ? (
+              <div className="py-6 text-center text-xs text-stone-400">暂无穿戴单品，请在左侧点击穿上</div>
+            ) : (
+              <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1 scrollbar-thin">
+                <div className="text-[9px] text-stone-400 font-mono px-1">▲ 最外层 (TOP)</div>
+                {[...wornItems]
+                  .sort((a, b) => b.zIndex - a.zIndex)
+                  .map((item) => {
+                    const isSelected = selectedItemId === item.garment.id;
+                    return (
+                      <div
+                        key={item.garment.id}
+                        onClick={() => setSelectedItemId(item.garment.id)}
+                        className={`p-2 rounded-2xl border transition-all flex items-center justify-between gap-2 cursor-pointer ${
+                          isSelected
+                            ? 'bg-rose-50/80 border-[#D63031] ring-1 ring-[#D63031]'
+                            : 'bg-[#FAF8F5] border-[#EAE6DF] hover:border-stone-400'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <img
+                            src={item.garment.assets?.[0]?.pngUrl}
+                            alt={item.garment.title}
+                            className="w-9 h-9 rounded-xl object-contain bg-white border border-[#EAE6DF] shrink-0 p-0.5"
+                          />
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-stone-800 truncate">
+                              {item.garment.title}
+                            </p>
+                            <span className="text-[9px] font-mono text-stone-400">
+                              Z-Index: {item.zIndex}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            onClick={() => handleAdjustZIndex(item.garment.id, 'UP')}
+                            className="p-1 hover:bg-stone-200 text-stone-600 rounded-lg transition-colors"
+                            title="图层上移"
+                          >
+                            <ChevronUp className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleAdjustZIndex(item.garment.id, 'DOWN')}
+                            className="p-1 hover:bg-stone-200 text-stone-600 rounded-lg transition-colors"
+                            title="图层下移"
+                          >
+                            <ChevronDown className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onRemoveWornItem(item.garment.id);
+                              if (selectedItemId === item.garment.id) setSelectedItemId(null);
+                            }}
+                            className="p-1 hover:bg-rose-100 text-[#D63031] rounded-lg transition-colors ml-0.5"
+                            title="脱下此单品"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                <div className="text-[9px] text-stone-400 font-mono px-1">▼ 贴身层 (BOTTOM)</div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* 底部信息与图层/形态控制栏 */}
-        <div className="p-3 bg-white/95 backdrop-blur-md border-t border-[#EAE6DF] flex flex-wrap items-center justify-between gap-2 z-30 pointer-events-auto">
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="p-3 bg-white/95 backdrop-blur-md border-t border-[#EAE6DF] flex flex-wrap items-center justify-between gap-2 z-30 pointer-events-auto"
+        >
           {(() => {
             const selectedWorn = wornItems.find((i) => i.garment.id === selectedItemId);
             const isUserCustom = selectedItemId ? !!customAdjustments[selectedItemId] : false;
@@ -1578,21 +1796,57 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
                 <>
                   <div className="flex items-center gap-2">
                     <span className="text-[#D63031] font-bold text-xs">✦ {selectedWorn.garment.title}</span>
+                    <span className="bg-stone-100 text-stone-700 px-2 py-0.5 rounded-lg border border-stone-200 font-mono font-bold text-[10px] flex items-center gap-1">
+                      <Layers className="w-3 h-3 text-stone-500" />
+                      <span>图层: {selectedWorn.zIndex}</span>
+                    </span>
                     {isUserCustom && (
                       <span className="bg-rose-50 text-[#D63031] px-2 py-0.5 rounded-lg border border-rose-100 font-mono font-bold text-[10px]">
                         ✨ 个人微调已保存
                       </span>
                     )}
-                    <span className="text-stone-400 text-[10px] hidden lg:inline">
-                      🖐️ 直接按住单品拖动 · 右下角等比缩放 · 四边拉伸 · 按 Esc 取消选中
+                    <span className="text-stone-400 text-[10px] hidden xl:inline">
+                      🖐️ 拖拽移动 · 右下角等比缩放 · 四边拉伸 · 按 Esc 取消选中
                     </span>
                   </div>
 
                   <div className="flex items-center gap-2">
+                    {/* 图层上移 / 下移控制 */}
+                    <div className="flex items-center bg-stone-100 p-0.5 rounded-xl border border-stone-200">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleAdjustZIndex(selectedWorn.garment.id, 'UP');
+                        }}
+                        className="px-2.5 py-1 text-stone-700 hover:text-stone-900 hover:bg-white rounded-lg text-[11px] font-bold transition-all flex items-center gap-1"
+                        title="图层上移 (移向更外层)"
+                      >
+                        <ChevronUp className="w-3 h-3 text-[#D63031]" />
+                        <span>上移</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleAdjustZIndex(selectedWorn.garment.id, 'DOWN');
+                        }}
+                        className="px-2.5 py-1 text-stone-700 hover:text-stone-900 hover:bg-white rounded-lg text-[11px] font-bold transition-all flex items-center gap-1"
+                        title="图层下移 (移向更内层)"
+                      >
+                        <ChevronDown className="w-3 h-3 text-[#D63031]" />
+                        <span>下移</span>
+                      </button>
+                    </div>
+
+                    {/* 形态切换 */}
                     {selectedWorn.garment.primaryCategory === 'TOPS' && (
                       <button
                         type="button"
-                        onClick={() => handleToggleGarmentState(selectedWorn.garment.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleGarmentState(selectedWorn.garment.id);
+                        }}
                         className="px-3 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 rounded-xl text-[11px] font-bold transition-all flex items-center gap-1 shadow-2xs"
                       >
                         <Shirt className="w-3.5 h-3.5 text-amber-700" />
@@ -1606,7 +1860,10 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
                     {selectedWorn.garment.primaryCategory === 'OUTERWEAR' && (
                       <button
                         type="button"
-                        onClick={() => handleToggleGarmentState(selectedWorn.garment.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleGarmentState(selectedWorn.garment.id);
+                        }}
                         className="px-3 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border border-indigo-200 rounded-xl text-[11px] font-bold transition-all flex items-center gap-1 shadow-2xs"
                       >
                         <Shirt className="w-3.5 h-3.5 text-indigo-700" />
@@ -1619,8 +1876,11 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
                     )}
                     <button
                       type="button"
-                      onClick={() => setSelectedItemId(null)}
-                      className="text-stone-400 hover:text-stone-700 text-xs px-2 py-1"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedItemId(null);
+                      }}
+                      className="text-stone-400 hover:text-stone-700 text-xs px-2 py-1 cursor-pointer"
                     >
                       完成微调
                     </button>
