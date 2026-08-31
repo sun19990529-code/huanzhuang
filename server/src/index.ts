@@ -1263,7 +1263,11 @@ app.get('/v1/tasks/:id', requireAuth, (req: Request, res: Response) => {
       status: task.status,
       progressPercent: task.progressPercent,
       currentStage: task.currentStage,
-      resultUrl: task.outputResult?.renderedImageUrl || null,
+      resultUrl:
+        task.outputResult?.renderedImageUrl ||
+        task.outputResult?.normalizedImageUrl ||
+        (task.outputResult as any)?.resultUrl ||
+        null,
       outputResult: task.outputResult || null,
       error: (task as any).error || null,
       updatedAt: task.updatedAt,

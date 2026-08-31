@@ -272,6 +272,55 @@ function ensureChinese(text: string): string {
   return res;
 }
 
+
+function extractImageFromResponseContent(rawContent: any): string {
+  if (!rawContent) return '';
+  const content = typeof rawContent === 'string' ? rawContent : JSON.stringify(rawContent);
+  const trimmed = content.trim();
+
+  // 1. 直接是标准 URL
+  if (/^https?:\/\/[^\s)"']+$/i.test(trimmed)) {
+    return trimmed;
+  }
+
+  // 2. 直接是完整的 Data URL (如 data:image/jpeg;base64,...)
+  if (/^data:image\/[a-zA-Z0-9.+_-]+;base64,[A-Za-z0-9+/=\s_-]+$/i.test(trimmed)) {
+    const mimePrefixMatch = trimmed.match(/^data:image\/[a-zA-Z0-9.+_-]+;base64,/i);
+    const mimePrefix = mimePrefixMatch ? mimePrefixMatch[0] : 'data:image/jpeg;base64,';
+    const cleanBase64 = trimmed.slice(mimePrefix.length).replace(/\s+/g, '');
+    return mimePrefix + cleanBase64;
+  }
+
+  // 3. Markdown 图片语法提取: ![...](data:image/...) 或 ![...](https://...)
+  const mdMatch = content.match(/!\[[^\]]*\]\(\s*(data:image\/[a-zA-Z0-9.+_-]+;base64,[A-Za-z0-9+/=\s_-]+|https?:\/\/[^\s)"']+)\s*\)/i);
+  if (mdMatch && mdMatch[1]) {
+    const target = mdMatch[1].trim();
+    if (target.startsWith('http')) return target;
+    const mimePrefixMatch = target.match(/^data:image\/[a-zA-Z0-9.+_-]+;base64,/i);
+    const mimePrefix = mimePrefixMatch ? mimePrefixMatch[0] : 'data:image/jpeg;base64,';
+    const cleanBase64 = target.slice(mimePrefix.length).replace(/\s+/g, '');
+    return mimePrefix + cleanBase64;
+  }
+
+  // 4. 正则全局捕获文本中嵌入的 data:image Base64
+  const embeddedDataUri = content.match(/data:image\/[a-zA-Z0-9.+_-]+;base64,([A-Za-z0-9+/=\s_-]{100,})/i);
+  if (embeddedDataUri && embeddedDataUri[0]) {
+    const fullMatched = embeddedDataUri[0];
+    const mimePrefixMatch = fullMatched.match(/^data:image\/[a-zA-Z0-9.+_-]+;base64,/i);
+    const mimePrefix = mimePrefixMatch ? mimePrefixMatch[0] : 'data:image/jpeg;base64,';
+    const cleanBase64 = fullMatched.slice(mimePrefix.length).replace(/\s+/g, '');
+    return mimePrefix + cleanBase64;
+  }
+
+  // 5. 提取任何嵌入的 HTTP/HTTPS 图片链接
+  const urlMatch = content.match(/https?:\/\/[^\s)"'<>]+(?:\.png|\.jpg|\.jpeg|\.webp|\/f\/[^\s)"'<>]+|[a-zA-Z0-9_-]{10,})/i);
+  if (urlMatch && urlMatch[0]) {
+    return urlMatch[0];
+  }
+
+  return '';
+}
+
 export class AIService {
   /**
    * 多模态双图对齐：传入模特素体底图与服装切片图，调用 gemini-3.7-flash-high 计算像素级解剖学吸附位置与宽高比例
@@ -605,24 +654,23 @@ export class AIService {
         if (response.ok && data) {
           const choice = data.choices?.[0];
           const content = choice?.message?.content || '';
-
-          // 1. 提取直接返回的 base64 或 URL
-          const base64Match = content.match(/data:image\/[a-zA-Z]+;base64,[A-Za-z0-9+/=]+/);
-          if (base64Match) return base64Match[0];
-
-          const mdMatch = content.match(
-            /!\[.*?\]\((data:image\/[a-zA-Z]+;base64,[A-Za-z0-9+/=]+|https?:\/\/[^\s)]+)\)/
-          );
-          if (mdMatch) return mdMatch[1];
-
-          const urlMatch = content.match(/https?:\/\/[^\s)"']+/);
-          if (urlMatch) return urlMatch[0];
-
-          if (content.startsWith('data:image')) return content;
-
-          // 2. 如果 content 为空，但模型在 reasoning_content 中生成了思维链
           const reasoning = choice?.message?.reasoning_content || '';
+
+          // 1. 优先从 content 中提取有效图像
+          let extractedImg = extractImageFromResponseContent(content);
+          if (extractedImg) {
+            console.log(`[AI Gen] ✅ 成功从 choices[0].message.content 提取到图像 (类型: ${extractedImg.startsWith('data:image') ? 'Base64, 长度: ' + extractedImg.length : 'URL'})`);
+            return extractedImg;
+          }
+
+          // 2. 如果 content 中无图像，检查 reasoning_content 中是否嵌入了图像
           if (reasoning) {
+            extractedImg = extractImageFromResponseContent(reasoning);
+            if (extractedImg) {
+              console.log(`[AI Gen] ✅ 成功从 choices[0].message.reasoning_content 提取到图像 (长度: ${extractedImg.length})`);
+              return extractedImg;
+            }
+
             console.log(`[AI Gen] 模型输出思维链 (${reasoning.length} 字符)，正在从推理中提取提炼 Prompt 执行快速纯文本生图...`);
             
             // 从 reasoning_content 中提取最终合成的 prompt
@@ -653,9 +701,13 @@ export class AIService {
               const fbText = await fallbackRes.text();
               try {
                 const fbData: any = JSON.parse(fbText);
-                const fbContent = fbData.choices?.[0]?.message?.content || '';
-                const fbUrlMatch = fbContent.match(/https?:\/\/[^\s)"']+/);
-                if (fbUrlMatch) return fbUrlMatch[0];
+                const fbChoice = fbData.choices?.[0];
+                const fbResult = extractImageFromResponseContent(fbChoice?.message?.content || '') ||
+                                 extractImageFromResponseContent(fbChoice?.message?.reasoning_content || '');
+                if (fbResult) {
+                  console.log(`[AI Gen] ✅ 兜底单步生图成功获取图像 (长度: ${fbResult.length})`);
+                  return fbResult;
+                }
               } catch (e) {}
             }
           }
