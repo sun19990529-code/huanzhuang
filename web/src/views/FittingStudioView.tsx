@@ -1,3 +1,4 @@
+import { generate2DCanvasSnapshot } from '../utils/canvasSnapshot';
 import React, { useState, useRef, useEffect } from 'react';
 import {
   UserProfile,
@@ -1712,7 +1713,18 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
         {/* 1. 主行动点：AI 试穿大片 */}
         <button
           type="button"
-          onClick={() => onRenderVton()}
+          onClick={async () => {
+            let snapshotBase64 = '';
+            try {
+              snapshotBase64 = await generate2DCanvasSnapshot(
+                avatar?.normalizedImageUrl || '',
+                wornItems
+              );
+            } catch (e) {
+              console.warn('Canvas snapshot capture failed:', e);
+            }
+            onRenderVton(snapshotBase64);
+          }}
           disabled={isRendering || wornItems.length === 0}
           title={wornItems.length === 0 ? '请先穿戴至少 1 件单品上身' : '消耗 5 积分生成 8K 影棚试穿大片'}
           className="w-full py-3 px-1 lg:px-3 bg-gradient-to-tr from-[#9E1B1B] via-[#D63031] to-[#E17055] hover:opacity-95 text-white rounded-2xl text-xs font-black shadow-md flex flex-col items-center justify-center gap-1 transition-all disabled:opacity-40 disabled:cursor-not-allowed group active:scale-95"

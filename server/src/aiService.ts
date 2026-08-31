@@ -176,19 +176,25 @@ export function buildVtonEditorialPrompt(
   gender: string,
   garmentsDetailedText: string,
   bodyMeasurements?: { heightCm: number; bustCm: number; waistCm: number; hipsCm: number },
-  avatarFeatures?: string
+  avatarFeatures?: string,
+  hasCanvasSnapshot: boolean = false
 ): string {
   const bodyStr = bodyMeasurements
     ? `Height ${bodyMeasurements.heightCm}cm, Bust ${bodyMeasurements.bustCm}cm, Waist ${bodyMeasurements.waistCm}cm, Hips ${bodyMeasurements.hipsCm}cm`
     : 'Slim athletic physique';
 
-  return `Full-body head-to-toe wide-angle fashion Lookbook photograph: young East Asian ${gender.toLowerCase()} model in Image 1 (${profileName}, ${bodyStr}), captured in a complete full-length standing pose with the entire body visible from the top of the head down to the feet and shoes on the floor.
+  const spatialGuidanceClause = hasCanvasSnapshot
+    ? '\nSpatial Guidance & Assembly: Image 2 is the exact 2D outfit layout reference. Follow the exact spatial coordinates, garment dimensions, layer tucking (tucked/untucked), and 3:4 full-length standing alignment from Image 2. Do NOT copy flat 2D sticker edges—render natural 3D volumetric draping, gravitational folds, and realistic fabric physics.'
+    : '';
 
-Outfit details worn realistically and seamlessly:
+  return `Full-body head-to-toe wide-angle commercial fashion editorial photography: 20-year-old Chinese ${gender.toLowerCase()} model in Image 1 (${profileName}, ${bodyStr}), captured in a complete full-length standing pose with the entire body fully visible from top of head to footwear on the studio floor.
+${spatialGuidanceClause}
+
+Exact Coordinated Garment Items to Replicate from Reference Images:
 ${garmentsDetailedText}
 
-Framing & Shot Composition: Complete full-length vertical 3:4 wide shot, full-body head-to-toe standing view, visible ground plane with soft contact shadows beneath feet, generous headroom and foot clearance, entire figure fully in frame without cropping head or feet, zero close-up, zero waist-up cropping, zero knee-up cropping.
-Physics & Textile drape: Authentic gravitational fabric drape conforming to 3D body contours, natural folds and creases, realistic cloth tension, soft ambient occlusion.
+Framing & Shot Composition: Complete full-length vertical 3:4 wide shot, full-body head-to-toe standing view, visible floor plane with soft contact shadows beneath feet, generous headroom and foot clearance, entire figure fully in frame without cropping head or feet, zero close-up, zero waist-up cropping, zero knee-up cropping.
+Physics & Textile Fidelity: Authentic gravitational fabric drape conforming to 3D body contours, natural cloth folds and wrinkles, realistic tension, soft ambient occlusion. 100% preserve every garment's exact pattern, color, weave texture, and neckline/waistband construction.
 Studio Environment: Minimalist luxury neutral studio backdrop, commercial 35mm wide lens, f/4, crisp tack-sharp textile focus, balanced commercial editorial color grade.`;
 }
 
@@ -825,12 +831,14 @@ export class AIService {
         }).join('\n')
       : `  - Complete Outfit: ${garmentsSummary}`;
 
+    const hasCanvasSnapshot = referenceImages.length >= 2;
     const prompt = buildVtonEditorialPrompt(
       profileName,
       gender,
       garmentsDetailedText,
       bodyMeasurements,
-      avatarFeatures
+      avatarFeatures,
+      hasCanvasSnapshot
     );
 
     const generated = await this.callImageGeneration(
