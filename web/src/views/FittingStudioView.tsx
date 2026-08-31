@@ -73,7 +73,7 @@ interface FittingStudioViewProps {
   onWearGarment: (garment: GarmentItem) => void;
   onRemoveWornItem: (garmentId: string) => void;
   onClearCanvas: () => void;
-  onSaveLookbook: (title: string) => void;
+  onSaveLookbook: (title: string, syncToOotdToday?: boolean) => void;
   onRenderVton: (compositeCanvasBase64?: string) => void;
   onSuggestToFriend: () => void;
   onUploadCustomAvatar: (file: File) => void;
@@ -207,6 +207,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
   // 弹窗与控制面板
   const [isSlotMachineOpen, setIsSlotMachineOpen] = useState(false);
   const [isLookbookModalOpen, setIsLookbookModalOpen] = useState(false);
+  const [syncToOotdToday, setSyncToOotdToday] = useState(true);
   const [isVtonResultModalOpen, setIsVtonResultModalOpen] = useState(false);
   const [lookbookTitle, setLookbookTitle] = useState('');
   const [isLayerPanelOpen, setIsLayerPanelOpen] = useState(false);
@@ -1144,10 +1145,10 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
                     type="button"
                     title={pal.label}
                     onClick={() => handleToggleColor(pal.key)}
-                    className={`w-5 h-5 rounded-full border transition-all flex items-center justify-center shrink-0 relative ${
+                    className={`w-5 h-5 rounded-full border transition-all flex items-center justify-center shrink-0 relative shadow-2xs ${
                       isSelected
                         ? 'ring-2 ring-[#D63031] ring-offset-1 scale-110 border-stone-800'
-                        : 'border-stone-300/80 hover:scale-105'
+                        : 'border-stone-400/80 ring-1 ring-black/10 hover:scale-105'
                     }`}
                     style={{ backgroundColor: pal.hex }}
                   >
@@ -1314,7 +1315,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
         <div className="absolute inset-0 flex items-center justify-center p-4 pointer-events-none">
           <div
             onClick={() => setSelectedItemId(null)}
-            className="relative h-[85vh] max-h-[860px] aspect-[3/4] rounded-3xl border border-stone-200/80 bg-white/95 shadow-2xl shadow-stone-300/40 flex items-center justify-center overflow-visible pointer-events-auto transition-all"
+            className="relative h-[56vh] md:h-[85vh] max-h-[860px] aspect-[3/4] rounded-3xl border border-stone-200/80 bg-white/95 shadow-2xl shadow-stone-300/40 flex items-center justify-center overflow-visible pointer-events-auto transition-all"
           >
             {/* 模特景深光晕底座 */}
             <div className="absolute inset-x-8 bottom-0 h-16 bg-stone-300/30 blur-xl rounded-full pointer-events-none" />
@@ -1945,7 +1946,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                onSaveLookbook(lookbookTitle.trim() || '我的专属搭配');
+                onSaveLookbook(lookbookTitle.trim() || '我的专属搭配', syncToOotdToday);
                 setIsLookbookModalOpen(false);
                 setLookbookTitle('');
               }}
@@ -1962,6 +1963,16 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
                   required
                 />
               </div>
+
+              <label className="flex items-center gap-2 text-xs font-bold text-stone-700 cursor-pointer pt-1">
+                <input
+                  type="checkbox"
+                  checked={syncToOotdToday}
+                  onChange={(e) => setSyncToOotdToday(e.target.checked)}
+                  className="rounded border-stone-300 text-[#D63031] focus:ring-[#D63031]"
+                />
+                <span>📅 同时自动排入今日穿搭日历 (OOTD)</span>
+              </label>
 
               <div className="flex gap-2 pt-2">
                 <button

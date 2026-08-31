@@ -9,6 +9,8 @@ export const pgPool = new Pool({
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,
+  statement_timeout: 10000, // 单条 SQL 最大执行 10s，防止慢查询占满连接
+  query_timeout: 15000,     // 客户端查询超时 15s
 });
 
 pgPool.on('error', (err) => {

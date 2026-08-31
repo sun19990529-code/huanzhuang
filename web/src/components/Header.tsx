@@ -43,6 +43,21 @@ export const Header: React.FC<HeaderProps> = ({
   onLogout,
 }) => {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [prevCredits, setPrevCredits] = useState<number | null>(null);
+  const [creditDelta, setCreditDelta] = useState<number | null>(null);
+
+  // 监听积分扣减变动并触发优雅浮动微动效
+  React.useEffect(() => {
+    if (user?.dailyCredits !== undefined) {
+      if (prevCredits !== null && user.dailyCredits < prevCredits) {
+        const delta = prevCredits - user.dailyCredits;
+        setCreditDelta(delta);
+        const timer = setTimeout(() => setCreditDelta(null), 2500);
+        return () => clearTimeout(timer);
+      }
+      setPrevCredits(user.dailyCredits);
+    }
+  }, [user?.dailyCredits]);
 
   // 普通用户展示前 3 个 Tab；ADMIN 角色额外展示 CMS
   const navTabs: { key: 'STUDIO' | 'OOTD' | 'FRIENDS' | 'CMS'; label: string; icon: React.ReactNode }[] = [
@@ -100,7 +115,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* 每日 100 积分胶囊 */}
         <div
           title="每日零点自动补齐至 100 积分"
-          className="flex items-center gap-1.5 bg-amber-50/80 border border-amber-200/80 px-2.5 py-1 rounded-2xl shadow-xs"
+          className="relative flex items-center gap-1.5 bg-amber-50/80 border border-amber-200/80 px-2.5 py-1 rounded-2xl shadow-xs"
         >
           <Sparkles className="w-3.5 h-3.5 text-amber-600 stroke-[1.75]" />
           <div className="text-left leading-tight">
@@ -116,6 +131,13 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <RefreshCw className="w-3 h-3 stroke-[1.75]" />
           </button>
+
+          {/* 积分变动动态浮层 (Defect 15) */}
+          {creditDelta && (
+            <span className="absolute -top-3.5 right-0 bg-[#D63031] text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-md animate-bounce">
+              -{creditDelta} 分
+            </span>
+          )}
         </div>
 
         {/* 多 Profile 角色切换 */}

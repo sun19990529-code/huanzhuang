@@ -1204,6 +1204,17 @@ app.post('/v1/outfits', requireAuth, (req: Request, res: Response) => {
 app.post('/v1/outfits/render-vton', requireAuth, (req: Request, res: Response) => {
   const { profileId, canvasSnapshotBase64, items } = req.body;
 
+  // 用户级并发锁：检查当前用户是否已有正在进行中的渲染任务，防止连击冲垮本地 GPU / 显存
+  const hasActiveTask = Array.from(db.asyncTasks.values()).some(
+    (t) => t.userId === req.user!.id && t.taskType === 'VTON_RENDER' && (t.status === 'PENDING' || t.status === 'PROCESSING')
+  );
+  if (hasActiveTask) {
+    return res.status(429).json({
+      code: 429,
+      message: '您已有正在进行中的 3D 影棚试穿渲染任务，请稍候片刻再试！',
+    });
+  }
+
   const deduction = db.deductCredits(
     req.user!.id,
     5,
@@ -1345,6 +1356,26 @@ async function bootstrap() {
   } catch (err: any) {
     console.warn('[Bootstrap] 数据库初始化提示:', err.message);
   }
+
+  // 定期轻量归档清理 7 天前已完成或失败的历史任务记录
+  const cleanupOldTasks = () => {
+    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    let cleanedCount = 0;
+    for (const [taskId, task] of db.asyncTasks.entries()) {
+      if (
+        (task.status === 'SUCCESS' || task.status === 'FAILED' || task.status === 'TIMEOUT') &&
+        new Date(task.createdAt).getTime() < sevenDaysAgo
+      ) {
+        db.asyncTasks.delete(taskId);
+        cleanedCount++;
+      }
+    }
+    if (cleanedCount > 0) {
+      console.log(`[Task Cleaner] 🧹 自动归档清理了 ${cleanedCount} 条 7 天前已完结的临时任务记录`);
+    }
+  };
+  cleanupOldTasks();
+  setInterval(cleanupOldTasks, 24 * 60 * 60 * 1000);
 
   server.listen(PORT, () => {
     console.log(`[SmartWardrobe Server] Running on http://localhost:${PORT}`);

@@ -354,8 +354,8 @@ export const App: React.FC = () => {
     }
   };
 
-  // 保存搭配
-  const handleSaveLookbook = async (title: string) => {
+  // 保存搭配 (支持一键同步打卡至今日 OOTD 日历)
+  const handleSaveLookbook = async (title: string, syncToOotdToday?: boolean) => {
     if (!currentProfile) return;
     try {
       const newOutfit = await saveOutfit({
@@ -376,7 +376,20 @@ export const App: React.FC = () => {
         })),
       });
       setOutfits([newOutfit, ...outfits]);
-      alert('✨ 搭配已成功保存至 Lookbook 套装库！');
+
+      if (syncToOotdToday) {
+        const todayStr = new Date().toISOString().split('T')[0];
+        const newLog = await logOotdEntry({
+          profileId: currentProfile.id,
+          outfitId: newOutfit.id,
+          logDate: todayStr,
+          notes: `来自试衣间灵感套装: ${title}`,
+        });
+        setOotdLogs((prev) => [newLog, ...prev.filter((l) => l.logDate !== todayStr)]);
+        alert('✨ 搭配已成功保存至 Lookbook，并同步打卡至今日 OOTD 日历！');
+      } else {
+        alert('✨ 搭配已成功保存至 Lookbook 套装库！');
+      }
     } catch (err: any) {
       alert(err.message || '保存搭配失败');
     }
