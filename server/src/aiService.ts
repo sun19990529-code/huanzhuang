@@ -656,7 +656,7 @@ export class AIService {
           const content = choice?.message?.content || '';
           const reasoning = choice?.message?.reasoning_content || '';
 
-          // 1. 优先从 content 中提取有效图像
+          // 1. 优先从 content 中提取有效图像 (全能支持 Base64 与 CDN URL)
           let extractedImg = extractImageFromResponseContent(content);
           if (extractedImg) {
             console.log(`[AI Gen] ✅ 成功从 choices[0].message.content 提取到图像 (类型: ${extractedImg.startsWith('data:image') ? 'Base64, 长度: ' + extractedImg.length : 'URL'})`);
@@ -670,46 +670,6 @@ export class AIService {
               console.log(`[AI Gen] ✅ 成功从 choices[0].message.reasoning_content 提取到图像 (长度: ${extractedImg.length})`);
               return extractedImg;
             }
-
-            console.log(`[AI Gen] 模型输出思维链 (${reasoning.length} 字符)，正在从推理中提取提炼 Prompt 执行快速纯文本生图...`);
-            
-            // 从 reasoning_content 中提取最终合成的 prompt
-            let extractedPrompt = userPrompt;
-            const promptMatch = reasoning.match(/"(Full-body[^"]+)"/i) ||
-                                reasoning.match(/Synthesizing the Final Prompt[\s\S]*?([0-9]+\.[\s\S]+)$/i) ||
-                                reasoning.match(/Formulating the Prompt[\s\S]*?(Full-body[\s\S]+)$/i);
-            if (promptMatch && promptMatch[1]) {
-              extractedPrompt = promptMatch[1].trim();
-            }
-
-            // 立即进行快速单步纯文本生图兜底
-            const fallbackRes = await fetch(`${AI_BASE_URL}/chat/completions`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${AI_API_KEY}`,
-              },
-              body: JSON.stringify({
-                model: IMAGE_GENERATION_MODEL,
-                max_tokens: 16384,
-                size: size,
-                messages: [{ role: 'user', content: extractedPrompt }],
-              }),
-            });
-
-            if (fallbackRes.ok) {
-              const fbText = await fallbackRes.text();
-              try {
-                const fbData: any = JSON.parse(fbText);
-                const fbChoice = fbData.choices?.[0];
-                const fbResult = extractImageFromResponseContent(fbChoice?.message?.content || '') ||
-                                 extractImageFromResponseContent(fbChoice?.message?.reasoning_content || '');
-                if (fbResult) {
-                  console.log(`[AI Gen] ✅ 兜底单步生图成功获取图像 (长度: ${fbResult.length})`);
-                  return fbResult;
-                }
-              } catch (e) {}
-            }
           }
         } else {
           console.error(`[AI Gen] 模型 ${IMAGE_GENERATION_MODEL} 请求失败 (${response.status}):`, textResp.slice(0, 200));
@@ -721,14 +681,13 @@ export class AIService {
       return '';
     };
 
-    // 首次多模态生图调用 (带模特与单品切片参考图)
+    // 严格多模态生图调用 (绝不丢弃参考图，100% 保护模特底图、2D画布快照与各单品切片细节)
     let generatedImage = await sendGenerateRequest(prompt, validImages);
 
-    // 容灾重试机制：若首次未能返回图像，以精炼指令快速重试
-    if (!generatedImage) {
-      console.warn(`[AI Gen] 初次多模态生成未返回有效图像，正在执行自动精简重试...`);
-      const fallbackPrompt = `${prompt}\n(Full-body head-to-toe standing fashion photography, complete full figure visible from top of head to footwear on the floor, wide vertical ${aspectRatio} framing)`;
-      generatedImage = await sendGenerateRequest(fallbackPrompt, []);
+    // 容灾重试机制：若首次因网络抖动失败，重试必须继续携带全部有效参考图，严禁降级为无图纯文本
+    if (!generatedImage && validImages.length > 0) {
+      console.warn(`[AI Gen] 初次多模态请求未完成，正在保留全部 ${validImages.length} 张参考图执行严格多模态重试...`);
+      generatedImage = await sendGenerateRequest(prompt, validImages);
     }
 
     return generatedImage || '';
