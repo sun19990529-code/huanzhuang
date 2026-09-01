@@ -807,6 +807,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  };
 
  const handleCanvasMouseUp = () => {
+    setIsDraggingCurtain(false);
  setDraggingGarmentId(null);
  };
 
@@ -1286,6 +1287,18 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  }`}
  >
  <div className="w-full aspect-square bg-white rounded-xl flex items-center justify-center p-2 overflow-hidden relative">
+                    {/* 360° 单品档案与管理详情入口 (ⓘ) */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedGarmentForDrawer(garment);
+                      }}
+                      className="absolute top-1.5 left-1.5 z-20 p-1.5 rounded-xl bg-white/95 hover:bg-white text-stone-700 hover:text-stone-950 border border-stone-200/90 shadow-sm transition-all hover:scale-110 flex items-center justify-center"
+                      title="查看单品 360° 档案与管理"
+                    >
+                      <Info className="w-3.5 h-3.5 stroke-[2.5]" />
+                    </button>
  <img
  src={garment.assets?.[0]?.pngUrl}
  alt={garment.title}
@@ -1328,7 +1341,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  onClick={() => setSelectedItemId(null)}
  onMouseMove={handleCanvasMouseMove}
  onMouseUp={handleCanvasMouseUp}
- className="w-full md:w-[55%] h-full flex flex-col justify-between relative overflow-hidden select-none"
+ className="flex-1 h-full flex flex-col justify-between relative overflow-hidden select-none"
         style={{
           background: 'radial-gradient(circle at 50% 40%, #FFFFFF 0%, #FAF8F5 55%, #EDE7DD 100%)',
         }}
@@ -1342,51 +1355,86 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  {/* 模特景深光晕底座 */}
  <div className="absolute inset-x-8 bottom-0 h-16 bg-stone-300/30 blur-xl rounded-full pointer-events-none" />
 
- {/* 选项 B：3D 影棚大片原位呈现模式 */}
- {studioDisplayMode === '3D' && renderedImageUrl ? (
- <div className="relative w-full h-full rounded-3xl overflow-hidden border border-white/20 shadow-2xl bg-stone-950 flex items-center justify-center pointer-events-auto animate-in fade-in zoom-in-95 duration-200">
- <img
- src={renderedImageUrl}
- alt="AI 8K 影棚试穿大片"
- className="w-full h-full object-cover select-none"
- />
- 
- {/* 3D 大片悬浮控制胶囊 */}
- <div className="absolute top-4 right-4 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full text-white text-[11px] font-bold flex items-center gap-1.5 shadow-lg">
- <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-spin" />
- <span>8K 商业大片已呈现</span>
- </div>
+        {/* 选项 B：3D 影棚大片原位呈现模式 (100% 纯净呈现与交互式卷帘对比) */}
+        {studioDisplayMode === '3D' && renderedImageUrl ? (
+          <div className="relative w-full h-full rounded-3xl overflow-hidden border border-white/20 shadow-2xl bg-stone-950 flex items-center justify-center pointer-events-auto select-none animate-in fade-in zoom-in-95 duration-200">
+            {isSplitCompareMode ? (
+              /* 交互式卷帘对比分屏渲染 (Split Curtain Slider) */
+              <div
+                className="relative w-full h-full cursor-ew-resize select-none overflow-hidden"
+                onMouseDown={() => setIsDraggingCurtain(true)}
+                onTouchStart={() => setIsDraggingCurtain(true)}
+              >
+                {/* 底层/左侧：2D 拼搭模特原图与贴图层 */}
+                <div className="absolute inset-0 w-full h-full bg-white flex items-center justify-center pointer-events-none">
+                  {avatar?.normalizedImageUrl ? (
+                    <img
+                      src={avatar.normalizedImageUrl}
+                      alt="2D 模特原底"
+                      className="w-full h-full object-contain pointer-events-none select-none"
+                    />
+                  ) : (
+                    <div className="text-xs text-stone-400">2D 原稿</div>
+                  )}
+                  {wornItems.map((worn) => {
+                    const defaultOffs = getCategoryDefaultOffsets(worn.garment.primaryCategory, worn.garment.subCategory);
+                    const userAdj = customAdjustments[worn.garment.id] || { scaleX: 1, scaleY: 1, offsetX: 0, offsetY: 0 };
+                    const currentAsset = worn.garment.assets?.find((a) => a.stateType === worn.state) || worn.garment.assets?.[0];
+                    const activePng = currentAsset?.pngUrl || (worn.garment as any).cutoutUrl || (worn.garment as any).previewUrl;
+                    if (!activePng) return null;
+                    return (
+                      <img
+                        key={worn.garment.id}
+                        src={activePng}
+                        alt={worn.garment.title}
+                        style={{
+                          zIndex: worn.zIndex,
+                          transform: `translate(${defaultOffs.offsetX + userAdj.offsetX}px, ${defaultOffs.offsetY + userAdj.offsetY}px) scale(${defaultOffs.scaleX * userAdj.scaleX}, ${defaultOffs.scaleY * userAdj.scaleY})`,
+                        }}
+                        className="absolute inset-0 m-auto max-h-[85%] max-w-[85%] object-contain pointer-events-none"
+                      />
+                    );
+                  })}
+                  <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-lg text-white text-[10px] font-bold">
+                    2D 拼搭原稿
+                  </div>
+                </div>
 
- <div className="absolute bottom-4 inset-x-4 flex items-center justify-between gap-2 p-2 bg-black/60 backdrop-blur-md rounded-2xl border border-white/10">
- <button
- type="button"
- onClick={() => setStudioDisplayMode('2D')}
- className="px-3.5 py-1.5 bg-white/20 hover:bg-white/30 text-white rounded-xl text-xs font-bold transition-colors"
- >
- 返回 2D 微调
- </button>
- <div className="flex items-center gap-2">
- <button
- type="button"
- onClick={() => setIsLookbookModalOpen(true)}
- className="px-3.5 py-1.5 bg-white text-stone-900 hover:bg-stone-100 rounded-xl text-xs font-bold shadow-xs flex items-center gap-1 transition-colors"
- >
- <Heart className="w-3.5 h-3.5 text-[#D63031]" />
- <span>收录 Lookbook</span>
- </button>
- <a
- href={renderedImageUrl}
- download="SmartWardrobe_VTON_8K.jpg"
- target="_blank"
- rel="noreferrer"
- className="px-3.5 py-1.5 bg-[#D63031] hover:bg-[#c0392b] text-white rounded-xl text-xs font-bold shadow-xs flex items-center gap-1 transition-colors"
- >
- <span>高清下载</span>
- </a>
- </div>
- </div>
- </div>
- ) : (
+                {/* 顶层/右侧：8K AI 试穿成片 (通过 clip-path 遮罩实现左右卷帘裁剪) */}
+                <div
+                  className="absolute inset-0 w-full h-full pointer-events-none"
+                  style={{ clipPath: `inset(0 0 0 ${curtainSliderPos}%)` }}
+                >
+                  <img
+                    src={renderedImageUrl}
+                    alt="AI 8K 试穿成片"
+                    className="w-full h-full object-cover pointer-events-none select-none"
+                  />
+                  <div className="absolute top-4 right-4 bg-[#D63031]/85 backdrop-blur-md px-2.5 py-1 rounded-lg text-white text-[10px] font-bold shadow-md">
+                    8K 试穿大片
+                  </div>
+                </div>
+
+                {/* 卷帘分割线与中控抓手 */}
+                <div
+                  style={{ left: `${curtainSliderPos}%` }}
+                  className="absolute inset-y-0 w-1 bg-white shadow-[0_0_12px_rgba(0,0,0,0.5)] z-30 flex items-center justify-center -translate-x-1/2 group pointer-events-none"
+                >
+                  <div className="w-8 h-8 rounded-full bg-white text-stone-900 shadow-2xl border border-stone-200 flex items-center justify-center text-[10px] font-extrabold group-hover:scale-110 transition-transform">
+                    <Sliders className="w-4 h-4 text-[#D63031]" />
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* 100% 纯净无遮挡 8K 试穿大片呈现 */
+              <img
+                src={renderedImageUrl}
+                alt="AI 8K 影棚试穿大片"
+                className="w-full h-full object-cover select-none"
+              />
+            )}
+          </div>
+        ) : (
  /* 2D 实时拼搭工作台模式 */
  <>
  {/* 模特底图 */}
@@ -1867,14 +1915,45 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  alt={item.garment.title}
  className="w-9 h-9 rounded-xl object-contain bg-white border border-[#EAE6DF] shrink-0 p-0.5"
  />
- <div className="min-w-0">
- <p className="text-xs font-bold text-stone-800 truncate">
- {item.garment.title}
- </p>
- <span className="text-[9px] font-mono text-stone-400">
- Z-Index: {item.zIndex}
- </span>
- </div>
+ <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold text-stone-800 truncate">
+                            {item.garment.title}
+                          </p>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className="text-[9px] font-mono text-stone-400">
+                              Z: {item.zIndex}
+                            </span>
+                            {/* 形态切换快捷开关 */}
+                            {item.garment.primaryCategory === 'TOPS' && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleToggleGarmentState(item.garment.id);
+                                }}
+                                className="px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-colors flex items-center gap-0.5 bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100"
+                                title="切换塞衣角 / 外放形态"
+                              >
+                                <Shirt className="w-3 h-3 text-amber-700" />
+                                <span>{item.state === 'TUCKED' ? '已塞入' : '已外放'}</span>
+                              </button>
+                            )}
+                            {item.garment.primaryCategory === 'OUTERWEAR' && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleToggleGarmentState(item.garment.id);
+                                }}
+                                className="px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-colors flex items-center gap-0.5 bg-indigo-50 text-indigo-900 border-indigo-200 hover:bg-indigo-100"
+                                title="切换敞开 / 扣合形态"
+                              >
+                                <Shirt className="w-3 h-3 text-indigo-700" />
+                                <span>{item.state === 'OPEN' ? '已敞开' : '已扣合'}</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
  </div>
 
  <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
