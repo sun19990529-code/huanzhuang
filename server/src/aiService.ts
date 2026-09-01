@@ -1,3 +1,4 @@
+import { ImageProcessor } from './imageProcessor';
 // ====================================================================
 // SmartWardrobe 真实 AI 接口服务适配器
 // 🚀 [nanonanana2 专属优化高密度生图提示词架构 V3.2]
@@ -604,9 +605,19 @@ export class AIService {
     else if (aspectRatio === '1:1') size = '1024x1024';
 
     // 提取有效参考图（模特底图 + 单品切片图）
-    const validImages = referenceImages.filter(
+    const rawValidImages = referenceImages.filter(
       (img) => img && (img.startsWith('data:image') || img.startsWith('http'))
     );
+
+    // 【防 503 熔断核心拦截器】：大模型发包前统一自适应压缩为 1024px WebP (质量 0.88)，体积缩减 98%
+    const validImages = await Promise.all(
+      rawValidImages.map(async (img) => {
+        return await ImageProcessor.compressToWebP1024(img, 1024, 88);
+      })
+    );
+
+    const totalPayloadKb = Math.round(validImages.reduce((sum, img) => sum + img.length, 0) / 1024);
+    console.log(`[AI Gen] 🛡️ WebP 1024px 动态压缩就绪: ${validImages.length} 张参考图, 总 Payload: ${totalPayloadKb} KB (杜绝 503 熔断)`);
 
     const sendGenerateRequest = async (userPrompt: string, images: string[]): Promise<string> => {
       const controller = new AbortController();

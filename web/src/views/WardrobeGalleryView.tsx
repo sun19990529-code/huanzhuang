@@ -20,6 +20,7 @@ import {
   Square,
   Edit2,
   Wand2,
+  Loader2,
   ChevronUp,
   ChevronDown,
   Eye,
@@ -66,6 +67,7 @@ export const WardrobeGalleryView: React.FC<WardrobeGalleryViewProps> = ({
 
   // 一拍多衣（多单品分割）弹窗状态
   const [isBatchModal, setIsBatchModal] = useState(false);
+  const [isBatchSubmitting, setIsBatchSubmitting] = useState(false);
   const [batchFile, setBatchFile] = useState<File | null>(null);
   const [batchPreview, setBatchPreview] = useState<string | null>(null);
   const [batchItems, setBatchItems] = useState<
