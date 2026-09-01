@@ -1922,7 +1922,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
       {/* ========================================================================= */}
       <div
         onClick={(e) => e.stopPropagation()}
-        className="absolute right-2 lg:right-3.5 top-1/2 -translate-y-1/2 z-30 pointer-events-auto flex flex-col items-center gap-2.5 bg-white/95 backdrop-blur-2xl border border-[#EAE6DF] shadow-2xl rounded-3xl p-3 transition-all w-14 lg:w-40 text-center"
+        className="absolute right-2.5 lg:right-4 top-1/2 -translate-y-1/2 z-30 pointer-events-auto flex flex-col items-center gap-2 bg-white/95 backdrop-blur-2xl border border-[#EAE6DF] shadow-2xl rounded-3xl p-2.5 transition-all w-12 lg:w-36 text-center"
       >
         {/* 1. 主行动点：AI 试穿大片 */}
         <button
@@ -1942,7 +1942,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
           }}
           disabled={isRendering || wornItems.length === 0}
           title={wornItems.length === 0 ? '请先穿戴至少 1 件单品上身' : '消耗 5 积分生成 8K 影棚试穿大片'}
-          className="w-full py-3 px-1 lg:px-3 bg-gradient-to-tr from-[#9E1B1B] via-[#D63031] to-[#E17055] hover:opacity-95 text-white rounded-2xl text-xs font-black shadow-md flex flex-col items-center justify-center gap-1 transition-all disabled:opacity-40 disabled:cursor-not-allowed group active:scale-95"
+          className="w-full py-2.5 px-1 lg:px-2.5 bg-gradient-to-tr from-[#9E1B1B] via-[#D63031] to-[#E17055] hover:opacity-95 text-white rounded-2xl text-xs font-black shadow-md flex flex-col items-center justify-center gap-0.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed group active:scale-95"
         >
           <div className="flex items-center gap-1.5">
             <Sparkles className={`w-4 h-4 ${isRendering ? 'animate-spin' : 'group-hover:rotate-12'} transition-transform`} />
@@ -1961,7 +1961,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
           onClick={() => setIsLookbookModalOpen(true)}
           disabled={wornItems.length === 0}
           title="保存当前搭配套装至 Lookbook 灵感库"
-          className="w-full py-2 px-1 lg:px-3 bg-stone-100 hover:bg-stone-200/80 text-stone-800 rounded-2xl text-xs font-bold transition-all flex items-center justify-center lg:justify-start gap-2 disabled:opacity-40"
+          className="w-full py-2 px-1 lg:px-2.5 bg-stone-100 hover:bg-stone-200/80 text-stone-800 rounded-2xl text-xs font-bold transition-all flex items-center justify-center lg:justify-start gap-2 disabled:opacity-40"
         >
           <Heart className="w-4 h-4 shrink-0 text-[#D63031] stroke-[2]" />
           <span className="hidden lg:inline text-xs">保存搭配</span>
@@ -1979,7 +1979,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
           }}
           disabled={wornItems.length === 0}
           title="将当前穿搭保存并打卡至今日 OOTD 穿搭日历"
-          className="w-full py-2 px-1 lg:px-3 bg-stone-100 hover:bg-stone-200/80 text-stone-800 rounded-2xl text-xs font-bold transition-all flex items-center justify-center lg:justify-start gap-2 disabled:opacity-40"
+          className="w-full py-2 px-1 lg:px-2.5 bg-stone-100 hover:bg-stone-200/80 text-stone-800 rounded-2xl text-xs font-bold transition-all flex items-center justify-center lg:justify-start gap-2 disabled:opacity-40"
         >
           <Calendar className="w-4 h-4 shrink-0 text-stone-700 stroke-[1.75]" />
           <span className="hidden lg:inline text-xs">打卡 OOTD</span>
