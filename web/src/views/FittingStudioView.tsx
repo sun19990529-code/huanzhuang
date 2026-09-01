@@ -168,6 +168,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
   const [isSplitCompareMode, setIsSplitCompareMode] = useState(false);
   const [curtainSliderPos, setCurtainSliderPos] = useState<number>(50); // 0% ~ 100%
   const [isDraggingCurtain, setIsDraggingCurtain] = useState<boolean>(false);
+  const curtainContainerRef = useRef<HTMLDivElement>(null);
   const [selectedGarmentForDrawer, setSelectedGarmentForDrawer] = useState<GarmentItem | null>(null);
   const [isWardrobeCollapsed, setIsWardrobeCollapsed] = useState<boolean>(false);
   const [splitSliderPos, setSplitSliderPos] = useState(50);
@@ -246,7 +247,8 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
 
   useEffect(() => {
     if (renderedImageUrl && !isRendering) {
-      setStudioDisplayMode('3D');
+      setSelectedItemId(null);
+                setStudioDisplayMode('3D');
       setIsOutfitChangedSinceRender(false);
       showToast('✨ AI 8K 影棚试穿大片已生成完毕，已呈现在画布中央！', 'info');
     }
@@ -806,6 +808,40 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  }
  };
 
+  const handleCurtainDrag = (clientX: number) => {
+    if (!curtainContainerRef.current) return;
+    const rect = curtainContainerRef.current.getBoundingClientRect();
+    if (rect.width === 0) return;
+    const x = clientX - rect.left;
+    const percent = Math.max(0, Math.min(100, (x / rect.width) * 100));
+    setCurtainSliderPos(percent);
+  };
+
+  useEffect(() => {
+    if (!isDraggingCurtain) return;
+    const onWindowMouseMove = (e: MouseEvent) => {
+      handleCurtainDrag(e.clientX);
+    };
+    const onWindowMouseUp = () => {
+      setIsDraggingCurtain(false);
+    };
+    const onWindowTouchMove = (e: TouchEvent) => {
+      if (e.touches && e.touches[0]) {
+        handleCurtainDrag(e.touches[0].clientX);
+      }
+    };
+    window.addEventListener('mousemove', onWindowMouseMove);
+    window.addEventListener('mouseup', onWindowMouseUp);
+    window.addEventListener('touchmove', onWindowTouchMove, { passive: false });
+    window.addEventListener('touchend', onWindowMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', onWindowMouseMove);
+      window.removeEventListener('mouseup', onWindowMouseUp);
+      window.removeEventListener('touchmove', onWindowTouchMove);
+      window.removeEventListener('touchend', onWindowMouseUp);
+    };
+  }, [isDraggingCurtain]);
+
  const handleCanvasMouseUp = () => {
     setIsDraggingCurtain(false);
  setDraggingGarmentId(null);
@@ -922,7 +958,8 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  type="button"
  onClick={() => {
  setIsVtonResultModalOpen(false);
- setIsLookbookModalOpen(true);
+ setSelectedItemId(null);
+            setIsLookbookModalOpen(true);
  }}
  className="px-4 py-2 bg-stone-900 hover:bg-black text-white rounded-xl text-xs font-bold shadow-xs flex items-center gap-1.5 transition-colors"
  >
@@ -1384,12 +1421,21 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
             {isSplitCompareMode ? (
               /* 交互式卷帘对比分屏渲染 (Split Curtain Slider) */
               <div
+                ref={curtainContainerRef}
                 className="relative w-full h-full cursor-ew-resize select-none overflow-hidden"
-                onMouseDown={() => setIsDraggingCurtain(true)}
-                onTouchStart={() => setIsDraggingCurtain(true)}
+                onMouseDown={(e) => {
+                  setIsDraggingCurtain(true);
+                  handleCurtainDrag(e.clientX);
+                }}
+                onTouchStart={(e) => {
+                  setIsDraggingCurtain(true);
+                  if (e.touches && e.touches[0]) {
+                    handleCurtainDrag(e.touches[0].clientX);
+                  }
+                }}
               >
-                {/* 底层/左侧：2D 拼搭模特原图与贴图层 */}
-                <div className="absolute inset-0 w-full h-full bg-white flex items-center justify-center pointer-events-none">
+                {/* 底层/左侧：2D 拼搭模特原图与纯净贴图层 (绝无任何选框与辅助手柄) */}
+                <div className="absolute inset-0 w-full h-full bg-[#FAF8F5] flex items-center justify-center pointer-events-none select-none">
                   {avatar?.normalizedImageUrl ? (
                     <img
                       src={avatar.normalizedImageUrl}
@@ -1414,18 +1460,18 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
                           zIndex: worn.zIndex,
                           transform: `translate(${defaultOffs.offsetX + userAdj.offsetX}px, ${defaultOffs.offsetY + userAdj.offsetY}px) scale(${defaultOffs.scaleX * userAdj.scaleX}, ${defaultOffs.scaleY * userAdj.scaleY})`,
                         }}
-                        className="absolute inset-0 m-auto max-h-[85%] max-w-[85%] object-contain pointer-events-none"
+                        className="absolute inset-0 m-auto max-h-[85%] max-w-[85%] object-contain pointer-events-none select-none"
                       />
                     );
                   })}
-                  <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-lg text-white text-[10px] font-bold">
+                  <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-xl text-white text-[10px] font-bold border border-white/10 shadow-sm">
                     2D 拼搭原稿
                   </div>
                 </div>
 
-                {/* 顶层/右侧：8K AI 试穿成片 (通过 clip-path 遮罩实现左右卷帘裁剪) */}
+                {/* 顶层/右侧：8K AI 试穿成片 (通过 clip-path 遮罩实现精准左右卷帘裁剪) */}
                 <div
-                  className="absolute inset-0 w-full h-full pointer-events-none"
+                  className="absolute inset-0 w-full h-full pointer-events-none select-none"
                   style={{ clipPath: `inset(0 0 0 ${curtainSliderPos}%)` }}
                 >
                   <img
@@ -1433,18 +1479,28 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
                     alt="AI 8K 试穿成片"
                     className="w-full h-full object-cover pointer-events-none select-none"
                   />
-                  <div className="absolute top-4 right-4 bg-[#D63031]/85 backdrop-blur-md px-2.5 py-1 rounded-lg text-white text-[10px] font-bold shadow-md">
+                  <div className="absolute top-4 right-4 bg-[#D63031]/85 backdrop-blur-md px-2.5 py-1 rounded-xl text-white text-[10px] font-bold shadow-md border border-white/20">
                     8K 试穿大片
                   </div>
                 </div>
 
-                {/* 卷帘分割线与中控抓手 */}
+                {/* 极细 1.5px 轻奢磨砂发丝分割线与精致微缩胶囊把手 */}
                 <div
                   style={{ left: `${curtainSliderPos}%` }}
-                  className="absolute inset-y-0 w-1 bg-white shadow-[0_0_12px_rgba(0,0,0,0.5)] z-30 flex items-center justify-center -translate-x-1/2 group pointer-events-none"
+                  className="absolute inset-y-0 w-[1.5px] bg-white/95 shadow-[0_0_10px_rgba(0,0,0,0.4)] z-30 flex items-center justify-center -translate-x-1/2 group pointer-events-auto cursor-ew-resize"
+                  onMouseDown={(e) => {
+                    e.stopPropagation();
+                    setIsDraggingCurtain(true);
+                    handleCurtainDrag(e.clientX);
+                  }}
+                  onTouchStart={(e) => {
+                    e.stopPropagation();
+                    setIsDraggingCurtain(true);
+                    if (e.touches && e.touches[0]) handleCurtainDrag(e.touches[0].clientX);
+                  }}
                 >
-                  <div className="w-8 h-8 rounded-full bg-white text-stone-900 shadow-2xl border border-stone-200 flex items-center justify-center text-[10px] font-extrabold group-hover:scale-110 transition-transform">
-                    <Sliders className="w-4 h-4 text-[#D63031]" />
+                  <div className="w-5 h-8 rounded-full bg-white/95 backdrop-blur-md text-stone-800 shadow-xl border border-stone-200/80 flex items-center justify-center select-none group-hover:scale-110 active:scale-95 transition-transform">
+                    <Sliders className="w-3 h-3 text-[#D63031] rotate-90" />
                   </div>
                 </div>
               </div>
@@ -1518,7 +1574,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  />
 
  {/* Figma Pro 级交互式微调与缩放选框 (视口解耦，绝对恒定尺寸与清晰度) */}
- {isSelected && (
+                  {isSelected && studioDisplayMode === '2D' && !isRendering && !isLookbookModalOpen && !isSlotMachineOpen && !isVtonResultModalOpen && !selectedGarmentForDrawer && (
  <div
  onClick={(e) => e.stopPropagation()}
  style={{
@@ -1731,16 +1787,58 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
 
         <div className="w-full h-[1px] bg-stone-200/70 my-0.5" />
 
-        {/* 2. 身材工坊 */}
-        <button
-          type="button"
-          onClick={onOpenProfileSettings}
-          title="个性化三围与模特身材工坊"
-          className="w-full py-2 px-1 lg:px-2.5 hover:bg-stone-100 text-stone-700 hover:text-stone-950 rounded-2xl text-xs font-bold transition-all flex items-center justify-center lg:justify-start gap-2"
-        >
-          <Sliders className="w-4 h-4 shrink-0 stroke-[1.75]" />
-          <span className="hidden lg:inline text-xs">身材工坊</span>
-        </button>
+        {/* 2. 形态切换 (替换原身材工坊，智能检测选中/穿戴单品并支持置灰) */}
+        {(() => {
+          const selectedWorn = selectedItemId ? wornItems.find((w) => w.garment.id === selectedItemId) : null;
+          const targetWorn = selectedWorn || wornItems.find((w) =>
+            w.garment.primaryCategory === 'TOPS' ||
+            w.garment.primaryCategory === 'OUTERWEAR' ||
+            (w.garment.assets && w.garment.assets.length > 1)
+          );
+
+          const canToggle = !!targetWorn && (
+            targetWorn.garment.primaryCategory === 'TOPS' ||
+            targetWorn.garment.primaryCategory === 'OUTERWEAR' ||
+            (targetWorn.garment.assets && targetWorn.garment.assets.length > 1)
+          );
+
+          let stateLabel = '形态切换';
+          let stateTooltip = '此衣物无形态切换';
+          if (canToggle && targetWorn) {
+            if (targetWorn.garment.primaryCategory === 'TOPS') {
+              stateLabel = targetWorn.state === 'TUCKED' ? '已塞入' : '已外放';
+              stateTooltip = `点击切换「${targetWorn.garment.title}」: ${targetWorn.state === 'TUCKED' ? '塞入 ➔ 外放' : '外放 ➔ 塞入'}`;
+            } else if (targetWorn.garment.primaryCategory === 'OUTERWEAR') {
+              stateLabel = targetWorn.state === 'OPEN' ? '已敞开' : '已扣合';
+              stateTooltip = `点击切换「${targetWorn.garment.title}」: ${targetWorn.state === 'OPEN' ? '敞开 ➔ 扣合' : '扣合 ➔ 敞开'}`;
+            } else {
+              stateLabel = '切换形态';
+              stateTooltip = `点击切换「${targetWorn.garment.title}」多态切片`;
+            }
+          }
+
+          return (
+            <button
+              type="button"
+              disabled={!canToggle}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (canToggle && targetWorn) {
+                  handleToggleGarmentState(targetWorn.garment.id);
+                }
+              }}
+              title={stateTooltip}
+              className={`w-full py-2 px-1 lg:px-2.5 rounded-2xl text-xs font-bold transition-all flex items-center justify-center lg:justify-start gap-2 ${
+                canToggle
+                  ? 'bg-amber-50/90 hover:bg-amber-100 text-amber-900 border border-amber-200/80 shadow-2xs cursor-pointer active:scale-95'
+                  : 'bg-stone-100/50 text-stone-300 border border-transparent cursor-not-allowed opacity-50'
+              }`}
+            >
+              <Shirt className={`w-4 h-4 shrink-0 stroke-[1.75] ${canToggle ? 'text-amber-700' : 'text-stone-300'}`} />
+              <span className="hidden lg:inline text-xs">{stateLabel}</span>
+            </button>
+          );
+        })()}
 
         {/* 3. 图层管理 */}
         <button
@@ -1805,6 +1903,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
             } catch (e) {
               console.warn('Canvas snapshot capture failed:', e);
             }
+            setSelectedItemId(null);
             onRenderVton(snapshotBase64);
           }}
           disabled={isRendering || wornItems.length === 0}
