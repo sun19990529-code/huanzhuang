@@ -470,7 +470,7 @@ app.get('/v1/profiles/:id/avatar', (req: Request, res: Response) => {
   const profileId = req.params.id;
   const avatar = Array.from(db.avatars.values()).find(
     (a) => a.profileId === profileId && a.isActive
-  );
+  ) || db.avatars.get(profileId);
   if (!avatar) {
     const profile = db.profiles.get(profileId);
     const isMale = profile?.gender === 'MALE';

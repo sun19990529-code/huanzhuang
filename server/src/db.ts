@@ -213,8 +213,8 @@ export class Database {
           this.profiles.set(prof.id, prof);
         }
 
-        // 4. 加载 Avatars
-        const avatarsRes = await pgPool.query('SELECT * FROM avatars');
+        // 4. 加载 Avatars (严格按 is_active 降序及创建时间最新优先加载)
+        const avatarsRes = await pgPool.query('SELECT * FROM avatars ORDER BY is_active DESC, created_at DESC');
         this.avatars.clear();
         for (const a of avatarsRes.rows) {
           const av: UserAvatar = {
@@ -815,6 +815,14 @@ export class Database {
 
   // 保存模特素体 (内存 + PostgreSQL 实时落盘)
   public saveAvatar(avatar: UserAvatar): void {
+    if (avatar.isActive) {
+      for (const [key, av] of this.avatars.entries()) {
+        if (av.profileId === avatar.profileId && av.id !== avatar.id) {
+          av.isActive = false;
+        }
+      }
+      pgPool.query('UPDATE avatars SET is_active = false WHERE profile_id = $1 AND id != $2', [avatar.profileId, avatar.id]).catch(() => {});
+    }
     this.avatars.set(avatar.id, avatar);
     this.avatars.set(avatar.profileId, avatar);
     const now = new Date().toISOString();
