@@ -1110,7 +1110,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  {/* 左侧 45%：巴黎法式 Ins 数字化衣橱 */}
  {/* ------------------------------------------------------------- */}
  <div className={`h-full flex flex-col border-r border-[#EAE6DF] bg-white/95 backdrop-blur-xl shrink-0 z-20 shadow-xs transition-all duration-300 ${
-    isWardrobeCollapsed ? 'w-0 opacity-0 overflow-hidden border-r-0 pointer-events-none' : 'w-full md:w-[46%] lg:w-[42%] xl:w-[38%] 2xl:w-[36%]'
+    isWardrobeCollapsed ? 'w-0 opacity-0 overflow-hidden border-r-0 pointer-events-none' : 'w-full md:w-[48%] lg:w-[46%] xl:w-[45%] 2xl:w-[44%]'
   }`}>
  
  {/* 顶部控制栏 */}
