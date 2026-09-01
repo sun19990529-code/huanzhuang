@@ -42,7 +42,18 @@ process.on('uncaughtException', (err) => {
 });
 
 const app = express();
-app.use(cors());
+// 允许 suncraft.site 及外网/局域网/localhost 全域跨域访问
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // 允许所有来源（包括 suncraft.site, *.suncraft.site, 本地, 移动端）
+      callback(null, true);
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token', 'x-user-id', 'X-Requested-With'],
+  })
+);
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
@@ -1487,9 +1498,9 @@ async function bootstrap() {
   cleanupOldTasks();
   setInterval(cleanupOldTasks, 24 * 60 * 60 * 1000);
 
-  server.listen(PORT, () => {
-    console.log(`[SmartWardrobe Server] Running on http://localhost:${PORT}`);
-    console.log(`[SmartWardrobe WS] WebSocket task stream ready at ws://localhost:${PORT}/v1/ws/tasks`);
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`[SmartWardrobe Server] Running on http://0.0.0.0:${PORT} (External domain: suncraft.site ready)`);
+    console.log(`[SmartWardrobe WS] WebSocket task stream ready at ws://0.0.0.0:${PORT}/v1/ws/tasks`);
   });
 }
 

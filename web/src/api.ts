@@ -7,8 +7,27 @@ import {
   GarmentState,
 } from '@smart-wardrobe/shared';
 
-const API_BASE = 'http://localhost:3001/v1';
-const WS_BASE = 'ws://localhost:3001/v1/ws/tasks';
+// 动态自适应 API 与 WebSocket 根地址（支持 localhost、suncraft.site 域名及外网反向代理）
+const getBaseUrls = () => {
+  if (typeof window === 'undefined') {
+    return {
+      api: 'http://127.0.0.1:3001/v1',
+      ws: 'ws://127.0.0.1:3001/v1/ws/tasks',
+    };
+  }
+
+  const isHttps = window.location.protocol === 'https:';
+  const protocol = isHttps ? 'https:' : 'http:';
+  const wsProtocol = isHttps ? 'wss:' : 'ws:';
+  const host = window.location.host; // e.g. "suncraft.site:5173", "suncraft.site" or "localhost:5173"
+
+  return {
+    api: `${protocol}//${host}/v1`,
+    ws: `${wsProtocol}//${host}/v1/ws/tasks`,
+  };
+};
+
+const { api: API_BASE, ws: WS_BASE } = getBaseUrls();
 
 export type UserData = CurrentUser;
 export type ProfileData = UserProfile;
