@@ -210,13 +210,16 @@ export const GarmentDetailDrawer: React.FC<GarmentDetailDrawerProps> = ({
               {onDeleteGarment && (
                 <button
                   onClick={() => {
-                    onDeleteGarment(garment.id);
-                    onClose();
+                    if (confirm(`确定要彻底删除单品「${garment.title}」吗？\n此操作将同时从您的专属衣橱和当前试穿中彻底移除。`)) {
+                      onDeleteGarment(garment.id);
+                      onClose();
+                    }
                   }}
-                  title="删除单品"
-                  className="px-3.5 py-2.5 bg-stone-100 hover:bg-red-50 hover:text-red-600 text-stone-600 rounded-2xl text-xs font-bold transition-colors"
+                  title="从我的专属衣橱彻底删除"
+                  className="px-3.5 py-2.5 bg-red-50 hover:bg-red-100 text-red-600 hover:text-red-700 border border-red-200/80 rounded-2xl text-xs font-bold transition-all flex items-center gap-1 shadow-2xs"
                 >
                   <Trash2 className="w-4 h-4" />
+                  <span>删除</span>
                 </button>
               )}
             </div>

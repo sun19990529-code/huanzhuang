@@ -1,3 +1,4 @@
+import { GarmentDetailDrawer } from '../components/GarmentDetailDrawer';
 import { generate2DCanvasSnapshot } from '../utils/canvasSnapshot';
 import React, { useState, useRef, useEffect } from 'react';
 import {
@@ -44,6 +45,9 @@ import {
   Shirt,
   Layers,
   Maximize2,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Info,
   Calendar,
   UploadCloud,
 } from 'lucide-react';
@@ -162,6 +166,10 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  // 选项 B：9:16 画布原位 2D 拼搭 / 3D 真人大片双模切换模式
  const [studioDisplayMode, setStudioDisplayMode] = useState<'2D' | '3D'>('2D');
   const [isSplitCompareMode, setIsSplitCompareMode] = useState(false);
+  const [curtainSliderPos, setCurtainSliderPos] = useState<number>(50); // 0% ~ 100%
+  const [isDraggingCurtain, setIsDraggingCurtain] = useState<boolean>(false);
+  const [selectedGarmentForDrawer, setSelectedGarmentForDrawer] = useState<GarmentItem | null>(null);
+  const [isWardrobeCollapsed, setIsWardrobeCollapsed] = useState<boolean>(false);
   const [splitSliderPos, setSplitSliderPos] = useState(50);
   const [isDraggingSplit, setIsDraggingSplit] = useState(false);
  const [isOutfitChangedSinceRender, setIsOutfitChangedSinceRender] = useState(false);
@@ -1063,7 +1071,9 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  {/* ------------------------------------------------------------- */}
  {/* 左侧 45%：巴黎法式 Ins 数字化衣橱 */}
  {/* ------------------------------------------------------------- */}
- <div className="w-full md:w-[45%] h-full flex flex-col border-r border-[#EAE6DF] bg-white/95 backdrop-blur-xl shrink-0 z-20 shadow-xs">
+ <div className={`h-full flex flex-col border-r border-[#EAE6DF] bg-white/95 backdrop-blur-xl shrink-0 z-20 shadow-xs transition-all duration-300 ${
+    isWardrobeCollapsed ? 'w-0 opacity-0 overflow-hidden border-r-0 pointer-events-none' : 'w-full md:w-[42%] lg:w-[38%] xl:w-[35%]'
+  }`}>
  
  {/* 顶部控制栏 */}
  <div className="p-4 border-b border-[#EAE6DF] space-y-3 bg-[#FAF8F5]/60 shrink-0">
