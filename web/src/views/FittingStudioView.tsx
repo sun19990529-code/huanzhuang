@@ -1110,7 +1110,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  {/* 左侧 45%：巴黎法式 Ins 数字化衣橱 */}
  {/* ------------------------------------------------------------- */}
  <div className={`h-full flex flex-col border-r border-[#EAE6DF] bg-white/95 backdrop-blur-xl shrink-0 z-20 shadow-xs transition-all duration-300 ${
-    isWardrobeCollapsed ? 'w-0 opacity-0 overflow-hidden border-r-0 pointer-events-none' : 'w-full md:w-[42%] lg:w-[38%] xl:w-[35%]'
+    isWardrobeCollapsed ? 'w-0 opacity-0 overflow-hidden border-r-0 pointer-events-none' : 'w-full md:w-[46%] lg:w-[42%] xl:w-[38%] 2xl:w-[36%]'
   }`}>
  
  {/* 顶部控制栏 */}
@@ -1407,10 +1407,10 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
         )}
 
         {/* 画布中央模特舞台 (3:4 黄金画幅) */}
- <div className="absolute inset-0 flex items-center justify-center p-4 pointer-events-none">
+ <div className="absolute inset-0 flex items-center justify-center p-2 sm:p-3 pointer-events-none">
  <div
  onClick={() => setSelectedItemId(null)}
- className="relative h-[56vh] md:h-[85vh] max-h-[860px] aspect-[3/4] rounded-3xl border border-stone-200/80 bg-white/95 shadow-2xl shadow-stone-300/40 flex items-center justify-center overflow-visible pointer-events-auto transition-all"
+ className="relative h-[56vh] md:h-[88vh] max-h-[880px] aspect-[3/4] rounded-3xl border border-stone-200/80 bg-white/95 shadow-2xl shadow-stone-300/40 flex items-center justify-center overflow-visible pointer-events-auto transition-all"
  >
  {/* 模特景深光晕底座 */}
  <div className="absolute inset-x-8 bottom-0 h-16 bg-stone-300/30 blur-xl rounded-full pointer-events-none" />
@@ -1766,7 +1766,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
       {/* ========================================================================= */}
       <div
         onClick={(e) => e.stopPropagation()}
-        className="absolute left-3 lg:left-5 top-1/2 -translate-y-1/2 z-30 pointer-events-auto flex flex-col items-center gap-2 bg-white/95 backdrop-blur-2xl border border-[#EAE6DF] shadow-2xl rounded-3xl p-2.5 transition-all w-12 lg:w-36 text-left"
+        className="absolute left-2 lg:left-3.5 top-1/2 -translate-y-1/2 z-30 pointer-events-auto flex flex-col items-center gap-2 bg-white/95 backdrop-blur-2xl border border-[#EAE6DF] shadow-2xl rounded-3xl p-2.5 transition-all w-12 lg:w-36 text-left"
       >
         {/* 1. 2D / 3D 模式纵向切换 (带平滑丝滑滑块动效) */}
         <div className="w-full relative flex flex-col p-1 bg-stone-100/90 rounded-2xl border border-[#EAE6DF]/60 select-none">
@@ -1922,7 +1922,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
       {/* ========================================================================= */}
       <div
         onClick={(e) => e.stopPropagation()}
-        className="absolute right-3 lg:right-5 top-1/2 -translate-y-1/2 z-30 pointer-events-auto flex flex-col items-center gap-2.5 bg-white/95 backdrop-blur-2xl border border-[#EAE6DF] shadow-2xl rounded-3xl p-3 transition-all w-14 lg:w-40 text-center"
+        className="absolute right-2 lg:right-3.5 top-1/2 -translate-y-1/2 z-30 pointer-events-auto flex flex-col items-center gap-2.5 bg-white/95 backdrop-blur-2xl border border-[#EAE6DF] shadow-2xl rounded-3xl p-3 transition-all w-14 lg:w-40 text-center"
       >
         {/* 1. 主行动点：AI 试穿大片 */}
         <button
