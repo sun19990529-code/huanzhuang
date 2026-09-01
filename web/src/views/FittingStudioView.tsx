@@ -1434,8 +1434,11 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
                   }
                 }}
               >
-                {/* 底层/左侧：2D 拼搭模特原图与纯净贴图层 (绝无任何选框与辅助手柄) */}
-                <div className="absolute inset-0 w-full h-full bg-[#FAF8F5] flex items-center justify-center pointer-events-none select-none">
+                {/* 底层/左侧：2D 拼搭模特原图与纯净贴图层 (精准左半侧卷帘裁剪，绝无穿透溢出) */}
+                <div
+                  className="absolute inset-0 w-full h-full bg-[#FAF8F5] flex items-center justify-center pointer-events-none select-none"
+                  style={{ clipPath: `inset(0 ${100 - curtainSliderPos}% 0 0)` }}
+                >
                   {avatar?.normalizedImageUrl ? (
                     <img
                       src={avatar.normalizedImageUrl}
