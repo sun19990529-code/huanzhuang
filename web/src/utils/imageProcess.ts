@@ -2,7 +2,7 @@
  * 图像透明通道提取与纯白底去除工具 (Alpha Cutout Engine)
  */
 
-export function removeWhiteBackground(imageSrc: string, threshold = 230): Promise<string> {
+export function removeWhiteBackground(imageSrc: string): Promise<string> {
   return new Promise((resolve) => {
     if (!imageSrc) {
       resolve(imageSrc);
@@ -27,54 +27,194 @@ export function removeWhiteBackground(imageSrc: string, threshold = 230): Promis
         ctx.drawImage(img, 0, 0);
         const imgData = ctx.getImageData(0, 0, width, height);
         const data = imgData.data;
+        const totalPixels = width * height;
+        const mask = new Uint8Array(totalPixels); // 0: 前景, 1: 背景(透明)
 
-        // 采样四个角的背景基准色 (Top-Left, Top-Right, Bottom-Left, Bottom-Right)
         const getPixel = (x: number, y: number) => {
           const idx = (y * width + x) * 4;
           return { r: data[idx], g: data[idx + 1], b: data[idx + 2], a: data[idx + 3] };
         };
 
-        const corners = [
-          getPixel(2, 2),
-          getPixel(Math.max(0, width - 3), 2),
-          getPixel(2, Math.max(0, height - 3)),
-          getPixel(Math.max(0, width - 3), Math.max(0, height - 3)),
+        // 1. 采样四角及边缘采样点
+        const samples: Array<{ r: number; g: number; b: number }> = [];
+        const sampleCoords = [
+          [2, 2], [Math.floor(width / 2), 2], [width - 3, 2],
+          [2, Math.floor(height / 2)], [width - 3, Math.floor(height / 2)],
+          [2, height - 3], [Math.floor(width / 2), height - 3], [width - 3, height - 3],
         ];
+        for (const [sx, sy] of sampleCoords) {
+          if (sx >= 0 && sx < width && sy >= 0 && sy < height) {
+            const p = getPixel(sx, sy);
+            samples.push({ r: p.r, g: p.g, b: p.b });
+          }
+        }
 
-        // 计算平均背景参考色
-        const avgBgR = Math.round(corners.reduce((s, c) => s + c.r, 0) / 4);
-        const avgBgG = Math.round(corners.reduce((s, c) => s + c.g, 0) / 4);
-        const avgBgB = Math.round(corners.reduce((s, c) => s + c.b, 0) / 4);
-        const isCornerUniform = corners.every(
-          (c) => Math.abs(c.r - avgBgR) < 25 && Math.abs(c.g - avgBgG) < 25 && Math.abs(c.b - avgBgB) < 25
-        );
+        const bgR = Math.round(samples.reduce((s, p) => s + p.r, 0) / samples.length);
+        const bgG = Math.round(samples.reduce((s, p) => s + p.g, 0) / samples.length);
+        const bgB = Math.round(samples.reduce((s, p) => s + p.b, 0) / samples.length);
 
-        // 像素级提取背景并转换为完全透明
-        for (let i = 0; i < data.length; i += 4) {
-          const r = data[i];
-          const g = data[i + 1];
-          const b = data[i + 2];
+        const colorDistance = (r: number, g: number, b: number, tr = bgR, tg = bgG, tb = bgB) => {
+          return Math.sqrt(Math.pow(r - tr, 2) + Math.pow(g - tg, 2) + Math.pow(b - tb, 2));
+        };
 
-          // 模式 1: 纯白/高亮近白色背景
-          if (r >= threshold && g >= threshold && b >= threshold) {
-            const minVal = Math.min(r, g, b);
-            if (minVal >= 246) {
-              data[i + 3] = 0; // 纯白完全透明
-            } else {
-              const alphaRatio = (255 - minVal) / (255 - threshold);
-              data[i + 3] = Math.round(255 * Math.pow(alphaRatio, 1.2));
+        const sampleDists = samples.map((s) => colorDistance(s.r, s.g, s.b));
+        const maxSampleDist = Math.max(...sampleDists);
+
+        const isWhiteLike = bgR >= 235 && bgG >= 235 && bgB >= 235;
+        const baseTolerance = isWhiteLike ? 14 : Math.max(8, Math.min(13, maxSampleDist + 5));
+
+        // 2. 第一阶段：边缘种子 BFS 泛洪
+        const queue = new Int32Array(totalPixels);
+        let head = 0;
+        let tail = 0;
+
+        const pushQueue = (x: number, y: number) => {
+          const pIdx = y * width + x;
+          if (mask[pIdx] === 0) {
+            const p = getPixel(x, y);
+            const dist = colorDistance(p.r, p.g, p.b);
+            const isPureWhite = isWhiteLike && (p.r >= 248 && p.g >= 248 && p.b >= 248);
+            if (dist <= baseTolerance || isPureWhite) {
+              mask[pIdx] = 1;
+              queue[tail++] = pIdx;
             }
           }
-          // 模式 2: 若四角具备高度一致的背景色 (如棚拍纯灰底/纯色底)，基于欧氏色彩距离抠除
-          else if (isCornerUniform) {
-            const dist = Math.sqrt(
-              Math.pow(r - avgBgR, 2) + Math.pow(g - avgBgG, 2) + Math.pow(b - avgBgB, 2)
-            );
-            if (dist < 18) {
-              data[i + 3] = 0;
-            } else if (dist < 32) {
-              const ratio = (dist - 18) / 14;
-              data[i + 3] = Math.round(data[i + 3] * ratio);
+        };
+
+        for (let x = 0; x < width; x++) {
+          pushQueue(x, 0);
+          pushQueue(x, height - 1);
+        }
+        for (let y = 0; y < height; y++) {
+          pushQueue(0, y);
+          pushQueue(width - 1, y);
+        }
+
+        while (head < tail) {
+          const curr = queue[head++];
+          const cx = curr % width;
+          const cy = Math.floor(curr / width);
+
+          const neighbors = [
+            [cx + 1, cy], [cx - 1, cy],
+            [cx, cy + 1], [cx, cy - 1],
+          ];
+
+          for (const [nx, ny] of neighbors) {
+            if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+              const nIdx = ny * width + nx;
+              if (mask[nIdx] === 0) {
+                const p = getPixel(nx, ny);
+                const dist = colorDistance(p.r, p.g, p.b);
+                const isPureWhite = isWhiteLike && (p.r >= 248 && p.g >= 248 && p.b >= 248);
+                if (dist <= baseTolerance || isPureWhite) {
+                  mask[nIdx] = 1;
+                  queue[tail++] = nIdx;
+                }
+              }
+            }
+          }
+        }
+
+        // 3. 第二阶段：内部闭合空腔分析
+        const visitedForCavity = new Uint8Array(totalPixels);
+        const cavityTolerance = isWhiteLike ? 12 : 8;
+
+        for (let y = 1; y < height - 1; y++) {
+          for (let x = 1; x < width - 1; x++) {
+            const idx = y * width + x;
+            if (mask[idx] === 0 && visitedForCavity[idx] === 0) {
+              const p0 = getPixel(x, y);
+              const dist0 = colorDistance(p0.r, p0.g, p0.b);
+              const isWhiteHit0 = isWhiteLike && (p0.r >= 248 && p0.g >= 248 && p0.b >= 248);
+
+              if (dist0 <= cavityTolerance || isWhiteHit0) {
+                const regionPixels: number[] = [];
+                let rSum = 0, gSum = 0, bSum = 0;
+                let touchesBorder = false;
+
+                const rQueue: number[] = [idx];
+                visitedForCavity[idx] = 1;
+
+                let rHead = 0;
+                while (rHead < rQueue.length) {
+                  const cIdx = rQueue[rHead++];
+                  regionPixels.push(cIdx);
+                  const rx = cIdx % width;
+                  const ry = Math.floor(cIdx / width);
+                  const p = getPixel(rx, ry);
+                  rSum += p.r;
+                  gSum += p.g;
+                  bSum += p.b;
+
+                  if (rx === 0 || rx === width - 1 || ry === 0 || ry === height - 1) {
+                    touchesBorder = true;
+                  }
+
+                  const rNeighbors = [
+                    [rx + 1, ry], [rx - 1, ry],
+                    [rx, ry + 1], [rx, ry - 1],
+                  ];
+                  for (const [rnx, rny] of rNeighbors) {
+                    if (rnx >= 0 && rnx < width && rny >= 0 && rny < height) {
+                      const rnIdx = rny * width + rnx;
+                      if (mask[rnIdx] === 0 && visitedForCavity[rnIdx] === 0) {
+                        const np = getPixel(rnx, rny);
+                        const nDist = colorDistance(np.r, np.g, np.b);
+                        const nWhite = isWhiteLike && (np.r >= 248 && np.g >= 248 && np.b >= 248);
+                        if (nDist <= cavityTolerance || nWhite) {
+                          visitedForCavity[rnIdx] = 1;
+                          rQueue.push(rnIdx);
+                        }
+                      }
+                    }
+                  }
+                }
+
+                if (regionPixels.length >= 16 && !touchesBorder) {
+                  const count = regionPixels.length;
+                  const avgR = rSum / count;
+                  const avgG = gSum / count;
+                  const avgB = bSum / count;
+                  const avgDistToBg = colorDistance(avgR, avgG, avgB);
+
+                  if (avgDistToBg <= cavityTolerance || (isWhiteLike && avgR >= 248 && avgG >= 248 && avgB >= 248)) {
+                    for (const cavPixel of regionPixels) {
+                      mask[cavPixel] = 1;
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        // 4. 第三阶段：边缘平滑羽化
+        for (let i = 0; i < totalPixels; i++) {
+          const rawIdx = i * 4;
+          if (mask[i] === 1) {
+            data[rawIdx + 3] = 0;
+          } else {
+            const px = i % width;
+            const py = Math.floor(i / width);
+            let nearBg = false;
+
+            if (px > 0 && mask[i - 1] === 1) nearBg = true;
+            else if (px < width - 1 && mask[i + 1] === 1) nearBg = true;
+            else if (py > 0 && mask[i - width] === 1) nearBg = true;
+            else if (py < height - 1 && mask[i + width] === 1) nearBg = true;
+
+            if (nearBg) {
+              const p = getPixel(px, py);
+              const dist = colorDistance(p.r, p.g, p.b);
+              if (dist < baseTolerance + 8) {
+                const ratio = Math.max(0.1, Math.min(1.0, (dist - (baseTolerance - 4)) / 12));
+                data[rawIdx + 3] = Math.round(255 * Math.pow(ratio, 1.2));
+              } else {
+                data[rawIdx + 3] = 255;
+              }
+            } else {
+              data[rawIdx + 3] = 255;
             }
           }
         }
@@ -82,7 +222,7 @@ export function removeWhiteBackground(imageSrc: string, threshold = 230): Promis
         ctx.putImageData(imgData, 0, 0);
         resolve(canvas.toDataURL('image/png'));
       } catch (err) {
-        console.warn('Canvas 抠图异常，回退原图:', err);
+        console.warn('Enhanced Matting Canvas 抠图异常，回退原图:', err);
         resolve(imageSrc);
       }
     };

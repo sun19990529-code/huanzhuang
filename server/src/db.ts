@@ -818,10 +818,10 @@ export class Database {
     if (avatar.isActive) {
       for (const [key, av] of this.avatars.entries()) {
         if (av.profileId === avatar.profileId && av.id !== avatar.id) {
-          av.isActive = false;
+          this.avatars.delete(key);
         }
       }
-      pgPool.query('UPDATE avatars SET is_active = false WHERE profile_id = $1 AND id != $2', [avatar.profileId, avatar.id]).catch(() => {});
+      pgPool.query('DELETE FROM avatars WHERE profile_id = $1 AND id != $2', [avatar.profileId, avatar.id]).catch(() => {});
     }
     this.avatars.set(avatar.id, avatar);
     this.avatars.set(avatar.profileId, avatar);

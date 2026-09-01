@@ -752,8 +752,25 @@ app.post('/v1/garments/auto-detect-upload', requireAuth, async (req: Request, re
           console.warn(`[Ghost Mannequin] 单品 ${item.title} 平铺素图生成异常:`, err.message);
         }
 
-        const baseImage = flatLayUrl || item.previewUrl || imageBase64 || GENERATED_ASSETS.dressCutoutUrl;
+        let baseImage = flatLayUrl || item.previewUrl || imageBase64 || GENERATED_ASSETS.dressCutoutUrl;
+        if (baseImage && (baseImage.startsWith('data:image') || baseImage.length > 100)) {
+          try {
+            baseImage = await ImageProcessor.removeBackground(baseImage);
+          } catch (err: any) {
+            console.warn(`[Auto-Detect] 单品 ${item.title} 主素图透明化异常:`, err.message);
+          }
+        }
+
         const assets = generateFissionAssets(garmentId, item.primaryCategory, baseImage);
+        for (const a of assets) {
+          if (a.pngUrl && (a.pngUrl.startsWith('data:image') || a.pngUrl.length > 100)) {
+            try {
+              a.pngUrl = await ImageProcessor.removeBackground(a.pngUrl);
+            } catch (e: any) {
+              console.warn(`[Auto-Detect] 单品 ${item.title} 切片 ${a.stateType} 透明化异常:`, e.message);
+            }
+          }
+        }
 
         const newGarment: ExtendedGarmentItem = {
           id: garmentId,
