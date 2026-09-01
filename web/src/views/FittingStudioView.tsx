@@ -1118,6 +1118,14 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  <Plus className="w-3.5 h-3.5 stroke-[2]" />
  <span>智能录入</span>
  </button>
+              <button
+                type="button"
+                onClick={() => setIsWardrobeCollapsed(true)}
+                className="p-1.5 hover:bg-stone-200 text-stone-500 hover:text-stone-800 rounded-xl transition-colors ml-1 cursor-pointer"
+                title="折叠衣橱列表，获得全屏沉浸试穿大视野"
+              >
+                <PanelLeftClose className="w-4 h-4" />
+              </button>
  <input
  ref={fileInputRef}
  type="file"
@@ -1346,7 +1354,22 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
           background: 'radial-gradient(circle at 50% 40%, #FFFFFF 0%, #FAF8F5 55%, #EDE7DD 100%)',
         }}
  >
- {/* 画布中央模特舞台 (3:4 黄金画幅) */}
+ {/* 当左侧衣橱折叠时，在画布左上方提供一键展开按钮 */}
+        {isWardrobeCollapsed && (
+          <div className="absolute top-4 left-4 z-30 pointer-events-auto">
+            <button
+              type="button"
+              onClick={() => setIsWardrobeCollapsed(false)}
+              className="px-3.5 py-2 bg-white/95 hover:bg-white text-stone-800 rounded-2xl border border-stone-200/90 shadow-lg text-xs font-bold flex items-center gap-2 transition-all hover:scale-105 cursor-pointer"
+              title="展开数字化衣橱"
+            >
+              <PanelLeftOpen className="w-4 h-4 text-[#D63031]" />
+              <span>展开衣橱</span>
+            </button>
+          </div>
+        )}
+
+        {/* 画布中央模特舞台 (3:4 黄金画幅) */}
  <div className="absolute inset-0 flex items-center justify-center p-4 pointer-events-none">
  <div
  onClick={() => setSelectedItemId(null)}
@@ -1990,133 +2013,10 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  })}
  <div className="text-[9px] text-stone-400 font-mono px-1">▼ 贴身层 (BOTTOM)</div>
  </div>
- )}
- </div>
- )}
-
- {/* 底部信息与图层/形态控制栏 */}
- <div
- onClick={(e) => e.stopPropagation()}
- className="p-3 bg-white/95 backdrop-blur-md border-t border-[#EAE6DF] flex flex-wrap items-center justify-between gap-2 z-30 pointer-events-auto"
- >
- {(() => {
- const selectedWorn = wornItems.find((i) => i.garment.id === selectedItemId);
- const isUserCustom = selectedItemId ? !!customAdjustments[selectedItemId] : false;
-
- if (selectedWorn) {
- return (
- <>
- <div className="flex items-center gap-2">
- <span className="text-[#D63031] font-bold text-xs"> {selectedWorn.garment.title}</span>
- <span className="bg-stone-100 text-stone-700 px-2 py-0.5 rounded-lg border border-stone-200 font-mono font-bold text-[10px] flex items-center gap-1">
- <Layers className="w-3 h-3 text-stone-500" />
- <span>图层: {selectedWorn.zIndex}</span>
- </span>
- {isUserCustom && (
- <span className="bg-rose-50 text-[#D63031] px-2 py-0.5 rounded-lg border border-rose-100 font-mono font-bold text-[10px]">
- 个人微调已保存
- </span>
- )}
- <span className="text-stone-400 text-[10px] hidden xl:inline">
- ️ 拖拽移动 · 右下角等比缩放 · 四边拉伸 · 按 Esc 取消选中
- </span>
- </div>
-
- <div className="flex items-center gap-2">
- {/* 图层上移 / 下移控制 */}
- <div className="flex items-center bg-stone-100 p-0.5 rounded-xl border border-stone-200">
- <button
- type="button"
- onClick={(e) => {
- e.stopPropagation();
- handleAdjustZIndex(selectedWorn.garment.id, 'UP');
- }}
- className="px-2.5 py-1 text-stone-700 hover:text-stone-900 hover:bg-white rounded-lg text-[11px] font-bold transition-all flex items-center gap-1"
- title="图层上移 (移向更外层)"
- >
- <ChevronUp className="w-3 h-3 text-[#D63031]" />
- <span>上移</span>
- </button>
- <button
- type="button"
- onClick={(e) => {
- e.stopPropagation();
- handleAdjustZIndex(selectedWorn.garment.id, 'DOWN');
- }}
- className="px-2.5 py-1 text-stone-700 hover:text-stone-900 hover:bg-white rounded-lg text-[11px] font-bold transition-all flex items-center gap-1"
- title="图层下移 (移向更内层)"
- >
- <ChevronDown className="w-3 h-3 text-[#D63031]" />
- <span>下移</span>
- </button>
- </div>
-
- {/* 形态切换 */}
- {selectedWorn.garment.primaryCategory === 'TOPS' && (
- <button
- type="button"
- onClick={(e) => {
- e.stopPropagation();
- handleToggleGarmentState(selectedWorn.garment.id);
- }}
- className="px-3 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 rounded-xl text-[11px] font-bold transition-all flex items-center gap-1 shadow-2xs"
- >
- <Shirt className="w-3.5 h-3.5 text-amber-700" />
- <span>
- {selectedWorn.state === 'TUCKED'
- ? '内搭: 已塞入 (点击外放)'
- : '内搭: 已外放 (点击塞入)'}
- </span>
- </button>
- )}
- {selectedWorn.garment.primaryCategory === 'OUTERWEAR' && (
- <button
- type="button"
- onClick={(e) => {
- e.stopPropagation();
- handleToggleGarmentState(selectedWorn.garment.id);
- }}
- className="px-3 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border border-indigo-200 rounded-xl text-[11px] font-bold transition-all flex items-center gap-1 shadow-2xs"
- >
- <Shirt className="w-3.5 h-3.5 text-indigo-700" />
- <span>
- {selectedWorn.state === 'CLOSED'
- ? '外套: 已合拢 (点击敞开)'
- : '外套: 已敞开 (点击扣起)'}
- </span>
- </button>
- )}
- <button
- type="button"
- onClick={(e) => {
- e.stopPropagation();
- setSelectedItemId(null);
- }}
- className="text-stone-400 hover:text-stone-700 text-xs px-2 py-1 cursor-pointer"
- >
- 完成微调
- </button>
- </div>
- </>
- );
- }
-
- return (
- <div className="flex items-center justify-between w-full text-[11px] text-stone-400 font-mono">
- <div className="flex items-center gap-2">
- <span>已穿戴单品: {wornItems.length} 件 (点击模特身上的衣物可进行微调与缩放)</span>
- {isOutfitChangedSinceRender && (
- <span className="text-amber-600 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 font-sans font-bold">
- 搭配已变动，可点击「AI 试穿大片」重新生成
- </span>
- )}
- </div>
- <span>自由大画布工作台 · 9:16</span>
- </div>
- );
- })()}
- </div>
- </div>
+        )}
+      </div>
+    )}
+    </div>
 
  {/* 灵感抽签转盘 Modal */}
  {isSlotMachineOpen && (
@@ -2277,6 +2177,16 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  </div>
  </div>
  )}
+      {/* 7. 单品 360° 档案详情抽屉 (支持安全删除私人单品) */}
+      <GarmentDetailDrawer
+        garment={selectedGarmentForDrawer}
+        isOpen={!!selectedGarmentForDrawer}
+        isWorn={wornItems.some((i) => i.garment.id === selectedGarmentForDrawer?.id)}
+        onClose={() => setSelectedGarmentForDrawer(null)}
+        onWearGarment={handleWearWithPlacement}
+        onCloneGarment={onClonePublicGarment}
+        onDeleteGarment={onDeleteGarment}
+      />
  </div>
  );
 };
