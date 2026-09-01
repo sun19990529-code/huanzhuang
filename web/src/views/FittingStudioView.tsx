@@ -1746,35 +1746,44 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
         onClick={(e) => e.stopPropagation()}
         className="absolute left-3 lg:left-5 top-1/2 -translate-y-1/2 z-30 pointer-events-auto flex flex-col items-center gap-2 bg-white/95 backdrop-blur-2xl border border-[#EAE6DF] shadow-2xl rounded-3xl p-2.5 transition-all w-12 lg:w-36 text-left"
       >
-        {/* 1. 2D / 3D 模式纵向切换 */}
-        <div className="w-full flex flex-col gap-1 bg-stone-100/90 p-1 rounded-2xl border border-[#EAE6DF]/60">
+        {/* 1. 2D / 3D 模式纵向切换 (带平滑丝滑滑块动效) */}
+        <div className="w-full relative flex flex-col p-1 bg-stone-100/90 rounded-2xl border border-[#EAE6DF]/60 select-none">
+          {/* 红色平滑移动滑块胶囊 (Sliding Pill Indicator) */}
+          <div
+            className={`absolute left-1 right-1 h-[calc(50%-4px)] bg-[#D63031] rounded-xl shadow-xs transition-all duration-300 ease-out pointer-events-none ${
+              studioDisplayMode === '2D' ? 'top-1' : 'top-[calc(50%+2px)]'
+            }`}
+          />
+
           <button
             type="button"
             onClick={() => setStudioDisplayMode('2D')}
             title="2D 自由拼搭微调"
-            className={`w-full py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center lg:justify-start lg:px-2.5 gap-2 ${
+            className={`w-full py-2 rounded-xl text-xs font-bold transition-colors duration-200 flex items-center justify-center lg:justify-start lg:px-2.5 gap-2 relative z-10 ${
               studioDisplayMode === '2D'
-                ? 'bg-[#D63031] text-white shadow-xs font-extrabold'
-                : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/50'
+                ? 'text-white font-extrabold'
+                : 'text-stone-600 hover:text-stone-900'
             }`}
           >
             <Shirt className="w-4 h-4 shrink-0 stroke-[2]" />
             <span className="hidden lg:inline text-xs">2D 拼搭</span>
           </button>
+
           <button
             type="button"
             onClick={() => {
               if (renderedImageUrl) {
+                setSelectedItemId(null);
                 setStudioDisplayMode('3D');
               } else {
                 showToast('请先点击右侧「AI 试穿大片」生成 3D 影棚商业大片！', 'info');
               }
             }}
             title="3D 影棚试穿成片"
-            className={`w-full py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center lg:justify-start lg:px-2.5 gap-2 relative ${
+            className={`w-full py-2 rounded-xl text-xs font-bold transition-colors duration-200 flex items-center justify-center lg:justify-start lg:px-2.5 gap-2 relative z-10 ${
               studioDisplayMode === '3D'
-                ? 'bg-[#D63031] text-white shadow-xs font-extrabold'
-                : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/50'
+                ? 'text-white font-extrabold'
+                : 'text-stone-600 hover:text-stone-900'
             }`}
           >
             <Sparkles className="w-4 h-4 shrink-0 stroke-[2]" />
@@ -1869,18 +1878,21 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
           <span className="hidden lg:inline text-xs">智能出装</span>
         </button>
 
-        {/* 5. 一键清空画布 */}
-        {wornItems.length > 0 && (
-          <button
-            type="button"
-            onClick={onClearCanvas}
-            title="清空模特身上所有已穿戴单品"
-            className="w-full py-2 px-1 lg:px-2.5 hover:bg-rose-50 text-stone-400 hover:text-rose-600 rounded-2xl text-xs font-bold transition-all flex items-center justify-center lg:justify-start gap-2"
-          >
-            <RotateCcw className="w-4 h-4 shrink-0 stroke-[1.75]" />
-            <span className="hidden lg:inline text-xs">一键清空</span>
-          </button>
-        )}
+        {/* 5. 一键清空画布 (保持常驻，空状态下置灰禁用) */}
+        <button
+          type="button"
+          disabled={wornItems.length === 0}
+          onClick={onClearCanvas}
+          title={wornItems.length === 0 ? '暂无穿戴单品可清空' : '清空模特身上所有已穿戴单品'}
+          className={`w-full py-2 px-1 lg:px-2.5 rounded-2xl text-xs font-bold transition-all flex items-center justify-center lg:justify-start gap-2 ${
+            wornItems.length > 0
+              ? 'hover:bg-rose-50 text-stone-500 hover:text-rose-600 cursor-pointer active:scale-95'
+              : 'text-stone-300 cursor-not-allowed opacity-40'
+          }`}
+        >
+          <RotateCcw className="w-4 h-4 shrink-0 stroke-[1.75]" />
+          <span className="hidden lg:inline text-xs">一键清空</span>
+        </button>
       </div>
 
       {/* ========================================================================= */}
