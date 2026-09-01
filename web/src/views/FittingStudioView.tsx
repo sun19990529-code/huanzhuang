@@ -1434,39 +1434,58 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
                   }
                 }}
               >
-                {/* 底层/左侧：2D 拼搭模特原图与纯净贴图层 (精准左半侧卷帘裁剪，绝无穿透溢出) */}
+                {/* 底层/左侧：2D 拼搭模特原图与纯净贴图层 (100% 像素级对齐 2D 拼搭画布，精准左半侧卷帘裁剪) */}
                 <div
                   className="absolute inset-0 w-full h-full bg-[#FAF8F5] flex items-center justify-center pointer-events-none select-none"
                   style={{ clipPath: `inset(0 ${100 - curtainSliderPos}% 0 0)` }}
                 >
+                  {/* 模特底图 */}
                   {avatar?.normalizedImageUrl ? (
                     <img
                       src={avatar.normalizedImageUrl}
                       alt="2D 模特原底"
-                      className="w-full h-full object-contain pointer-events-none select-none"
+                      className="h-full w-full object-contain pointer-events-none select-none rounded-3xl"
                     />
                   ) : (
                     <div className="text-xs text-stone-400">2D 原稿</div>
                   )}
+
+                  {/* 穿戴衣物层 - 100% 像素级对齐 2D 拼搭画布 */}
                   {wornItems.map((worn) => {
-                    const defaultOffs = getCategoryDefaultOffsets(worn.garment.primaryCategory, worn.garment.subCategory);
-                    const userAdj = customAdjustments[worn.garment.id] || { scaleX: 1, scaleY: 1, offsetX: 0, offsetY: 0 };
-                    const currentAsset = worn.garment.assets?.find((a) => a.stateType === worn.state) || worn.garment.assets?.[0];
-                    const activePng = currentAsset?.pngUrl || (worn.garment as any).cutoutUrl || (worn.garment as any).previewUrl;
+                    const defaultOffs = getCategoryDefaultOffsets(
+                      worn.garment.primaryCategory,
+                      worn.garment.subCategory,
+                      worn.garment.title
+                    );
+                    const offX = worn.offsetX !== undefined && worn.offsetX !== 0 ? worn.offsetX : defaultOffs.offsetX;
+                    const offY = worn.offsetY !== undefined && worn.offsetY !== 0 ? worn.offsetY : defaultOffs.offsetY;
+                    const scX = worn.scaleX !== undefined && worn.scaleX !== 1 ? worn.scaleX : (worn.scale !== 1 ? worn.scale : defaultOffs.scale);
+                    const scY = worn.scaleY !== undefined && worn.scaleY !== 1 ? worn.scaleY : (worn.scale !== 1 ? worn.scale : defaultOffs.scale);
+                    const activeAsset = worn.garment.assets?.find((a) => a.stateType === worn.state) || worn.garment.assets?.[0];
+                    const activePng = activeAsset?.pngUrl || (worn.garment as any).cutoutUrl || (worn.garment as any).previewUrl;
                     if (!activePng) return null;
+
                     return (
-                      <img
+                      <div
                         key={worn.garment.id}
-                        src={activePng}
-                        alt={worn.garment.title}
                         style={{
                           zIndex: worn.zIndex,
-                          transform: `translate(${defaultOffs.offsetX + userAdj.offsetX}px, ${defaultOffs.offsetY + userAdj.offsetY}px) scale(${defaultOffs.scaleX * userAdj.scaleX}, ${defaultOffs.scaleY * userAdj.scaleY})`,
+                          transform: `translate(${offX}px, ${offY}px) scale(${scX}, ${scY})`,
                         }}
-                        className="absolute inset-0 m-auto max-h-[85%] max-w-[85%] object-contain pointer-events-none select-none"
-                      />
+                        className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-visible"
+                      >
+                        <div className="relative inline-flex items-center justify-center pointer-events-none select-none">
+                          <img
+                            src={activePng}
+                            alt={worn.garment.title}
+                            draggable={false}
+                            className="max-h-[580px] max-w-[340px] object-contain filter drop-shadow-sm pointer-events-none select-none"
+                          />
+                        </div>
+                      </div>
                     );
                   })}
+
                   <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-xl text-white text-[10px] font-bold border border-white/10 shadow-sm">
                     2D 拼搭原稿
                   </div>
