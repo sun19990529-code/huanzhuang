@@ -1180,6 +1180,17 @@ app.get('/v1/outfits', requireAuth, (req: Request, res: Response) => {
   res.json({ code: 200, data: list });
 });
 
+app.delete('/v1/outfits/:id', requireAuth, (req: Request, res: Response) => {
+  const { id } = req.params;
+  const outfit = db.outfits.get(id);
+  if (!outfit) return res.status(404).json({ code: 404, message: '搭配套装不存在' });
+  if (outfit.creatorUserId !== req.user!.id && req.user!.role !== 'ADMIN') {
+    return res.status(403).json({ code: 403, message: '无权删除此套装' });
+  }
+  db.deleteOutfit(id);
+  res.json({ code: 200, message: '搭配套装已成功删除' });
+});
+
 app.post('/v1/outfits', requireAuth, (req: Request, res: Response) => {
   const { profileId, title, previewImageUrl, items, sceneTag } = req.body;
   const outfitId = `outfit-${Date.now()}`;
@@ -1304,6 +1315,14 @@ app.get('/v1/ootd', requireAuth, (req: Request, res: Response) => {
   const profileId = req.query.profileId as string;
   const logs = Array.from(db.ootdLogs.values()).filter((l) => l.profileId === profileId);
   res.json({ code: 200, data: logs });
+});
+
+app.delete('/v1/ootd/:id', requireAuth, (req: Request, res: Response) => {
+  const { id } = req.params;
+  const log = db.ootdLogs.get(id);
+  if (!log) return res.status(404).json({ code: 404, message: '日记记录不存在' });
+  db.deleteOotdLog(id);
+  res.json({ code: 200, message: 'OOTD 穿搭打卡记录已删除' });
 });
 
 app.post('/v1/ootd', requireAuth, (req: Request, res: Response) => {

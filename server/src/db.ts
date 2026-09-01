@@ -699,7 +699,7 @@ export class Database {
     user.passwordHash = hash;
     user.salt = salt;
 
-    pgPool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, userId]).catch(() => {});
+    pgPool.query('UPDATE users SET password_hash = $1, salt = $2 WHERE id = $3', [hash, salt, userId]).catch((err) => console.warn('[Database] 更新密码失败:', err.message));
     return true;
   }
 
@@ -902,6 +902,12 @@ export class Database {
          notes = EXCLUDED.notes`,
       [log.id, log.profileId, log.outfitId, log.logDate, log.weatherTag || null, log.notes || null, log.createdAt || now]
     ).catch((err) => console.warn('[Database] 保存 OOTD 日历到 PostgreSQL 失败:', err.message));
+  }
+
+  // 删除 OOTD 日历打卡记录
+  public deleteOotdLog(id: string): void {
+    this.ootdLogs.delete(id);
+    pgPool.query('DELETE FROM ootd_logs WHERE id = $1', [id]).catch((err) => console.warn('[Database] 删除 OOTD 记录失败:', err.message));
   }
 
   // 原子扣除积分
