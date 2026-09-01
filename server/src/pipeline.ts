@@ -175,8 +175,9 @@ class TaskPipelineService {
                   appliedState,
                 });
 
+                const stateAsset = g.assets?.find((a) => a.stateType === appliedState) || g.assets?.[0];
                 const gImg =
-                  g.assets?.[0]?.pngUrl ||
+                  stateAsset?.pngUrl ||
                   (g as any).previewUrl ||
                   (g as any).cutoutUrl ||
                   (g as any).defaultImageUrl;
