@@ -1320,7 +1320,7 @@ app.post('/v1/ootd', requireAuth, (req: Request, res: Response) => {
     createdAt: new Date().toISOString(),
   };
 
-  db.ootdLogs.set(id, entry);
+  db.saveOotdLog(entry);
   res.status(201).json({ code: 200, message: 'OOTD 日历记录已保存', data: entry });
 });
 

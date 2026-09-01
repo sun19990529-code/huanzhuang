@@ -1298,7 +1298,7 @@ export class Database {
       })),
       createdAt: new Date().toISOString(),
     };
-    this.outfits.set(newOutfit.id, newOutfit);
+    this.saveOutfit(newOutfit);
     return newOutfit;
   }
 
