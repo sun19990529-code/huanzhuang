@@ -36,6 +36,7 @@ import {
   Plus,
   Search,
   Sparkles,
+  Minus,
   RefreshCw,
   Share2,
   Move,
@@ -310,6 +311,41 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  const leftWingSlotRef = useRef<HTMLDivElement>(null);
  const [isCompactWing, setIsCompactWing] = useState(false);
 
+  // 移动端底部滑盖衣橱吸附档位 ('PEEK' 125px 常驻横滑 | 'HALF' 48vh 网格 | 'FULL' 80vh 深度筛选)
+  const [mobileSheetSnap, setMobileSheetSnap] = useState<'PEEK' | 'HALF' | 'FULL'>('PEEK');
+
+  // 移动端快捷等比步进缩放
+  const handleScaleStep = (garmentId: string, factor: number) => {
+    const item = wornItems.find((i) => i.garment.id === garmentId);
+    if (!item) return;
+    const cur = item.scale || 1;
+    const next = Math.max(0.15, Math.min(2.5, Number((cur * factor).toFixed(3))));
+    onUpdateWornItem(garmentId, { scale: next, scaleX: next, scaleY: next });
+    saveCustomAdjustment(garmentId, {
+      offsetX: item.offsetX,
+      offsetY: item.offsetY,
+      scale: next,
+      scaleX: next,
+      scaleY: next,
+    });
+  };
+
+  // 移动端触发 AI 试穿大片渲染
+  const handleMobileTriggerVton = async () => {
+    if (isRendering || wornItems.length === 0) return;
+    let snapshotBase64: string | undefined = undefined;
+    try {
+      snapshotBase64 = await generate2DCanvasSnapshot(
+        avatar?.normalizedImageUrl || '',
+        wornItems
+      );
+    } catch (e) {
+      console.warn('Canvas snapshot capture failed:', e);
+    }
+    setSelectedItemId(null);
+    onRenderVton(snapshotBase64);
+  };
+
  useEffect(() => {
  if (!leftWingSlotRef.current) return;
  const observer = new ResizeObserver((entries) => {
@@ -550,6 +586,11 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  onWearGarment(garment);
  setSelectedItemId(garment.id);
 
+    // 移动端选衣后自动平滑回弹至 PEEK 档，立即将穿上后的模特大图呈现出来
+    if (mobileSheetSnap !== 'PEEK') {
+      setMobileSheetSnap('PEEK');
+    }
+
  // 如果用户曾手动微调过此单品，优先恢复该账号该角色的自定义微调记忆
  const userAdjust = customAdjustments[garment.id];
  if (userAdjust) {
@@ -644,123 +685,133 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  onUpdateWornItem(garmentId, { state: nextState, zIndex: newZIndex });
  };
 
- // 变换拖拽 Handle Mouse Down (移动、等比缩放、四边拉伸)
- const handleTransformMouseDown = (
- e: React.MouseEvent,
- garmentId: string,
- type: 'MOVE' | 'RESIZE_BR' | 'STRETCH_T' | 'STRETCH_B' | 'STRETCH_L' | 'STRETCH_R'
- ) => {
- e.stopPropagation();
- e.preventDefault();
- const item = wornItems.find((i) => i.garment.id === garmentId);
- if (!item) return;
+  // 变换拖拽 Handle Pointer Down (移动、等比缩放、四边拉伸，统一支持鼠标、手指与手写笔)
+  const handleTransformPointerDown = (
+    e: React.PointerEvent,
+    garmentId: string,
+    type: 'MOVE' | 'RESIZE_BR' | 'STRETCH_T' | 'STRETCH_B' | 'STRETCH_L' | 'STRETCH_R'
+  ) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const item = wornItems.find((i) => i.garment.id === garmentId);
+    if (!item) return;
 
- const defaultOffs = getCategoryDefaultOffsets(
- item.garment.primaryCategory,
- item.garment.subCategory,
- item.garment.title
- );
- const curOffX = item.offsetX !== 0 ? item.offsetX : defaultOffs.offsetX;
- const curOffY = item.offsetY !== 0 ? item.offsetY : defaultOffs.offsetY;
- const curScale = item.scale !== 1 ? item.scale : defaultOffs.scale;
- const curScaleX = item.scaleX ?? curScale;
- const curScaleY = item.scaleY ?? curScale;
+    try {
+      (e.target as HTMLElement)?.setPointerCapture?.(e.pointerId);
+    } catch (_) {}
 
- setSelectedItemId(garmentId);
- setTransformDrag({
- type,
- garmentId,
- startX: e.clientX,
- startY: e.clientY,
- startOffsetX: curOffX,
- startOffsetY: curOffY,
- startScale: curScale,
- startScaleX: curScaleX,
- startScaleY: curScaleY,
- });
- };
+    const defaultOffs = getCategoryDefaultOffsets(
+      item.garment.primaryCategory,
+      item.garment.subCategory,
+      item.garment.title
+    );
+    const curOffX = item.offsetX !== 0 ? item.offsetX : defaultOffs.offsetX;
+    const curOffY = item.offsetY !== 0 ? item.offsetY : defaultOffs.offsetY;
+    const curScale = item.scale !== 1 ? item.scale : defaultOffs.scale;
+    const curScaleX = item.scaleX ?? curScale;
+    const curScaleY = item.scaleY ?? curScale;
 
- // 全局 Window 级 60fps 丝滑拖拽缩放监听引擎 (彻底消除鼠标移出容器时的掉帧与卡顿)
- useEffect(() => {
- if (!transformDrag) return;
+    setSelectedItemId(garmentId);
+    setTransformDrag({
+      type,
+      garmentId,
+      startX: e.clientX,
+      startY: e.clientY,
+      startOffsetX: curOffX,
+      startOffsetY: curOffY,
+      startScale: curScale,
+      startScaleX: curScaleX,
+      startScaleY: curScaleY,
+    });
+  };
 
- const onMouseMove = (e: MouseEvent) => {
- const { type, garmentId, startX, startY, startOffsetX, startOffsetY, startScale, startScaleX, startScaleY } = transformDrag;
- const deltaX = e.clientX - startX;
- const deltaY = e.clientY - startY;
+  // 全局 Window 级 60fps 丝滑拖拽缩放监听引擎 (Pointer Events 统一跨端驱动)
+  useEffect(() => {
+    if (!transformDrag) return;
 
- if (type === 'MOVE') {
- const newOffX = Math.round(startOffsetX + deltaX);
- const newOffY = Math.round(startOffsetY + deltaY);
- onUpdateWornItem(garmentId, {
- offsetX: newOffX,
- offsetY: newOffY,
- });
- saveCustomAdjustment(garmentId, {
- offsetX: newOffX,
- offsetY: newOffY,
- scale: customAdjustments[garmentId]?.scale ?? startScale,
- scaleX: customAdjustments[garmentId]?.scaleX ?? startScaleX,
- scaleY: customAdjustments[garmentId]?.scaleY ?? startScaleY,
- });
- } else if (type === 'RESIZE_BR') {
- const diagDelta = (deltaX + deltaY) / 2;
- const scaleDelta = diagDelta * 0.0035;
- const newScale = Math.max(0.12, Math.min(2.5, Number((startScale + scaleDelta).toFixed(3))));
- onUpdateWornItem(garmentId, {
- scale: newScale,
- scaleX: newScale,
- scaleY: newScale,
- });
- saveCustomAdjustment(garmentId, {
- offsetX: customAdjustments[garmentId]?.offsetX ?? startOffsetX,
- offsetY: customAdjustments[garmentId]?.offsetY ?? startOffsetY,
- scale: newScale,
- scaleX: newScale,
- scaleY: newScale,
- });
- } else if (type === 'STRETCH_R' || type === 'STRETCH_L') {
- const factor = type === 'STRETCH_R' ? 1 : -1;
- const scaleXDelta = deltaX * 0.0035 * factor;
- const newScaleX = Math.max(0.12, Math.min(2.5, Number((startScaleX + scaleXDelta).toFixed(3))));
- onUpdateWornItem(garmentId, {
- scaleX: newScaleX,
- });
- saveCustomAdjustment(garmentId, {
- offsetX: customAdjustments[garmentId]?.offsetX ?? startOffsetX,
- offsetY: customAdjustments[garmentId]?.offsetY ?? startOffsetY,
- scale: customAdjustments[garmentId]?.scale ?? startScale,
- scaleX: newScaleX,
- scaleY: customAdjustments[garmentId]?.scaleY ?? startScaleY,
- });
- } else if (type === 'STRETCH_B' || type === 'STRETCH_T') {
- const factor = type === 'STRETCH_B' ? 1 : -1;
- const scaleYDelta = deltaY * 0.0035 * factor;
- const newScaleY = Math.max(0.12, Math.min(2.5, Number((startScaleY + scaleYDelta).toFixed(3))));
- onUpdateWornItem(garmentId, {
- scaleY: newScaleY,
- });
- saveCustomAdjustment(garmentId, {
- offsetX: customAdjustments[garmentId]?.offsetX ?? startOffsetX,
- offsetY: customAdjustments[garmentId]?.offsetY ?? startOffsetY,
- scale: customAdjustments[garmentId]?.scale ?? startScale,
- scaleX: customAdjustments[garmentId]?.scaleX ?? startScaleX,
- scaleY: newScaleY,
- });
- }
- };
+    const onPointerMove = (e: PointerEvent) => {
+      e.preventDefault();
+      const { type, garmentId, startX, startY, startOffsetX, startOffsetY, startScale, startScaleX, startScaleY } = transformDrag;
+      const deltaX = e.clientX - startX;
+      const deltaY = e.clientY - startY;
 
- const onMouseUp = () => {
- setTransformDrag(null);
- };
+      if (type === 'MOVE') {
+        const newOffX = Math.round(startOffsetX + deltaX);
+        const newOffY = Math.round(startOffsetY + deltaY);
+        onUpdateWornItem(garmentId, {
+          offsetX: newOffX,
+          offsetY: newOffY,
+        });
+        saveCustomAdjustment(garmentId, {
+          offsetX: newOffX,
+          offsetY: newOffY,
+          scale: customAdjustments[garmentId]?.scale ?? startScale,
+          scaleX: customAdjustments[garmentId]?.scaleX ?? startScaleX,
+          scaleY: customAdjustments[garmentId]?.scaleY ?? startScaleY,
+        });
+      } else if (type === 'RESIZE_BR') {
+        const diagDelta = (deltaX + deltaY) / 2;
+        const scaleDelta = diagDelta * 0.0035;
+        const newScale = Math.max(0.12, Math.min(2.5, Number((startScale + scaleDelta).toFixed(3))));
+        onUpdateWornItem(garmentId, {
+          scale: newScale,
+          scaleX: newScale,
+          scaleY: newScale,
+        });
+        saveCustomAdjustment(garmentId, {
+          offsetX: customAdjustments[garmentId]?.offsetX ?? startOffsetX,
+          offsetY: customAdjustments[garmentId]?.offsetY ?? startOffsetY,
+          scale: newScale,
+          scaleX: newScale,
+          scaleY: newScale,
+        });
+      } else if (type === 'STRETCH_R' || type === 'STRETCH_L') {
+        const factor = type === 'STRETCH_R' ? 1 : -1;
+        const scaleXDelta = deltaX * 0.0035 * factor;
+        const newScaleX = Math.max(0.12, Math.min(2.5, Number((startScaleX + scaleXDelta).toFixed(3))));
+        onUpdateWornItem(garmentId, {
+          scaleX: newScaleX,
+        });
+        saveCustomAdjustment(garmentId, {
+          offsetX: customAdjustments[garmentId]?.offsetX ?? startOffsetX,
+          offsetY: customAdjustments[garmentId]?.offsetY ?? startOffsetY,
+          scale: customAdjustments[garmentId]?.scale ?? startScale,
+          scaleX: newScaleX,
+          scaleY: customAdjustments[garmentId]?.scaleY ?? startScaleY,
+        });
+      } else if (type === 'STRETCH_B' || type === 'STRETCH_T') {
+        const factor = type === 'STRETCH_B' ? 1 : -1;
+        const scaleYDelta = deltaY * 0.0035 * factor;
+        const newScaleY = Math.max(0.12, Math.min(2.5, Number((startScaleY + scaleYDelta).toFixed(3))));
+        onUpdateWornItem(garmentId, {
+          scaleY: newScaleY,
+        });
+        saveCustomAdjustment(garmentId, {
+          offsetX: customAdjustments[garmentId]?.offsetX ?? startOffsetX,
+          offsetY: customAdjustments[garmentId]?.offsetY ?? startOffsetY,
+          scale: customAdjustments[garmentId]?.scale ?? startScale,
+          scaleX: customAdjustments[garmentId]?.scaleX ?? startScaleX,
+          scaleY: newScaleY,
+        });
+      }
+    };
 
- window.addEventListener('mousemove', onMouseMove);
- window.addEventListener('mouseup', onMouseUp);
- return () => {
- window.removeEventListener('mousemove', onMouseMove);
- window.removeEventListener('mouseup', onMouseUp);
- };
- }, [transformDrag, onUpdateWornItem]);
+    const onPointerUp = (e: PointerEvent) => {
+      try {
+        (e.target as HTMLElement)?.releasePointerCapture?.(e.pointerId);
+      } catch (_) {}
+      setTransformDrag(null);
+    };
+
+    window.addEventListener('pointermove', onPointerMove, { passive: false });
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
+    };
+  }, [transformDrag, onUpdateWornItem]);
 
  // 画布散落单品拖拽事件
  const handleCanvasMouseDown = (garmentId: string, e: React.MouseEvent) => {
@@ -1103,12 +1154,34 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  {/* ------------------------------------------------------------- */}
  {/* 左侧 45%：巴黎法式 Ins 数字化衣橱 */}
  {/* ------------------------------------------------------------- */}
- <div className={`h-full flex flex-col border-r border-[#EAE6DF] bg-white/95 backdrop-blur-xl shrink-0 z-20 shadow-xs transition-all duration-300 ${
-    isWardrobeCollapsed ? 'w-0 opacity-0 overflow-hidden border-r-0 pointer-events-none' : 'w-full md:w-[48%] lg:w-[46%] xl:w-[45%] 2xl:w-[44%]'
-  }`}>
+  {/* 移动端三档滑盖 Bottom Sheet / 桌面端左侧 45% 分栏 */}
+  <div className={`bg-white/95 backdrop-blur-xl shrink-0 z-30 transition-all duration-300 ease-out flex flex-col ${
+     isWardrobeCollapsed
+       ? 'w-0 h-0 opacity-0 overflow-hidden border-0 pointer-events-none'
+       : mobileSheetSnap === 'PEEK'
+       ? 'fixed md:relative bottom-[60px] md:bottom-0 left-0 right-0 h-[125px] md:h-full w-full md:w-[48%] lg:w-[46%] xl:w-[45%] 2xl:w-[44%] rounded-t-3xl md:rounded-none border-t md:border-t-0 md:border-r border-[#EAE6DF] shadow-2xl md:shadow-xs'
+       : mobileSheetSnap === 'HALF'
+       ? 'fixed md:relative bottom-[60px] md:bottom-0 left-0 right-0 h-[48vh] md:h-full w-full md:w-[48%] lg:w-[46%] xl:w-[45%] 2xl:w-[44%] rounded-t-3xl md:rounded-none border-t md:border-t-0 md:border-r border-[#EAE6DF] shadow-2xl md:shadow-xs'
+       : 'fixed md:relative bottom-[60px] md:bottom-0 left-0 right-0 h-[80vh] md:h-full w-full md:w-[48%] lg:w-[46%] xl:w-[45%] 2xl:w-[44%] rounded-t-3xl md:rounded-none border-t md:border-t-0 md:border-r border-[#EAE6DF] shadow-2xl md:shadow-xs'
+   }`}>
+
+    {/* 移动端吸顶拖拽指示手柄 */}
+    <div
+      onClick={() => {
+        if (mobileSheetSnap === 'PEEK') setMobileSheetSnap('HALF');
+        else if (mobileSheetSnap === 'HALF') setMobileSheetSnap('FULL');
+        else setMobileSheetSnap('PEEK');
+      }}
+      className="md:hidden w-full pt-2 pb-1 flex flex-col items-center justify-center cursor-pointer select-none active:opacity-60 shrink-0"
+    >
+      <div className="w-10 h-1.5 bg-stone-300 rounded-full" />
+      <div className="flex items-center gap-1 text-[9px] text-stone-400 font-bold mt-0.5">
+        <span>{mobileSheetSnap === 'PEEK' ? '▲ 上滑展开全部单品' : mobileSheetSnap === 'HALF' ? '▲ 展开高级筛选 / ▼ 收起' : '▼ 点击收起至单排'}</span>
+      </div>
+    </div>
  
  {/* 顶部控制栏 */}
- <div className="p-4 border-b border-[#EAE6DF] space-y-3 bg-[#FAF8F5]/60 shrink-0">
+  <div className={`p-4 border-b border-[#EAE6DF] space-y-3 bg-[#FAF8F5]/60 shrink-0 ${mobileSheetSnap === 'PEEK' ? 'hidden md:block' : 'block'}`}>
  <div className="flex items-center justify-between">
  <div className="flex items-center gap-1 bg-[#EFECE6] p-1 rounded-2xl">
  <button
@@ -1297,8 +1370,63 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  )}
  </div>
 
- {/* 单品网格列表 */}
- <div className="flex-1 overflow-y-auto p-4 scrollbar-thin">
+        {/* 移动端 PEEK 模式单排横滑流 (零遮挡模特，即点即穿) */}
+        {mobileSheetSnap === 'PEEK' && (
+          <div className="md:hidden flex flex-col gap-1 px-3 pb-1 overflow-hidden shrink-0">
+            {/* 极简分类胶囊条 */}
+            <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-0.5 shrink-0">
+              {[
+                { key: 'ALL', label: `全部 (${allGarments.length})` },
+                { key: 'TOPS', label: '上装' },
+                { key: 'BOTTOMS', label: '下装' },
+                { key: 'OUTERWEAR', label: '外套' },
+                { key: 'FOOTWEAR', label: '鞋履' },
+                { key: 'ACCESSORIES', label: '配饰' },
+              ].map((cat) => (
+                <button
+                  key={cat.key}
+                  onClick={() => setSelectedCategory(cat.key as any)}
+                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold shrink-0 transition-all whitespace-nowrap ${
+                    selectedCategory === cat.key ? 'bg-[#D63031] text-white shadow-2xs' : 'bg-stone-100 text-stone-600'
+                  }`}
+                >
+                  {cat.label}
+                </button>
+              ))}
+            </div>
+
+            {/* 单排水平拖拽单品流 */}
+            <div className="flex items-center gap-2 overflow-x-auto scrollbar-none py-1">
+              {filteredGarments.map((garment) => {
+                const isWorn = wornItems.some((item) => item.garment.id === garment.id);
+                return (
+                  <div
+                    key={garment.id}
+                    data-testid="garment-card"
+                    onClick={() => handleWearWithPlacement(garment)}
+                    className={`w-14 h-14 shrink-0 bg-white rounded-xl border p-1 flex items-center justify-center relative cursor-pointer active:scale-95 transition-transform ${
+                      isWorn ? 'border-[#D63031] ring-2 ring-[#D63031]/20' : 'border-[#EAE6DF]'
+                    }`}
+                  >
+                    <img
+                      src={garment.assets?.[0]?.pngUrl}
+                      alt={garment.title}
+                      className="max-h-full max-w-full object-contain"
+                    />
+                    {isWorn && (
+                      <div className="absolute top-0.5 right-0.5 bg-[#D63031] text-white p-0.5 rounded-full shadow-xs">
+                        <Check className="w-2.5 h-2.5 stroke-[3]" />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* 单品网格列表 (HALF / FULL 或桌面端展示) */}
+        <div className={`flex-1 overflow-y-auto p-4 scrollbar-thin ${mobileSheetSnap === 'PEEK' ? 'hidden md:block' : 'block'}`}>
  {filteredGarments.length === 0 ? (
  <div className="h-full flex flex-col items-center justify-center text-stone-400 space-y-2 py-12">
  <Shirt className="w-8 h-8 stroke-[1.25] text-stone-300" />
@@ -1385,6 +1513,93 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
           background: 'radial-gradient(circle at 50% 40%, #FFFFFF 0%, #FAF8F5 55%, #EDE7DD 100%)',
         }}
  >
+        {/* 移动端专属：画布顶端内嵌轻奢控制胶囊条 (md:hidden) */}
+        <div className="md:hidden absolute top-2.5 inset-x-3 z-30 flex items-center justify-between pointer-events-auto select-none">
+          {/* 2D / 3D 模式微型胶囊 */}
+          <div className="flex items-center bg-white/95 backdrop-blur-md p-0.5 rounded-2xl border border-[#EAE6DF] shadow-md">
+            <button
+              onClick={() => setStudioDisplayMode('2D')}
+              className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition-all ${
+                studioDisplayMode === '2D' ? 'bg-[#D63031] text-white shadow-xs' : 'text-stone-600'
+              }`}
+            >
+              2D 拼搭
+            </button>
+            <button
+              onClick={() => setStudioDisplayMode('3D')}
+              className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition-all ${
+                studioDisplayMode === '3D' ? 'bg-[#D63031] text-white shadow-xs' : 'text-stone-600'
+              }`}
+            >
+              3D 大片
+            </button>
+          </div>
+
+          {/* 右侧：形态切换 + 图层 + 清空 */}
+          <div className="flex items-center gap-1.5">
+            {/* 动态计算当前可切换多态的上衣 */}
+            {(() => {
+              let targetWorn = selectedItemId ? wornItems.find((w) => w.garment.id === selectedItemId) : null;
+              if (!targetWorn) {
+                targetWorn = wornItems.find((w) => w.garment.primaryCategory === 'TOPS' || w.garment.primaryCategory === 'OUTERWEAR') || null;
+              }
+              const canToggle = Boolean(targetWorn && (targetWorn.garment.primaryCategory === 'TOPS' || targetWorn.garment.primaryCategory === 'OUTERWEAR'));
+              const stateLabel = targetWorn ? (targetWorn.state === 'CLOSED' ? '扣合' : targetWorn.state === 'UNTUCKED' ? '外放' : '默认') : '形态';
+              if (!canToggle || !targetWorn) return null;
+              return (
+                <button
+                  type="button"
+                  onClick={() => handleToggleGarmentState(targetWorn.garment.id)}
+                  className="px-2.5 py-1 bg-white/95 backdrop-blur-md text-stone-700 rounded-2xl border border-[#EAE6DF] text-[11px] font-bold shadow-md flex items-center gap-1 active:scale-95 transition-transform"
+                >
+                  <Shirt className="w-3 h-3 text-amber-700" />
+                  <span>{stateLabel}</span>
+                </button>
+              );
+            })()}
+
+            <button
+              onClick={() => setIsLayerPanelOpen(!isLayerPanelOpen)}
+              className="px-2.5 py-1 bg-white/95 backdrop-blur-md text-stone-700 rounded-2xl border border-[#EAE6DF] text-[11px] font-bold shadow-md flex items-center gap-1 active:scale-95 transition-transform"
+            >
+              <Layers className="w-3 h-3 text-stone-500" />
+              <span>{wornItems.length}</span>
+            </button>
+
+            <button
+              disabled={wornItems.length === 0}
+              onClick={onClearCanvas}
+              className="p-1.5 bg-white/95 backdrop-blur-md text-stone-500 hover:text-rose-600 disabled:opacity-30 rounded-2xl border border-[#EAE6DF] shadow-md transition-all active:scale-95"
+              title="一键清空"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {/* 移动端专属：大拇指热区悬浮核心行动 FAB (md:hidden) */}
+        <div className="md:hidden absolute bottom-[195px] right-3 z-20 flex flex-col items-end gap-2 pointer-events-auto">
+          {/* 保存搭配按钮 */}
+          <button
+            disabled={wornItems.length === 0}
+            onClick={() => setIsLookbookModalOpen(true)}
+            className="w-10 h-10 bg-white/95 backdrop-blur-md text-stone-700 rounded-full border border-[#EAE6DF] shadow-lg flex items-center justify-center disabled:opacity-30 active:scale-90 transition-transform cursor-pointer"
+            title="保存至搭配日历"
+          >
+            <Heart className="w-4 h-4 text-[#D63031] stroke-[2]" />
+          </button>
+
+          {/* AI 试穿大片高光 FAB */}
+          <button
+            disabled={wornItems.length === 0 || isRendering}
+            onClick={handleMobileTriggerVton}
+            className="px-4 py-2.5 bg-gradient-to-tr from-[#9E1B1B] via-[#D63031] to-[#E17055] text-white rounded-full text-xs font-black shadow-xl flex items-center gap-1.5 active:scale-95 transition-transform disabled:opacity-40 cursor-pointer"
+          >
+            <Sparkles className="w-4 h-4 animate-spin stroke-[2]" />
+            <span>{isRendering ? 'AI 渲染中' : 'AI 试穿大片'}</span>
+          </button>
+        </div>
+
  {/* 当左侧衣橱折叠时，在画布左上方提供一键展开按钮 */}
         {isWardrobeCollapsed && (
           <div className="absolute top-4 left-4 z-30 pointer-events-auto">
@@ -1401,11 +1616,11 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
         )}
 
         {/* 画布中央舞台与左右自适应居中侧翼坞 (三栏物理对称布局) */}
-        <div className="absolute inset-0 flex items-center justify-between p-2 sm:p-3 pointer-events-none">
+        <div className="absolute inset-0 flex items-center justify-center md:justify-between p-2 sm:p-3 pointer-events-none">
           {/* 左侧翼槽区：自然占据 (舞台左边缘 ~ 画布左边缘) 的全部空间，内部居中放置左翼悬浮坞 */}
           <div
             ref={leftWingSlotRef}
-            className="flex-1 h-full flex items-center justify-center pointer-events-none min-w-0"
+            className="hidden md:flex flex-1 h-full items-center justify-center pointer-events-none min-w-0"
           >
             <div className="relative pointer-events-auto">
               {/* 左翼·创作辅助悬浮坞 (Left Wing Creation & Staging Dock - A1方案) */}
@@ -1693,7 +1908,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
           {/* 中间 3:4 模特舞台：固有比例 shrink-0 居中 */}
            <div
  onClick={() => setSelectedItemId(null)}
- className="relative shrink-0 h-[56vh] md:h-[88vh] max-h-[880px] aspect-[3/4] rounded-3xl border border-stone-200/80 bg-white/95 shadow-2xl shadow-stone-300/40 flex items-center justify-center overflow-visible pointer-events-auto transition-all"
+ className="relative shrink-0 h-[46dvh] md:h-[88vh] max-h-[880px] aspect-[3/4] rounded-3xl border border-stone-200/80 bg-white/95 shadow-2xl shadow-stone-300/40 flex items-center justify-center overflow-hidden md:overflow-visible pointer-events-auto transition-all"
  >
  {/* 模特景深光晕底座 */}
  <div className="absolute inset-x-8 bottom-0 h-16 bg-stone-300/30 blur-xl rounded-full pointer-events-none" />
@@ -1762,7 +1977,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
                             src={activePng}
                             alt={worn.garment.title}
                             draggable={false}
-                            className="max-h-[580px] max-w-[340px] object-contain filter drop-shadow-sm pointer-events-none select-none"
+                            className="max-h-[250px] max-w-[190px] md:max-h-[580px] md:max-w-[340px] object-contain filter drop-shadow-sm pointer-events-none select-none"
                           />
                         </div>
                       </div>
@@ -1864,18 +2079,18 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-visible"
  >
  <div
- onMouseDown={(e) => handleTransformMouseDown(e, worn.garment.id, 'MOVE')}
+ onPointerDown={(e) => handleTransformPointerDown(e, worn.garment.id, 'MOVE')}
  onClick={(e) => {
  e.stopPropagation();
  setSelectedItemId(worn.garment.id);
  }}
- className="relative inline-flex items-center justify-center pointer-events-auto cursor-move select-none"
+ className="relative inline-flex items-center justify-center pointer-events-auto cursor-move select-none touch-none"
  >
  <img
  src={activeAsset?.pngUrl || worn.garment.assets?.[0]?.pngUrl}
  alt={worn.garment.title}
  draggable={false}
- className="max-h-[580px] max-w-[340px] object-contain filter drop-shadow-sm pointer-events-auto select-none"
+                            className="max-h-[250px] max-w-[190px] md:max-h-[580px] md:max-w-[340px] object-contain filter drop-shadow-sm pointer-events-auto select-none"
  />
 
  {/* Figma Pro 级交互式微调与缩放选框 (视口解耦，绝对恒定尺寸与清晰度) */}
@@ -1910,7 +2125,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
 
  {/* 右下角等比缩放手柄 (固定 28px 圆形尺寸) */}
  <div
- onMouseDown={(e) => handleTransformMouseDown(e, worn.garment.id, 'RESIZE_BR')}
+ onPointerDown={(e) => handleTransformPointerDown(e, worn.garment.id, 'RESIZE_BR')}
  onClick={(e) => e.stopPropagation()}
  style={{
  bottom: `${-14 * invScY}px`,
@@ -1926,7 +2141,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
 
  {/* 四边拉伸控制点 (上下左右) */}
  <div
- onMouseDown={(e) => handleTransformMouseDown(e, worn.garment.id, 'STRETCH_T')}
+ onPointerDown={(e) => handleTransformPointerDown(e, worn.garment.id, 'STRETCH_T')}
  onClick={(e) => e.stopPropagation()}
  style={{
  top: `${-4 * invScY}px`,
@@ -1936,7 +2151,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  title="上下拉伸"
  />
  <div
- onMouseDown={(e) => handleTransformMouseDown(e, worn.garment.id, 'STRETCH_B')}
+ onPointerDown={(e) => handleTransformPointerDown(e, worn.garment.id, 'STRETCH_B')}
  onClick={(e) => e.stopPropagation()}
  style={{
  bottom: `${-4 * invScY}px`,
@@ -1946,7 +2161,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  title="上下拉伸"
  />
  <div
- onMouseDown={(e) => handleTransformMouseDown(e, worn.garment.id, 'STRETCH_L')}
+ onPointerDown={(e) => handleTransformPointerDown(e, worn.garment.id, 'STRETCH_L')}
  onClick={(e) => e.stopPropagation()}
  style={{
  left: `${-4 * invScX}px`,
@@ -1956,7 +2171,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  title="左右拉伸"
  />
  <div
- onMouseDown={(e) => handleTransformMouseDown(e, worn.garment.id, 'STRETCH_R')}
+ onPointerDown={(e) => handleTransformPointerDown(e, worn.garment.id, 'STRETCH_R')}
  onClick={(e) => e.stopPropagation()}
  style={{
  right: `${-4 * invScX}px`,
@@ -1976,6 +2191,33 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  }}
  className="absolute left-1/2 flex items-center gap-1.5 pointer-events-auto z-50"
  >
+                {/* 移动端/触屏大靶心放大缩小 */}
+                <button
+                  type="button"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleScaleStep(worn.garment.id, 1.08);
+                  }}
+                  className="bg-white hover:bg-stone-50 text-stone-700 hover:text-stone-900 border border-[#EAE6DF] px-2.5 py-1 rounded-full text-xs font-bold shadow-md flex items-center gap-0.5 whitespace-nowrap transition-colors cursor-pointer"
+                  title="放大"
+                >
+                  <Plus className="w-3 h-3 text-emerald-600 stroke-[2.5]" />
+                  <span>放大</span>
+                </button>
+                <button
+                  type="button"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleScaleStep(worn.garment.id, 0.92);
+                  }}
+                  className="bg-white hover:bg-stone-50 text-stone-700 hover:text-stone-900 border border-[#EAE6DF] px-2.5 py-1 rounded-full text-xs font-bold shadow-md flex items-center gap-0.5 whitespace-nowrap transition-colors cursor-pointer"
+                  title="缩小"
+                >
+                  <Minus className="w-3 h-3 text-amber-600 stroke-[2.5]" />
+                  <span>缩小</span>
+                </button>
  <button
  type="button"
  onMouseDown={(e) => e.stopPropagation()}
@@ -2045,7 +2287,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
 
           {/* 右侧翼槽区：自然占据 (画布右边缘 ~ 舞台右边缘) 的全部空间，内部居中放置右翼悬浮坞 */}
           <div
-            className="flex-1 h-full flex items-center justify-center pointer-events-none min-w-0"
+            className="hidden md:flex flex-1 h-full items-center justify-center pointer-events-none min-w-0"
           >
             {/* 右翼·成片交付主行动坞 (Right Wing Production & Delivery Dock - A1方案) */}
       {/* ========================================================================= */}

@@ -710,7 +710,7 @@ export const App: React.FC = () => {
  };
 
  return (
- <div className="h-screen overflow-hidden flex flex-col font-sans bg-[#FAF8F5] text-stone-800 selection:bg-rose-200">
+ <div className="h-screen h-[100dvh] overflow-hidden flex flex-col font-sans bg-[#FAF8F5] text-stone-800 selection:bg-rose-200">
  
  {/* 认证初始化静默校验中（高质感品牌启动过渡，彻底消除登录界面 FOUC 闪烁） */}
  {isAuthInitializing && (
@@ -763,7 +763,7 @@ export const App: React.FC = () => {
 
  {/* 已登录状态：核心视图路由呈现 */}
  {user && (
- <main className="flex-1 min-h-0 overflow-hidden bg-[#FAF8F5]">
+ <main className={`flex-1 min-h-0 overflow-hidden bg-[#FAF8F5] ${activeView !== 'STUDIO' ? 'pb-16 md:pb-0' : ''}`}>
  {activeView === 'WARDROBE' && (
  <WardrobeGalleryView
               key={`wardrobe_${user.id}_${currentProfile?.id || "none"}`}

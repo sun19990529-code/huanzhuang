@@ -89,7 +89,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <>
-      <header className="sticky top-0 z-40 bg-[#FAF8F5]/90 backdrop-blur-xl border-b border-[#EAE6DF] px-4 md:px-8 py-3 flex items-center justify-between gap-4">
+      <header className="sticky top-0 z-40 bg-[#FAF8F5]/90 backdrop-blur-xl border-b border-[#EAE6DF] px-2.5 sm:px-4 md:px-8 py-2 md:py-3 flex items-center justify-between gap-2 md:gap-4">
         {/* 左侧：全新定制高定矢量 Logo */}
         <BrandLogo
           variant="horizontal"
@@ -116,18 +116,18 @@ export const Header: React.FC<HeaderProps> = ({
         </nav>
 
         {/* 右侧：100 积分胶囊 + 多 Profile 角色切换 + 用户身份与设置 */}
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
           {/* 每日 100 积分胶囊 */}
           <div
             title="每日零点自动补齐至 100 积分"
-            className="relative flex items-center gap-2 bg-gradient-to-r from-amber-50/90 via-amber-100/60 to-amber-50/90 border border-amber-300/80 px-3 py-1.5 rounded-2xl shadow-xs hover:border-amber-400 transition-all group"
+            className="relative flex items-center gap-1 sm:gap-2 bg-gradient-to-r from-amber-50/90 via-amber-100/60 to-amber-50/90 border border-amber-300/80 px-2 sm:px-3 py-1 sm:py-1.5 rounded-2xl shadow-xs hover:border-amber-400 transition-all group shrink-0"
           >
             {/* 香槟金呼吸微光光环 */}
             <span className="absolute inset-0 rounded-2xl bg-amber-400/10 animate-pulse pointer-events-none" />
             
-            <Sparkles className="w-3.5 h-3.5 text-amber-700 stroke-[2] group-hover:rotate-12 transition-transform" />
+            <Sparkles className="w-3.5 h-3.5 text-amber-700 stroke-[2] group-hover:rotate-12 transition-transform shrink-0" />
             <div className="text-left leading-tight">
-              <div className="text-xs font-black font-mono text-amber-950 flex items-center gap-1">
+              <div className="text-xs font-black font-mono text-amber-950 flex items-center gap-0.5 sm:gap-1 whitespace-nowrap">
                 <span>{user?.dailyCredits ?? 100}</span>
                 <span className="text-[9px] text-amber-800 font-semibold">/ 100分</span>
               </div>
@@ -145,14 +145,14 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={onOpenTaskCenter}
             title="任务中心 (查看正在运行的任务与历史成片)"
-            className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-2xl border transition-all shadow-xs ${
+            className={`relative flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 rounded-2xl border transition-all shadow-xs shrink-0 ${
               runningTaskCount > 0
                 ? 'bg-rose-50 border-rose-300 text-[#D63031] hover:bg-rose-100/80'
                 : 'bg-[#EFECE6]/80 hover:bg-[#EAE6DF] border-[#EAE6DF] text-stone-700'
             }`}
           >
             <Clock className={`w-3.5 h-3.5 stroke-[2] ${runningTaskCount > 0 ? 'animate-spin text-[#D63031]' : 'text-stone-600'}`} />
-            <span className="text-xs font-bold hidden sm:inline">任务中心</span>
+            <span className="text-xs font-bold hidden sm:inline whitespace-nowrap">任务中心</span>
             {runningTaskCount > 0 && (
               <span className="flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-[#D63031] text-white text-[10px] font-black animate-pulse shadow-xs">
                 {runningTaskCount}
@@ -238,7 +238,7 @@ export const Header: React.FC<HeaderProps> = ({
       </header>
 
       {/* 移动端底部悬浮导航栏 (Defect 2: 解决移动端无导航断层) */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#FAF8F5]/95 backdrop-blur-xl border-t border-[#EAE6DF] px-2 py-1.5 flex items-center justify-around shadow-lg">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#FAF8F5]/95 backdrop-blur-xl border-t border-[#EAE6DF] px-2 pt-1 pb-[max(env(safe-area-inset-bottom),0.5rem)] flex items-center justify-around shadow-lg">
         {navTabs.map((tab) => (
           <button
             key={tab.key}

@@ -134,10 +134,10 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
     >
       {LogoIcon}
       <div className="flex flex-col justify-center">
-        <span className={`font-black text-stone-900 ${titleSizeMap[size]} leading-none`}>
+        <span className={`font-black text-stone-900 text-xs sm:${titleSizeMap[size]} leading-none whitespace-nowrap`}>
           SMARTWARDROBE
         </span>
-        <span className={`font-mono uppercase font-semibold text-stone-500 ${subSizeMap[size]} mt-1 leading-none`}>
+        <span className={`hidden sm:block font-mono uppercase font-semibold text-stone-500 ${subSizeMap[size]} mt-1 leading-none whitespace-nowrap`}>
           HAUTE ATELIER · 数字化衣橱
         </span>
       </div>
