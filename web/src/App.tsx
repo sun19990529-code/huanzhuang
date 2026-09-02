@@ -148,6 +148,27 @@ export const App: React.FC = () => {
  };
 
  
+  // 彻底清空上一账号所有内存与会话状态 (Defect: 账号切换数据残留)
+  const resetAllAccountState = () => {
+    setAuthSession(null, null);
+    setUser(null);
+    setProfiles([]);
+    setCurrentProfile(null);
+    setCurrentAvatar(null);
+    setGarments([]);
+    setWornItems([]);
+    setOutfits([]);
+    setOotdLogs([]);
+    setSuggestions([]);
+    setRunningTasks([]);
+    setHistoryTasks([]);
+    setStylingFriend(null);
+    setRenderedImageUrl(null);
+    setIsRendering(false);
+    setRenderProgress(0);
+    setRenderStage('');
+  };
+
   // 加载当前登录用户的任务清单 (进行中 + 最近 5 条历史)
   const loadUserTasks = async () => {
     try {
@@ -163,23 +184,43 @@ export const App: React.FC = () => {
   };
 
   const loadUserData = async (currentUser: CurrentUser) => {
- try {
- const userProfiles = await fetchProfiles();
- setProfiles(userProfiles);
- const defaultProf = userProfiles.find((p) => p.isDefault) || userProfiles[0] || null;
- setCurrentProfile(defaultProf);
+    // 切换账号先重置局部数据
+    setProfiles([]);
+    setCurrentProfile(null);
+    setCurrentAvatar(null);
+    setGarments([]);
+    setWornItems([]);
+    setOutfits([]);
+    setOotdLogs([]);
+    setSuggestions([]);
+    setRunningTasks([]);
+    setHistoryTasks([]);
+    setStylingFriend(null);
+    setRenderedImageUrl(null);
+    setIsRendering(false);
 
- if (defaultProf) {
- await loadProfileData(defaultProf);
- }
- await loadPublicGarments();
-    await loadUserTasks();
- } catch (err) {
- console.warn('加载用户数据失败:', err);
- }
- };
+    try {
+      const userProfiles = await fetchProfiles();
+      setProfiles(userProfiles);
+      const defaultProf = userProfiles.find((p) => p.isDefault) || userProfiles[0] || null;
+      setCurrentProfile(defaultProf);
 
- const loadProfileData = async (profile: UserProfile) => {
+      if (defaultProf) {
+        await loadProfileData(defaultProf);
+      } else {
+        setCurrentAvatar(null);
+        setGarments([]);
+        setOutfits([]);
+        setOotdLogs([]);
+      }
+      await loadPublicGarments();
+      await loadUserTasks();
+    } catch (err) {
+      console.warn('加载用户数据失败:', err);
+    }
+  };
+
+  const loadProfileData = async (profile: UserProfile) => {
  try {
  const [av, gList, oList, dLogs] = await Promise.all([
  fetchProfileAvatar(profile.id),
@@ -226,48 +267,38 @@ export const App: React.FC = () => {
  return () => disconnect();
  }, []);
 
- // 普通用户登录成功
- const handleLoginSuccess = async (loggedInUser: CurrentUser) => {
- setUser(loggedInUser);
- setWornItems([]);
- setRenderedImageUrl(null);
- setIsRendering(false);
- await loadUserData(loggedInUser);
- setActiveView('STUDIO');
- };
+ // 普通用户登录成功 (先彻底清空上一账号所有数据再装载新账号)
+  const handleLoginSuccess = async (loggedInUser: CurrentUser) => {
+    resetAllAccountState();
+    setUser(loggedInUser);
+    await loadUserData(loggedInUser);
+    setActiveView('STUDIO');
+  };
 
- // 管理员隐藏登录成功
- const handleAdminLoginSuccess = async (adminUser: CurrentUser) => {
- setUser(adminUser);
- setWornItems([]);
- setRenderedImageUrl(null);
- setIsRendering(false);
- await loadUserData(adminUser);
- setActiveView('CMS');
- };
+  // 管理员隐藏登录成功
+  const handleAdminLoginSuccess = async (adminUser: CurrentUser) => {
+    resetAllAccountState();
+    setUser(adminUser);
+    await loadUserData(adminUser);
+    setActiveView('CMS');
+  };
 
- // 退出登录
- const handleLogout = () => {
- setAuthSession(null, null);
- setUser(null);
- setCurrentProfile(null);
- setCurrentAvatar(null);
- setGarments([]);
- setWornItems([]);
- setRenderedImageUrl(null);
- setIsRendering(false);
- setActiveView('AUTH');
- };
+  // 退出登录 (彻底清空上一账号所有状态并回到登录页)
+  const handleLogout = () => {
+    resetAllAccountState();
+    loadPublicGarments();
+    setActiveView('AUTH');
+  };
 
- // 退出管理员并返回常规前台
- const handleExitAdmin = () => {
- window.location.hash = '';
- setIsAdminRoute(false);
- setActiveView('STUDIO');
- };
+  // 退出管理员并返回常规前台
+  const handleExitAdmin = () => {
+    window.location.hash = '';
+    setIsAdminRoute(false);
+    setActiveView('STUDIO');
+  };
 
- // 切换角色
- const handleSelectProfile = async (profile: UserProfile) => {
+  // 切换角色
+  const handleSelectProfile = async (profile: UserProfile) => {
  setCurrentProfile(profile);
  setWornItems([]);
  setRenderedImageUrl(null);
@@ -690,6 +721,7 @@ export const App: React.FC = () => {
  <main className="flex-1 min-h-0 overflow-hidden bg-[#FAF8F5]">
  {activeView === 'WARDROBE' && (
  <WardrobeGalleryView
+              key={`wardrobe_${user.id}_${currentProfile?.id || "none"}`}
  garments={garments}
  publicGarments={publicGarments}
  wornGarmentIds={wornItems.map((i) => i.garment.id)}
@@ -704,6 +736,7 @@ export const App: React.FC = () => {
 
  {activeView === 'STUDIO' && (
  <FittingStudioView
+              key={`studio_${user.id}_${currentProfile?.id || "none"}`}
  profile={currentProfile}
  avatar={currentAvatar}
  wornItems={wornItems}
@@ -738,6 +771,7 @@ export const App: React.FC = () => {
 
  {activeView === 'OOTD' && (
  <OotdGalleryView
+              key={`ootd_${user.id}_${currentProfile?.id || "none"}`}
  outfits={outfits}
  ootdLogs={ootdLogs}
  allGarments={garments}
@@ -784,6 +818,7 @@ export const App: React.FC = () => {
 
  {activeView === 'FRIENDS' && (
  <FriendSocialView
+              key={`friends_${user.id}_${currentProfile?.id || "none"}`}
  onDressFriend={handleDressFriend}
  onNavigateToStudio={() => setActiveView('STUDIO')}
  />
@@ -791,6 +826,7 @@ export const App: React.FC = () => {
 
  {activeView === 'CMS' && user.role === 'ADMIN' && (
  <CmsAdminView
+              key={`cms_${user.id}`}
  publicGarments={publicGarments}
  onRefreshPublicGarments={loadPublicGarments}
  onLogoutAdmin={handleExitAdmin}
