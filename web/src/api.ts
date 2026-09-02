@@ -823,6 +823,24 @@ export async function broadcastCmsCredits(
   return data.data;
 }
 
+export async function deleteCmsUser(userId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/cms/users/${userId}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || '删除用户失败');
+}
+
+export async function deleteOfficialGarment(garmentId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/cms/garments/${garmentId}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || '删除公共单品失败');
+}
+
 export async function toggleOfficialGarmentFeatured(id: string): Promise<boolean> {
   const res = await fetch(`${API_BASE}/cms/garments/${id}/toggle-featured`, {
     method: 'POST',

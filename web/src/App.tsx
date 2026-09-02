@@ -262,14 +262,29 @@ export const App: React.FC = () => {
  showToast(`渲染失败: ${data.error || '算力超时'}`, "info");
  }
  }
+          loadUserTasks();
+ if (data.taskType === 'VTON_RENDER') {
+ setRenderProgress(data.progress || 0);
+ setRenderStage(data.currentStage || '正在渲染...');
+ if (data.status === 'SUCCESS' && data.resultUrl) {
+ setRenderedImageUrl(data.resultUrl);
+ setIsRendering(false);
+ } else if (data.status === 'FAILED') {
+ setIsRendering(false);
+ showToast(`渲染失败: ${data.error || '算力超时'}`, "info");
+ }
+ }
  }
  });
  return () => disconnect();
  }, []);
 
- // 普通用户登录成功 (先彻底清空上一账号所有数据再装载新账号)
+  // 普通用户登录成功 (先彻底清空上一账号所有数据再装载新账号)
   const handleLoginSuccess = async (loggedInUser: CurrentUser) => {
     resetAllAccountState();
+    if (loggedInUser.token) {
+      setAuthSession(loggedInUser.token, loggedInUser.id);
+    }
     setUser(loggedInUser);
     await loadUserData(loggedInUser);
     setActiveView('STUDIO');
@@ -278,6 +293,9 @@ export const App: React.FC = () => {
   // 管理员隐藏登录成功
   const handleAdminLoginSuccess = async (adminUser: CurrentUser) => {
     resetAllAccountState();
+    if (adminUser.token) {
+      setAuthSession(adminUser.token, adminUser.id);
+    }
     setUser(adminUser);
     await loadUserData(adminUser);
     setActiveView('CMS');

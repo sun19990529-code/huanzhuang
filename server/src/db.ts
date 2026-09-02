@@ -827,6 +827,88 @@ export class Database {
     }).catch((err) => console.warn('[Database] 保存单品失败:', err.message));
   }
 
+  // 管理员彻底删除用户 (级联清理档案、模特、单品、搭配、日历、好友及会话)
+  public async deleteUser(userId: string): Promise<boolean> {
+    if (userId === 'admin-suncraft-0000') {
+      throw new Error('超级管理员账号受系统核心安全保护，不可删除');
+    }
+    const user = this.users.get(userId);
+    if (!user) return false;
+
+    // 1. 查找用户的所有角色档案 ID
+    const userProfiles = Array.from(this.profiles.values()).filter((p) => p.userId === userId);
+    const profileIds = userProfiles.map((p) => p.id);
+
+    // 2. 清理用户私有单品与切片资产
+    for (const [gId, g] of this.garments.entries()) {
+      if (g.profileId && profileIds.includes(g.profileId)) {
+        this.garments.delete(gId);
+      }
+    }
+
+    // 3. 清理素体模特
+    for (const [avId, av] of this.avatars.entries()) {
+      if (profileIds.includes(av.profileId)) {
+        this.avatars.delete(avId);
+      }
+    }
+
+    // 4. 清理搭配套装
+    for (const [oId, o] of this.outfits.entries()) {
+      if (o.creatorUserId === userId || profileIds.includes(o.profileId)) {
+        this.outfits.delete(oId);
+      }
+    }
+
+    // 5. 清理 OOTD 打卡日记
+    for (const [logId, log] of this.ootdLogs.entries()) {
+      if (profileIds.includes(log.profileId)) {
+        this.ootdLogs.delete(logId);
+      }
+    }
+
+    // 6. 清理角色档案
+    for (const pId of profileIds) {
+      this.profiles.delete(pId);
+    }
+
+    // 7. 清理好友关系与方案建议
+    for (const [fId, f] of this.friendships.entries()) {
+      if (f.userId === userId || f.friendUserId === userId) {
+        this.friendships.delete(fId);
+      }
+    }
+    for (const [sId, s] of this.suggestions.entries()) {
+      if (s.fromUserId === userId || s.targetUserId === userId) {
+        this.suggestions.delete(sId);
+      }
+    }
+
+    // 8. 清理异步任务
+    for (const [tId, t] of this.asyncTasks.entries()) {
+      if (t.userId === userId) {
+        this.asyncTasks.delete(tId);
+      }
+    }
+
+    // 9. 清理会话与用户主体
+    for (const [token, sess] of this.sessions.entries()) {
+      if (sess.userId === userId) {
+        this.sessions.delete(token);
+      }
+    }
+    this.users.delete(userId);
+
+    // 10. PostgreSQL 数据库级联彻底清理
+    try {
+      await pgPool.query('DELETE FROM users WHERE id = $1', [userId]);
+    } catch (err: any) {
+      console.warn('[Database] PostgreSQL 级联删除用户失败:', err.message);
+    }
+
+    return true;
+  }
+
   // 删除单品
   public deleteGarment(id: string): void {
     this.garments.delete(id);

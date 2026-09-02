@@ -1004,6 +1004,18 @@ app.post('/v1/cms/garments/:id/toggle-status', requireAdmin, (req: Request, res:
   });
 });
 
+// CMS 彻底删除公共单品
+app.delete('/v1/cms/garments/:id', requireAdmin, (req: Request, res: Response) => {
+  const { id } = req.params;
+  const garment = db.garments.get(id);
+  if (!garment || !garment.isPublic) {
+    return res.status(404).json({ code: 404, message: '公共单品不存在' });
+  }
+
+  db.deleteGarment(id);
+  res.json({ code: 200, message: '公共单品已成功彻底删除！' });
+});
+
 // CMS 运营概览大盘统计数据
 app.get('/v1/cms/stats/dashboard', requireAdmin, (req: Request, res: Response) => {
   const stats = db.getDashboardStats();
@@ -1100,6 +1112,27 @@ app.put('/v1/cms/users/:id/role', requireAdmin, (req: Request, res: Response) =>
 
   target.role = role === 'ADMIN' ? 'ADMIN' : 'USER';
   res.json({ code: 200, message: `用户角色已更新为 ${target.role}`, data: target });
+});
+
+// CMS 彻底删除用户 (级联清理所有数据)
+app.delete('/v1/cms/users/:id', requireAdmin, async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const target = db.users.get(id);
+  if (!target) return res.status(404).json({ code: 404, message: '目标用户不存在' });
+
+  if (id === req.user!.id) {
+    return res.status(400).json({ code: 400, message: '安全保护：管理员不可删除自己正在登录的账号' });
+  }
+
+  try {
+    const success = await db.deleteUser(id);
+    if (!success) {
+      return res.status(404).json({ code: 404, message: '用户不存在或删除失败' });
+    }
+    res.json({ code: 200, message: `用户【${target.nickname || target.email}】及其全部档案已被彻底删除！` });
+  } catch (err: any) {
+    res.status(400).json({ code: 400, message: err.message || '删除用户失败' });
+  }
 });
 
 // CMS 全员活动广播发放积分 (运营活动 / 平台补偿)
