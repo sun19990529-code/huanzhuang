@@ -1022,6 +1022,12 @@ app.get('/v1/cms/stats/dashboard', requireAdmin, (req: Request, res: Response) =
   res.json({ code: 200, data: stats });
 });
 
+// CMS 运营概览 7 日关键业务走势数据
+app.get('/v1/cms/stats/trends', requireAdmin, (req: Request, res: Response) => {
+  const trends = db.getDashboardTrends();
+  res.json({ code: 200, data: trends });
+});
+
 // CMS 获取全平台注册用户大盘
 app.get('/v1/cms/users', requireAdmin, (req: Request, res: Response) => {
   const usersList = Array.from(db.users.values()).map((u) => {
@@ -1033,6 +1039,7 @@ app.get('/v1/cms/users', requireAdmin, (req: Request, res: Response) => {
       nickname: u.nickname,
       role: u.role,
       status: u.status || 'NORMAL',
+      tags: u.tags || [],
       dailyCredits: u.dailyCredits,
       permanentCredits: u.permanentCredits,
       totalCredits: u.dailyCredits + u.permanentCredits,
@@ -1114,6 +1121,82 @@ app.put('/v1/cms/users/:id/role', requireAdmin, (req: Request, res: Response) =>
   res.json({ code: 200, message: `用户角色已更新为 ${target.role}`, data: target });
 });
 
+// CMS 修改用户标签组 (VIP/优质创作者/高频试衣等)
+app.put('/v1/cms/users/:id/tags', requireAdmin, (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { tags } = req.body;
+  if (!Array.isArray(tags)) {
+    return res.status(400).json({ code: 400, message: 'tags 必须为字符串数组' });
+  }
+  const success = db.updateUserTags(id, tags);
+  if (!success) return res.status(404).json({ code: 404, message: '用户不存在' });
+  res.json({ code: 200, message: '用户标签组已更新', data: { id, tags } });
+});
+
+// CMS 批量修改用户状态 (NORMAL / FROZEN / BANNED)
+app.post('/v1/cms/users/batch-status', requireAdmin, (req: Request, res: Response) => {
+  const { userIds, status, reason } = req.body;
+  if (!Array.isArray(userIds) || !status) {
+    return res.status(400).json({ code: 400, message: '参数格式错误' });
+  }
+  let count = 0;
+  for (const uid of userIds) {
+    try {
+      const u = db.updateUserStatus(uid, status, req.user!.id, reason || '管理员批量修改状态');
+      if (u) count++;
+    } catch (e) {}
+  }
+  res.json({ code: 200, message: `成功批量设置 ${count} 位用户的状态为【${status}】`, data: { count } });
+});
+
+// CMS 批量删除用户 (级联安全清理)
+app.post('/v1/cms/users/batch-delete', requireAdmin, async (req: Request, res: Response) => {
+  const { userIds } = req.body;
+  if (!Array.isArray(userIds)) {
+    return res.status(400).json({ code: 400, message: '参数格式错误' });
+  }
+  let count = 0;
+  for (const uid of userIds) {
+    if (uid === req.user!.id || uid === 'admin-suncraft-0000') continue;
+    try {
+      const success = await db.deleteUser(uid);
+      if (success) count++;
+    } catch (e) {}
+  }
+  res.json({ code: 200, message: `成功批量删除 ${count} 位用户`, data: { count } });
+});
+
+// CMS 批量为选中的用户调整积分
+app.post('/v1/cms/users/batch-adjust-credits', requireAdmin, (req: Request, res: Response) => {
+  const { userIds, deltaDaily, deltaPermanent, reason } = req.body;
+  if (!Array.isArray(userIds)) {
+    return res.status(400).json({ code: 400, message: '参数格式错误' });
+  }
+  const dDaily = Number(deltaDaily) || 0;
+  const dPerm = Number(deltaPermanent) || 0;
+  let count = 0;
+  const now = new Date().toISOString();
+  for (const uid of userIds) {
+    const targetUser = db.users.get(uid);
+    if (!targetUser || targetUser.role === 'ADMIN') continue;
+    targetUser.dailyCredits = Math.max(0, targetUser.dailyCredits + dDaily);
+    targetUser.permanentCredits = Math.max(0, targetUser.permanentCredits + dPerm);
+    db.creditLedger.push({
+      id: `ledger-batch-adj-${uid}-${Date.now()}`,
+      userId: targetUser.id,
+      txType: 'ADMIN_ADJUST',
+      deltaDaily: dDaily,
+      deltaPermanent: dPerm,
+      balanceDailyAfter: targetUser.dailyCredits,
+      balancePermanentAfter: targetUser.permanentCredits,
+      description: reason || '管理员批量调控积分',
+      createdAt: now,
+    });
+    count++;
+  }
+  res.json({ code: 200, message: `成功为 ${count} 位用户批量调整积分`, data: { count } });
+});
+
 // CMS 彻底删除用户 (级联清理所有数据)
 app.delete('/v1/cms/users/:id', requireAdmin, async (req: Request, res: Response) => {
   const { id } = req.params;
@@ -1135,19 +1218,19 @@ app.delete('/v1/cms/users/:id', requireAdmin, async (req: Request, res: Response
   }
 });
 
-// CMS 全员活动广播发放积分 (运营活动 / 平台补偿)
+// CMS 全员/分群活动广播发放积分 (运营活动 / 平台补偿)
 app.post('/v1/cms/credits/broadcast', requireAdmin, (req: Request, res: Response) => {
-  const { deltaPermanent, deltaDaily, reason } = req.body;
+  const { deltaPermanent, deltaDaily, reason, targetTag } = req.body;
   const dPerm = Number(deltaPermanent) || 0;
   const dDaily = Number(deltaDaily) || 0;
   if (dPerm === 0 && dDaily === 0) {
     return res.status(400).json({ code: 400, message: '发放积分数额不能为 0' });
   }
 
-  const result = db.broadcastCredits(dPerm, dDaily, reason || '官方运营活动奖励');
+  const result = db.broadcastCredits(dPerm, dDaily, reason || '官方运营活动奖励', targetTag);
   res.json({
     code: 200,
-    message: `全员活动积分发放成功！已为 ${result.count} 位用户成功充值`,
+    message: `活动积分发放成功！已为 ${result.count} 位用户成功充值`,
     data: result,
   });
 });
@@ -1188,6 +1271,40 @@ app.post('/v1/cms/users/:id/adjust-credits', requireAdmin, (req: Request, res: R
       permanentCredits: targetUser.permanentCredits,
     },
   });
+});
+
+// CMS 批量上架/下架公共单品
+app.post('/v1/cms/garments/batch-toggle-status', requireAdmin, (req: Request, res: Response) => {
+  const { garmentIds, isArchived } = req.body;
+  if (!Array.isArray(garmentIds)) {
+    return res.status(400).json({ code: 400, message: '参数格式错误' });
+  }
+  let count = 0;
+  for (const gid of garmentIds) {
+    const g = db.garments.get(gid);
+    if (g && g.isPublic) {
+      g.isArchived = !!isArchived;
+      count++;
+    }
+  }
+  res.json({ code: 200, message: `成功批量${isArchived ? '下架' : '上架'} ${count} 件公共单品`, data: { count } });
+});
+
+// CMS 批量彻底删除公共单品
+app.post('/v1/cms/garments/batch-delete', requireAdmin, (req: Request, res: Response) => {
+  const { garmentIds } = req.body;
+  if (!Array.isArray(garmentIds)) {
+    return res.status(400).json({ code: 400, message: '参数格式错误' });
+  }
+  let count = 0;
+  for (const gid of garmentIds) {
+    const g = db.garments.get(gid);
+    if (g && g.isPublic) {
+      db.deleteGarment(gid);
+      count++;
+    }
+  }
+  res.json({ code: 200, message: `成功批量彻底删除 ${count} 件公共单品`, data: { count } });
 });
 
 // CMS 公共单品推荐置顶开关

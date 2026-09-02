@@ -808,18 +808,108 @@ export async function updateCmsUserRole(userId: string, role: 'USER' | 'ADMIN'):
   return data.data;
 }
 
+export interface DashboardTrends {
+  dates: string[];
+  tasksTrend: number[];
+  creditsTrend: number[];
+  usersTrend: number[];
+}
+
+export async function fetchCmsDashboardTrends(): Promise<DashboardTrends> {
+  const res = await fetch(`${API_BASE}/cms/stats/trends`, { headers: authHeaders() });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || '获取趋势走势失败');
+  return data.data;
+}
+
+export async function updateCmsUserTags(userId: string, tags: string[]): Promise<any> {
+  const res = await fetch(`${API_BASE}/cms/users/${userId}/tags`, {
+    method: 'PUT',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ tags }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || '更新用户标签失败');
+  return data.data;
+}
+
+export async function batchUpdateUserStatus(
+  userIds: string[],
+  status: 'NORMAL' | 'FROZEN' | 'BANNED',
+  reason?: string
+): Promise<{ count: number }> {
+  const res = await fetch(`${API_BASE}/cms/users/batch-status`, {
+    method: 'POST',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ userIds, status, reason }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || '批量修改用户状态失败');
+  return data.data;
+}
+
+export async function batchDeleteCmsUsers(userIds: string[]): Promise<{ count: number }> {
+  const res = await fetch(`${API_BASE}/cms/users/batch-delete`, {
+    method: 'POST',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ userIds }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || '批量删除用户失败');
+  return data.data;
+}
+
+export async function batchAdjustUserCredits(
+  userIds: string[],
+  deltaDaily: number,
+  deltaPermanent: number,
+  reason: string
+): Promise<{ count: number }> {
+  const res = await fetch(`${API_BASE}/cms/users/batch-adjust-credits`, {
+    method: 'POST',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ userIds, deltaDaily, deltaPermanent, reason }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || '批量调分失败');
+  return data.data;
+}
+
+export async function batchToggleGarmentStatus(garmentIds: string[], isArchived: boolean): Promise<{ count: number }> {
+  const res = await fetch(`${API_BASE}/cms/garments/batch-toggle-status`, {
+    method: 'POST',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ garmentIds, isArchived }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || '批量切换单品上下架失败');
+  return data.data;
+}
+
+export async function batchDeleteGarments(garmentIds: string[]): Promise<{ count: number }> {
+  const res = await fetch(`${API_BASE}/cms/garments/batch-delete`, {
+    method: 'POST',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ garmentIds }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || '批量删除单品失败');
+  return data.data;
+}
+
 export async function broadcastCmsCredits(
   deltaPermanent: number,
   deltaDaily: number,
-  reason: string
+  reason: string,
+  targetTag?: string
 ): Promise<{ count: number }> {
   const res = await fetch(`${API_BASE}/cms/credits/broadcast`, {
     method: 'POST',
     headers: authHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ deltaPermanent, deltaDaily, reason }),
+    body: JSON.stringify({ deltaPermanent, deltaDaily, reason, targetTag }),
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.message || '全员广播发放积分失败');
+  if (!res.ok) throw new Error(data.message || '活动广播发放积分失败');
   return data.data;
 }
 
