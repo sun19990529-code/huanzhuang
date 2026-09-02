@@ -6,7 +6,7 @@ import { ImageProcessor } from './imageProcessor';
 import http from 'http';
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
-import { WebSocketServer } from 'ws';
+import { WebSocket, WebSocketServer } from 'ws';
 import { db, DBUser, OutfitSuggestion, ExtendedGarmentItem } from './db';
 import { pipeline } from './pipeline';
 import { AIService } from './aiService';
@@ -468,6 +468,10 @@ app.put('/v1/profiles/:id', requireAuth, (req: Request, res: Response) => {
 
 app.get('/v1/profiles/:id/avatar', (req: Request, res: Response) => {
   const profileId = req.params.id;
+  const currentUserId = (req as any).user?.id || (req.headers['x-user-id'] as string) || '';
+  if (currentUserId && !db.canAccessProfile(currentUserId, profileId)) {
+    return res.status(403).json({ code: 403, message: '无权查看该私密模特素体' });
+  }
   const avatar = Array.from(db.avatars.values()).find(
     (a) => a.profileId === profileId && a.isActive
   ) || db.avatars.get(profileId);
@@ -1222,6 +1226,12 @@ app.delete('/v1/outfits/:id', requireAuth, (req: Request, res: Response) => {
 
 app.post('/v1/outfits', requireAuth, (req: Request, res: Response) => {
   const { profileId, title, previewImageUrl, items, sceneTag } = req.body;
+  if (profileId) {
+    const profile = db.profiles.get(profileId);
+    if (!profile || profile.userId !== req.user!.id) {
+      return res.status(403).json({ code: 403, message: '无权为该角色档案保存搭配' });
+    }
+  }
   const outfitId = `outfit-${Date.now()}`;
 
   const newOutfit = {
@@ -1243,6 +1253,12 @@ app.post('/v1/outfits', requireAuth, (req: Request, res: Response) => {
 
 app.post('/v1/outfits/render-vton', requireAuth, (req: Request, res: Response) => {
   const { profileId, canvasSnapshotBase64, items } = req.body;
+  if (profileId) {
+    const profile = db.profiles.get(profileId);
+    if (!profile || profile.userId !== req.user!.id) {
+      return res.status(403).json({ code: 403, message: '无权使用该角色档案进行渲染' });
+    }
+  }
 
   // 用户级并发锁：检查当前用户是否已有正在进行中的渲染任务，防止连击冲垮本地 GPU / 显存
   const hasActiveTask = Array.from(db.asyncTasks.values()).some(
@@ -1326,6 +1342,9 @@ app.get('/v1/tasks/:id', requireAuth, (req: Request, res: Response) => {
   if (!task) {
     return res.status(404).json({ code: 404, message: '任务不存在' });
   }
+  if (task.userId !== req.user!.id && req.user!.role !== 'ADMIN') {
+    return res.status(403).json({ code: 403, message: '无权查看他人任务' });
+  }
 
   res.json({
     code: 200,
@@ -1356,6 +1375,9 @@ app.get('/v1/outfits/slot-machine', requireAuth, (req: Request, res: Response) =
   if (!profileId) {
     return res.status(400).json({ code: 400, message: '必须指定 profileId' });
   }
+  if (!db.canAccessProfile(req.user!.id, profileId)) {
+    return res.status(403).json({ code: 403, message: '无权对该档案执行灵感抽签' });
+  }
 
   const profileGarments = Array.from(db.garments.values()).filter(
     (g) => g.profileId === profileId && !g.isArchived
@@ -1375,6 +1397,12 @@ app.get('/v1/outfits/slot-machine', requireAuth, (req: Request, res: Response) =
 // --------------------------------------------------------------------
 app.get('/v1/ootd', requireAuth, (req: Request, res: Response) => {
   const profileId = req.query.profileId as string;
+  if (!profileId) {
+    return res.status(400).json({ code: 400, message: '必须指定 profileId' });
+  }
+  if (!db.canAccessProfile(req.user!.id, profileId)) {
+    return res.status(403).json({ code: 403, message: '无权查看该日历记录' });
+  }
   const logs = Array.from(db.ootdLogs.values()).filter((l) => l.profileId === profileId);
   res.json({ code: 200, data: logs });
 });
@@ -1383,12 +1411,21 @@ app.delete('/v1/ootd/:id', requireAuth, (req: Request, res: Response) => {
   const { id } = req.params;
   const log = db.ootdLogs.get(id);
   if (!log) return res.status(404).json({ code: 404, message: '日记记录不存在' });
+  if (!db.isOotdOwner(req.user!.id, id) && req.user!.role !== 'ADMIN') {
+    return res.status(403).json({ code: 403, message: '无权删除他人日历记录' });
+  }
   db.deleteOotdLog(id);
   res.json({ code: 200, message: 'OOTD 穿搭打卡记录已删除' });
 });
 
 app.post('/v1/ootd', requireAuth, (req: Request, res: Response) => {
   const { profileId, outfitId, logDate, weatherTag, notes } = req.body;
+  if (profileId) {
+    const profile = db.profiles.get(profileId);
+    if (!profile || profile.userId !== req.user!.id) {
+      return res.status(403).json({ code: 403, message: '无权为他人档案记录日历' });
+    }
+  }
   const id = `ootd-${logDate}-${profileId}`;
 
   const entry = {
@@ -1436,12 +1473,19 @@ app.delete('/v1/friends/:friendUserId', requireAuth, (req: Request, res: Respons
 // 获取好友的专属模特与开放单品以进行“为TA搭配”
 // 获取指定好友的 Lookbook 搭配集 (Defect 16)
 app.get('/v1/friends/:friendUserId/outfits', requireAuth, (req: Request, res: Response) => {
-  const outfits = db.getFriendOutfits(req.params.friendUserId);
+  const { friendUserId } = req.params;
+  if (!db.isFriend(req.user!.id, friendUserId) && req.user!.role !== 'ADMIN') {
+    return res.status(403).json({ code: 403, message: '您与该用户尚未互加好友，无法查看搭配' });
+  }
+  const outfits = db.getFriendOutfits(friendUserId);
   res.json({ code: 200, data: outfits });
 });
 
 app.get('/v1/friends/:friendUserId/profile-data', requireAuth, (req: Request, res: Response) => {
   const { friendUserId } = req.params;
+  if (!db.isFriend(req.user!.id, friendUserId) && req.user!.role !== 'ADMIN') {
+    return res.status(403).json({ code: 403, message: '您与该用户尚未互加好友，无法获取模特数据' });
+  }
   const friendProfiles = Array.from(db.profiles.values()).filter((p) => p.userId === friendUserId);
   const def = friendProfiles.find((p) => p.isDefault) || friendProfiles[0] || null;
   const av = def ? db.avatars.get(def.id) : null;
@@ -1454,6 +1498,9 @@ app.post('/v1/friends/suggest-outfit', requireAuth, (req: Request, res: Response
   const { targetUserId, targetProfileId, title, garmentIds, previewImageUrl, notes } = req.body;
   if (!targetUserId || !targetProfileId) {
     return res.status(400).json({ code: 400, message: '必须指定目标好友和角色档案' });
+  }
+  if (!db.isFriend(req.user!.id, targetUserId) && req.user!.role !== 'ADMIN') {
+    return res.status(403).json({ code: 403, message: '您与该用户尚未互加好友，无法推送搭配方案' });
   }
   const sug = db.suggestOutfit({
     fromUserId: req.user!.id,
@@ -1506,8 +1553,13 @@ app.get('/v1/proxy/image', async (req: Request, res: Response) => {
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: '/v1/ws/tasks' });
 
-wss.on('connection', (ws) => {
-  pipeline.registerConnection(ws);
+wss.on('connection', (ws: WebSocket, req: any) => {
+  let userId: string | undefined;
+  try {
+    const url = new URL(req.url || '', `http://${req.headers?.host || 'localhost'}`);
+    userId = url.searchParams.get('userId') || undefined;
+  } catch {}
+  pipeline.registerConnection(ws, userId);
   ws.send(
     JSON.stringify({
       event: 'CONNECTED',

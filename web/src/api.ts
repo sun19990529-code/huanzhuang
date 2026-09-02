@@ -891,7 +891,13 @@ export async function compressImageFile(file: File, maxWidth = 1200, maxHeight =
 export function connectTaskWebSocket(onMessage: (event: string, data: any) => void) {
   let ws: WebSocket | null = null;
   try {
-    ws = new WebSocket(WS_BASE);
+    const url = activeUserId ? `${WS_BASE}?userId=${encodeURIComponent(activeUserId)}` : WS_BASE;
+    ws = new WebSocket(url);
+    ws.onopen = () => {
+      if (activeUserId) {
+        ws?.send(JSON.stringify({ type: 'AUTH', userId: activeUserId, token: activeToken }));
+      }
+    };
     ws.onmessage = (e) => {
       try {
         const payload = JSON.parse(e.data);

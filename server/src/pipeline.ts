@@ -25,19 +25,58 @@ export interface TaskProgressMessage {
 
 class TaskPipelineService {
   private activeConnections: Set<WebSocket> = new Set();
+  private userSockets: Map<string, Set<WebSocket>> = new Map();
 
-  public registerConnection(ws: WebSocket) {
+  public registerConnection(ws: WebSocket, userId?: string) {
     this.activeConnections.add(ws);
+    if (userId) {
+      this.bindUserSocket(ws, userId);
+    }
+
+    ws.on('message', (raw) => {
+      try {
+        const msg = JSON.parse(raw.toString());
+        if (msg.type === 'AUTH' && msg.userId) {
+          this.bindUserSocket(ws, msg.userId);
+        }
+      } catch {}
+    });
+
     ws.on('close', () => {
       this.activeConnections.delete(ws);
+      for (const [uid, sockets] of this.userSockets.entries()) {
+        sockets.delete(ws);
+        if (sockets.size === 0) {
+          this.userSockets.delete(uid);
+        }
+      }
     });
+  }
+
+  public bindUserSocket(ws: WebSocket, userId: string) {
+    if (!this.userSockets.has(userId)) {
+      this.userSockets.set(userId, new Set());
+    }
+    this.userSockets.get(userId)!.add(ws);
   }
 
   public broadcastProgress(msg: TaskProgressMessage) {
     const payload = JSON.stringify(msg);
-    for (const ws of this.activeConnections) {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(payload);
+    const targetUserId = msg.data.userId;
+
+    if (targetUserId && this.userSockets.has(targetUserId)) {
+      // 严格仅向任务归属用户的已连接 WebSocket 推送，彻底物理隔离
+      const sockets = this.userSockets.get(targetUserId)!;
+      for (const ws of sockets) {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(payload);
+        }
+      }
+    } else if (!targetUserId) {
+      for (const ws of this.activeConnections) {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(payload);
+        }
       }
     }
   }

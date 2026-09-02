@@ -1262,6 +1262,26 @@ export class Database {
     });
   }
 
+  // 校验是否为已互通衣橱的好友
+  public isFriend(userId: string, friendUserId: string): boolean {
+    if (userId === friendUserId) return true;
+    const fId1 = `friend-${userId}-${friendUserId}`;
+    const f1 = this.friendships.get(fId1);
+    if (f1 && f1.status === 'ACCEPTED') return true;
+    const fId2 = `friend-${friendUserId}-${userId}`;
+    const f2 = this.friendships.get(fId2);
+    if (f2 && f2.status === 'ACCEPTED') return true;
+    return false;
+  }
+
+  // 校验 OOTD 日历记录归属权
+  public isOotdOwner(userId: string, ootdId: string): boolean {
+    const log = this.ootdLogs.get(ootdId);
+    if (!log) return false;
+    const profile = this.profiles.get(log.profileId);
+    return profile?.userId === userId;
+  }
+
   // 解除好友关系
   public removeFriend(userId: string, friendUserId: string): boolean {
     const fId1 = `friend-${userId}-${friendUserId}`;
