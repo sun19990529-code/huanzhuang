@@ -4,6 +4,7 @@ import { BrandLogo } from './BrandLogo';
 import {
   Sparkles,
   RefreshCw,
+  Clock,
   User,
   Heart,
   Plus,
@@ -27,7 +28,8 @@ interface HeaderProps {
   onSelectProfile: (profile: ProfileData) => void;
   onOpenProfileModal: () => void;
   onOpenAccountSettings: () => void;
-  onResetCredits: () => void;
+  onOpenTaskCenter?: () => void;
+  runningTaskCount?: number;
   onLogout: () => void;
 }
 
@@ -40,7 +42,8 @@ export const Header: React.FC<HeaderProps> = ({
   onSelectProfile,
   onOpenProfileModal,
   onOpenAccountSettings,
-  onResetCredits,
+  onOpenTaskCenter,
+  runningTaskCount = 0,
   onLogout,
 }) => {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
@@ -114,7 +117,7 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* 右侧：100 积分胶囊 + 多 Profile 角色切换 + 用户身份与设置 */}
         <div className="flex items-center gap-2.5">
-          {/* 每日 100 积分胶囊 (项 16: 香槟金呼吸微光特效) */}
+          {/* 每日 100 积分胶囊 */}
           <div
             title="每日零点自动补齐至 100 积分"
             className="relative flex items-center gap-2 bg-gradient-to-r from-amber-50/90 via-amber-100/60 to-amber-50/90 border border-amber-300/80 px-3 py-1.5 rounded-2xl shadow-xs hover:border-amber-400 transition-all group"
@@ -129,13 +132,6 @@ export const Header: React.FC<HeaderProps> = ({
                 <span className="text-[9px] text-amber-800 font-semibold">/ 100分</span>
               </div>
             </div>
-            <button
-              onClick={onResetCredits}
-              title="模拟补齐积分"
-              className="p-1 rounded-lg hover:bg-amber-200/70 text-amber-800 transition-colors relative z-10"
-            >
-              <RefreshCw className="w-3 h-3 stroke-[2]" />
-            </button>
 
             {/* 积分变动动态浮层 */}
             {creditDelta && (
@@ -144,6 +140,25 @@ export const Header: React.FC<HeaderProps> = ({
               </span>
             )}
           </div>
+
+          {/* 任务中心入口 (实时进行中任务呼吸红点/数字徽标) */}
+          <button
+            onClick={onOpenTaskCenter}
+            title="任务中心 (查看正在运行的任务与历史成片)"
+            className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-2xl border transition-all shadow-xs ${
+              runningTaskCount > 0
+                ? 'bg-rose-50 border-rose-300 text-[#D63031] hover:bg-rose-100/80'
+                : 'bg-[#EFECE6]/80 hover:bg-[#EAE6DF] border-[#EAE6DF] text-stone-700'
+            }`}
+          >
+            <Clock className={`w-3.5 h-3.5 stroke-[2] ${runningTaskCount > 0 ? 'animate-spin text-[#D63031]' : 'text-stone-600'}`} />
+            <span className="text-xs font-bold hidden sm:inline">任务中心</span>
+            {runningTaskCount > 0 && (
+              <span className="flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-[#D63031] text-white text-[10px] font-black animate-pulse shadow-xs">
+                {runningTaskCount}
+              </span>
+            )}
+          </button>
 
           {/* 多 Profile 角色切换 */}
           {currentProfile && (

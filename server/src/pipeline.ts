@@ -13,6 +13,7 @@ export interface TaskProgressMessage {
   event: 'TASK_PROGRESS_UPDATED';
   data: {
     taskId: string;
+    userId?: string;
     taskType: TaskType;
     status: TaskStatus;
     progress: number;
@@ -66,7 +67,7 @@ class TaskPipelineService {
       updatedAt: now,
     };
 
-    db.asyncTasks.set(taskId, task);
+    db.saveAsyncTask(task);
 
     // 启动异步真实/模拟双轨计算管线
     this.runPipelineStages(taskId, taskType, userId, inputPayload);
@@ -87,16 +88,21 @@ class TaskPipelineService {
     if (!task) return;
 
     task.status = 'PROCESSING';
+    task.updatedAt = new Date().toISOString();
+    db.saveAsyncTask(task);
 
     try {
       if (taskType === 'VTON_RENDER') {
         // 1. 解析穿戴与身材 Prompt
         task.progressPercent = 20;
         task.currentStage = '正在解析人物五官、发型与身材骨骼...';
+        task.updatedAt = new Date().toISOString();
+        db.saveAsyncTask(task);
         this.broadcastProgress({
           event: 'TASK_PROGRESS_UPDATED',
           data: {
             taskId: task.id,
+            userId: task.userId,
             taskType: task.taskType,
             status: task.status,
             progress: task.progressPercent,
@@ -111,10 +117,13 @@ class TaskPipelineService {
         // 2. 组装穿戴单品与多层渲染参数
         task.progressPercent = 45;
         task.currentStage = '正在调度 GPU 算力融合光影与织物垂坠仿真...';
+        task.updatedAt = new Date().toISOString();
+        db.saveAsyncTask(task);
         this.broadcastProgress({
           event: 'TASK_PROGRESS_UPDATED',
           data: {
             taskId: task.id,
+            userId: task.userId,
             taskType: task.taskType,
             status: task.status,
             progress: task.progressPercent,
@@ -199,10 +208,13 @@ class TaskPipelineService {
 
         task.progressPercent = 75;
         task.currentStage = '正在使用 gemini-3.1-flash-image 融合原图生成 8K 影棚级大片...';
+        task.updatedAt = new Date().toISOString();
+        db.saveAsyncTask(task);
         this.broadcastProgress({
           event: 'TASK_PROGRESS_UPDATED',
           data: {
             taskId: task.id,
+            userId: task.userId,
             taskType: task.taskType,
             status: task.status,
             progress: task.progressPercent,
@@ -232,11 +244,13 @@ class TaskPipelineService {
         task.currentStage = 'AI 高清试穿大片渲染完成！';
         task.outputResult = { renderedImageUrl: renderedUrl };
         task.updatedAt = new Date().toISOString();
+        db.saveAsyncTask(task);
 
         this.broadcastProgress({
           event: 'TASK_PROGRESS_UPDATED',
           data: {
             taskId: task.id,
+            userId: task.userId,
             taskType: task.taskType,
             status: task.status,
             progress: 100,
@@ -248,10 +262,13 @@ class TaskPipelineService {
       } else if (taskType === 'AVATAR_NORMALIZE') {
         task.progressPercent = 25;
         task.currentStage = '正在分析面部五官、发型与冷白肤色特征...';
+        task.updatedAt = new Date().toISOString();
+        db.saveAsyncTask(task);
         this.broadcastProgress({
           event: 'TASK_PROGRESS_UPDATED',
           data: {
             taskId: task.id,
+            userId: task.userId,
             taskType: task.taskType,
             status: task.status,
             progress: 25,
@@ -265,10 +282,13 @@ class TaskPipelineService {
 
         task.progressPercent = 60;
         task.currentStage = '正在使用 gemini-3.1-flash-image 构建正面 A-Pose 标准骨骼姿态...';
+        task.updatedAt = new Date().toISOString();
+        db.saveAsyncTask(task);
         this.broadcastProgress({
           event: 'TASK_PROGRESS_UPDATED',
           data: {
             taskId: task.id,
+            userId: task.userId,
             taskType: task.taskType,
             status: task.status,
             progress: 60,
@@ -296,11 +316,13 @@ class TaskPipelineService {
         task.currentStage = 'A-Pose 标准影棚素体已生成并装载！';
         task.outputResult = { normalizedImageUrl: normalizedAvatarUrl };
         task.updatedAt = new Date().toISOString();
+        db.saveAsyncTask(task);
 
         this.broadcastProgress({
           event: 'TASK_PROGRESS_UPDATED',
           data: {
             taskId: task.id,
+            userId: task.userId,
             taskType: task.taskType,
             status: task.status,
             progress: 100,
@@ -313,10 +335,13 @@ class TaskPipelineService {
         // GARMENT_NORMALIZE
         task.progressPercent = 30;
         task.currentStage = 'Vision 视觉多模态分析服装属性与材质...';
+        task.updatedAt = new Date().toISOString();
+        db.saveAsyncTask(task);
         this.broadcastProgress({
           event: 'TASK_PROGRESS_UPDATED',
           data: {
             taskId: task.id,
+            userId: task.userId,
             taskType: task.taskType,
             status: task.status,
             progress: 30,
@@ -330,10 +355,13 @@ class TaskPipelineService {
 
         task.progressPercent = 70;
         task.currentStage = '正在生成 Ghost Mannequin 纯白底切片并转透明底...';
+        task.updatedAt = new Date().toISOString();
+        db.saveAsyncTask(task);
         this.broadcastProgress({
           event: 'TASK_PROGRESS_UPDATED',
           data: {
             taskId: task.id,
+            userId: task.userId,
             taskType: task.taskType,
             status: task.status,
             progress: 70,
@@ -355,11 +383,13 @@ class TaskPipelineService {
         task.currentStage = '服装切片已透明化并入库！';
         task.outputResult = { renderedImageUrl: cutoutUrl };
         task.updatedAt = new Date().toISOString();
+        db.saveAsyncTask(task);
 
         this.broadcastProgress({
           event: 'TASK_PROGRESS_UPDATED',
           data: {
             taskId: task.id,
+            userId: task.userId,
             taskType: task.taskType,
             status: task.status,
             progress: 100,
@@ -373,8 +403,10 @@ class TaskPipelineService {
       console.error(`[Pipeline Error] Task ${taskId} failed:`, err);
       task.status = 'FAILED';
       task.currentStage = `任务生成失败: ${err.message || '未知错误'}`;
+      task.errorMessage = err.message || '生成失败';
       (task as any).error = err.message || '生成失败';
       task.updatedAt = new Date().toISOString();
+      db.saveAsyncTask(task);
 
       if (task.costCredits > 0) {
         db.refundCredits(userId, task.costCredits, `AI 生成失败自动退款 (${err.message || '网络异常'})`, task.id);
@@ -384,6 +416,7 @@ class TaskPipelineService {
         event: 'TASK_PROGRESS_UPDATED',
         data: {
           taskId: task.id,
+          userId: task.userId,
           taskType: task.taskType,
           status: 'FAILED',
           progress: 0,

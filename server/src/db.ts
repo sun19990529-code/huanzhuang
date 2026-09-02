@@ -320,6 +320,27 @@ export class Database {
           };
           this.ootdLogs.set(dLog.id, dLog);
         }
+
+        // 8. 加载最近异步任务 (按更新时间倒序)
+        const tasksRes = await pgPool.query('SELECT * FROM async_tasks ORDER BY updated_at DESC LIMIT 200');
+        this.asyncTasks.clear();
+        for (const t of tasksRes.rows) {
+          const task: DBAsyncTask = {
+            id: t.id,
+            userId: t.user_id,
+            taskType: t.task_type,
+            status: t.status,
+            progressPercent: t.progress_percent,
+            currentStage: t.current_stage,
+            costCredits: t.cost_credits,
+            inputPayload: t.input_payload || {},
+            outputResult: t.output_result || null,
+            errorMessage: t.error_message,
+            createdAt: t.created_at ? new Date(t.created_at).toISOString() : new Date().toISOString(),
+            updatedAt: t.updated_at ? new Date(t.updated_at).toISOString() : new Date().toISOString(),
+          };
+          this.asyncTasks.set(task.id, task);
+        }
       }
 
       console.log(`[Database] ✅ PostgreSQL 数据加载完成: 用户 ${this.users.size} 个, 会话 ${this.sessions.size} 个, 单品 ${this.garments.size} 个`);
@@ -1325,6 +1346,55 @@ export class Database {
 
   public getSuggestions(userId: string): OutfitSuggestion[] {
     return Array.from(this.suggestions.values()).filter((s) => s.targetUserId === userId);
+  }
+
+  // 异步任务持久化至 PostgreSQL 与内存
+  public async saveAsyncTask(task: DBAsyncTask): Promise<void> {
+    this.asyncTasks.set(task.id, task);
+    try {
+      await pgPool.query(
+        `INSERT INTO async_tasks (
+          id, user_id, task_type, status, progress_percent, current_stage, cost_credits, input_payload, output_result, error_message, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        ON CONFLICT (id) DO UPDATE SET
+          status = EXCLUDED.status,
+          progress_percent = EXCLUDED.progress_percent,
+          current_stage = EXCLUDED.current_stage,
+          output_result = EXCLUDED.output_result,
+          error_message = EXCLUDED.error_message,
+          updated_at = EXCLUDED.updated_at`,
+        [
+          task.id,
+          task.userId,
+          task.taskType,
+          task.status,
+          task.progressPercent,
+          task.currentStage,
+          task.costCredits,
+          JSON.stringify(task.inputPayload || {}),
+          task.outputResult ? JSON.stringify(task.outputResult) : null,
+          task.errorMessage || null,
+          task.createdAt,
+          task.updatedAt,
+        ]
+      );
+    } catch (err: any) {
+      console.error('[Database] 保存异步任务至 PostgreSQL 失败:', err.message);
+    }
+  }
+
+  // 获取特定账号的进行中任务与最近历史任务 (严格账号独立隔离)
+  public getUserTasks(userId: string, historyLimit = 5): { runningTasks: DBAsyncTask[]; historyTasks: DBAsyncTask[] } {
+    const userTasks = Array.from(this.asyncTasks.values())
+      .filter((t) => t.userId === userId)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    const runningTasks = userTasks.filter((t) => t.status === 'PENDING' || t.status === 'PROCESSING');
+    const historyTasks = userTasks
+      .filter((t) => t.status === 'SUCCESS' || t.status === 'FAILED' || t.status === 'TIMEOUT')
+      .slice(0, historyLimit);
+
+    return { runningTasks, historyTasks };
   }
 
   // 每日零点重置补齐至 100 积分

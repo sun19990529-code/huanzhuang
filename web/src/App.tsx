@@ -20,6 +20,8 @@ import {
  fetchSuggestions,
  renderVtonOutfit,
  fetchTaskStatus,
+  fetchUserTasks,
+  UserTaskItem,
  saveOutfit,
  logOotdEntry,
  suggestOutfitToFriend,
@@ -52,6 +54,7 @@ import { OotdGalleryView } from './views/OotdGalleryView';
 import { FriendSocialView } from './views/FriendSocialView';
 import { CmsAdminView } from './views/CmsAdminView';
 import { ProfileModal } from './components/ProfileModal';
+import { TaskCenterDrawer } from './components/TaskCenterDrawer';
 import { ToastContainer, showToast } from './components/Toast';
 
 export const App: React.FC = () => {
@@ -89,6 +92,11 @@ export const App: React.FC = () => {
  // 视图与弹窗
  const [activeView, setActiveView] = useState<'AUTH' | 'WARDROBE' | 'STUDIO' | 'OOTD' | 'FRIENDS' | 'CMS'>('STUDIO');
  const [isAccountSettingsOpen, setIsAccountSettingsOpen] = useState(false);
+  // 任务中心抽屉与任务列表
+  const [isTaskCenterOpen, setIsTaskCenterOpen] = useState(false);
+  const [runningTasks, setRunningTasks] = useState<UserTaskItem[]>([]);
+  const [historyTasks, setHistoryTasks] = useState<UserTaskItem[]>([]);
+  const [isTasksLoading, setIsTasksLoading] = useState(false);
   const [stylingFriend, setStylingFriend] = useState<{ name: string; friendUserId: string } | null>(null);
  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
@@ -139,7 +147,22 @@ export const App: React.FC = () => {
  }
  };
 
- const loadUserData = async (currentUser: CurrentUser) => {
+ 
+  // 加载当前登录用户的任务清单 (进行中 + 最近 5 条历史)
+  const loadUserTasks = async () => {
+    try {
+      setIsTasksLoading(true);
+      const { runningTasks: rTasks, historyTasks: hTasks } = await fetchUserTasks();
+      setRunningTasks(rTasks);
+      setHistoryTasks(hTasks);
+    } catch (err) {
+      console.warn('加载用户任务列表失败:', err);
+    } finally {
+      setIsTasksLoading(false);
+    }
+  };
+
+  const loadUserData = async (currentUser: CurrentUser) => {
  try {
  const userProfiles = await fetchProfiles();
  setProfiles(userProfiles);
@@ -150,6 +173,7 @@ export const App: React.FC = () => {
  await loadProfileData(defaultProf);
  }
  await loadPublicGarments();
+    await loadUserTasks();
  } catch (err) {
  console.warn('加载用户数据失败:', err);
  }
@@ -185,6 +209,7 @@ export const App: React.FC = () => {
  useEffect(() => {
  const disconnect = connectTaskWebSocket((event, data) => {
  if (event === 'TASK_PROGRESS_UPDATED') {
+          loadUserTasks();
  if (data.taskType === 'VTON_RENDER') {
  setRenderProgress(data.progress || 0);
  setRenderStage(data.currentStage || '正在渲染...');
@@ -250,44 +275,88 @@ export const App: React.FC = () => {
  await loadProfileData(profile);
  };
 
- // 穿脱衣物
- const handleWearGarment = (garment: GarmentItem) => {
- setWornItems((prev) => {
- const existingIndex = prev.findIndex((item) => item.garment.id === garment.id);
- if (existingIndex >= 0) {
- return prev.filter((_, i) => i !== existingIndex);
- }
+ // 穿脱衣物 (基于解剖部位槽位矩阵：支持多件不同部位配饰共存，连衣裙/套装智能互斥)
+  const handleWearGarment = (garment: GarmentItem) => {
+    setWornItems((prev) => {
+      const existingIndex = prev.findIndex((item) => item.garment.id === garment.id);
+      if (existingIndex >= 0) {
+        return prev.filter((_, i) => i !== existingIndex);
+      }
 
- let defaultZIndex = 10;
- if (garment.primaryCategory === 'BOTTOMS') defaultZIndex = 20;
- if (garment.primaryCategory === 'OUTERWEAR') defaultZIndex = 40;
- if (garment.primaryCategory === 'FOOTWEAR') defaultZIndex = 50;
- if (garment.primaryCategory === 'ACCESSORIES') defaultZIndex = 60;
+      const getAccessorySlot = (subCategory: string = '', title: string = ''): string => {
+        const combined = `${subCategory} ${title}`.toLowerCase();
+        if (/帽|冠|发饰|头饰|hat|cap|beanie|headwear|crown/i.test(combined)) return 'HAT';
+        if (/链|项链|锁骨|首饰|吊坠|necklace|pendant|choker|jewelry/i.test(combined)) return 'NECKLACE';
+        if (/带|腰带|皮带|waistband|belt/i.test(combined)) return 'BELT';
+        if (/包|手提|单肩|斜挎|托特|bag|tote|handbag|crossbody|clutch/i.test(combined)) return 'BAG';
+        if (/镜|墨镜|太阳镜|眼镜|glasses|sunglasses|eyewear/i.test(combined)) return 'EYEWEAR';
+        return 'OTHER_ACCESSORY';
+      };
 
- const offsets = getCategoryDefaultOffsets(
- garment.primaryCategory,
- garment.subCategory,
- garment.title
- );
+      const isDress = garment.primaryCategory === 'ONE_PIECE' || /裙|礼服|长裙|连衣裙|旗袍|gown|dress/i.test(garment.title);
+      let defaultZIndex = 10;
+      if (garment.primaryCategory === 'BOTTOMS') defaultZIndex = 20;
+      if (isDress) defaultZIndex = 25;
+      if (garment.primaryCategory === 'OUTERWEAR') defaultZIndex = 40;
+      if (garment.primaryCategory === 'FOOTWEAR') defaultZIndex = 50;
+      if (garment.primaryCategory === 'ACCESSORIES') {
+        const slot = getAccessorySlot(garment.subCategory, garment.title);
+        if (slot === 'BELT') defaultZIndex = 22;
+        else if (slot === 'NECKLACE') defaultZIndex = 30;
+        else if (slot === 'BAG') defaultZIndex = 60;
+        else if (slot === 'HAT') defaultZIndex = 70;
+        else defaultZIndex = 65;
+      }
 
- const filtered = prev.filter((i) => i.garment.primaryCategory !== garment.primaryCategory);
- return [
- ...filtered,
- {
- garment,
- state: 'DEFAULT',
- zIndex: defaultZIndex,
- offsetX: offsets.offsetX,
- offsetY: offsets.offsetY,
- scale: offsets.scale,
- scaleX: offsets.scale,
- scaleY: offsets.scale,
- },
- ];
- });
- };
+      const offsets = getCategoryDefaultOffsets(
+        garment.primaryCategory,
+        garment.subCategory,
+        garment.title
+      );
 
- const handleUpdateWornItem = (
+      const newAccSlot = garment.primaryCategory === 'ACCESSORIES' ? getAccessorySlot(garment.subCategory, garment.title) : null;
+
+      const filtered = prev.filter((item) => {
+        const itemCat = item.garment.primaryCategory;
+        const itemIsDress = itemCat === 'ONE_PIECE' || /裙|礼服|长裙|连衣裙|旗袍|gown|dress/i.test(item.garment.title);
+
+        if (isDress) {
+          // 穿连衣裙时，脱下已有连衣裙、上装、下装
+          if (itemIsDress || itemCat === 'TOPS' || itemCat === 'BOTTOMS') return false;
+        } else if (garment.primaryCategory === 'TOPS' || garment.primaryCategory === 'BOTTOMS') {
+          // 穿上装或下装时，脱下连衣裙，并替换同类单品
+          if (itemIsDress) return false;
+          if (itemCat === garment.primaryCategory) return false;
+        } else if (garment.primaryCategory === 'ACCESSORIES') {
+          // 配饰：仅当已有配饰处于同一身体部位时才替换，不同部位(如腰带+包包+项链)完全共存
+          if (itemCat === 'ACCESSORIES') {
+            const existingSlot = getAccessorySlot(item.garment.subCategory, item.garment.title);
+            if (newAccSlot === existingSlot) return false;
+          }
+        } else if (itemCat === garment.primaryCategory) {
+          return false;
+        }
+
+        return true;
+      });
+
+      return [
+        ...filtered,
+        {
+          garment,
+          state: 'DEFAULT',
+          zIndex: defaultZIndex,
+          offsetX: offsets.offsetX,
+          offsetY: offsets.offsetY,
+          scale: offsets.scale,
+          scaleX: offsets.scale,
+          scaleY: offsets.scale,
+        },
+      ];
+    });
+  };
+
+  const handleUpdateWornItem = (
  garmentId: string,
  updates: Partial<{ state: GarmentState; offsetX: number; offsetY: number; scale: number; scaleX: number; scaleY: number; zIndex: number }>
  ) => {
@@ -610,7 +679,8 @@ export const App: React.FC = () => {
  onSelectProfile={handleSelectProfile}
  onOpenProfileModal={() => setIsAccountSettingsOpen(true)}
  onOpenAccountSettings={() => setIsAccountSettingsOpen(true)}
- onResetCredits={handleResetCredits}
+ onOpenTaskCenter={() => { setIsTaskCenterOpen(true); loadUserTasks(); }}
+          runningTaskCount={runningTasks.length}
  onLogout={handleLogout}
  />
  )}
@@ -730,33 +800,43 @@ export const App: React.FC = () => {
  )}
 
  {/* ️ 账号设置悬浮弹窗 (6大模块: 身材三围/模特素体/密码安全/家庭多角色/积分钱包流水/隐私权限) */}
- <AccountSettingsModal
- isOpen={isAccountSettingsOpen}
- user={user}
- currentProfile={currentProfile}
- profiles={profiles}
- avatar={currentAvatar}
- onClose={() => setIsAccountSettingsOpen(false)}
- onSelectProfile={handleSelectProfile}
- onProfileUpdated={async (updated) => {
- setProfiles(profiles.map((p) => (p.id === updated.id ? updated : p)));
- if (currentProfile?.id === updated.id) {
- setCurrentProfile(updated);
- try {
- const av = await fetchProfileAvatar(updated.id);
- setCurrentAvatar(av);
- } catch (e) {
- console.warn('拉取新素体失败:', e);
- }
- }
- }}
- onAvatarUpdated={(newAv) => {
- setCurrentAvatar(newAv);
- }}
- onUserUpdated={(updatedUser) => {
- setUser(updatedUser);
- }}
- />
- </div>
- );
+      <AccountSettingsModal
+        isOpen={isAccountSettingsOpen}
+        user={user}
+        currentProfile={currentProfile}
+        profiles={profiles}
+        avatar={currentAvatar}
+        onClose={() => setIsAccountSettingsOpen(false)}
+        onSelectProfile={handleSelectProfile}
+        onProfileUpdated={async (updated) => {
+          setProfiles(profiles.map((p) => (p.id === updated.id ? updated : p)));
+          if (currentProfile?.id === updated.id) {
+            setCurrentProfile(updated);
+            try {
+              const av = await fetchProfileAvatar(updated.id);
+              setCurrentAvatar(av);
+            } catch (e) {
+              console.warn('拉取新素体失败:', e);
+            }
+          }
+        }}
+        onAvatarUpdated={(newAv) => {
+          setCurrentAvatar(newAv);
+        }}
+        onUserUpdated={(updatedUser) => {
+          setUser(updatedUser);
+        }}
+      />
+
+      {/* 账号独立任务中心抽屉 (Defect 20: 刷新防丢失与最近 5 条历史存档) */}
+      <TaskCenterDrawer
+        isOpen={isTaskCenterOpen}
+        onClose={() => setIsTaskCenterOpen(false)}
+        runningTasks={runningTasks}
+        historyTasks={historyTasks}
+        isLoading={isTasksLoading}
+        onRefresh={loadUserTasks}
+      />
+    </div>
+  );
 };

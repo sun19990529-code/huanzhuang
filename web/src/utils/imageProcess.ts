@@ -306,12 +306,16 @@ export function getCategoryDefaultOffsets(
   const isDress = /裙|礼服|长裙|连衣裙|旗袍|gown|dress/i.test(title) || /dress|gown/i.test(subCategory);
   const isCrown = /冠|发饰|头饰|发带|皇冠|crown/i.test(title) || /crown/i.test(subCategory);
   const isHat = /帽|贝雷|hat|beret|cap/i.test(title) || /hat|beret/i.test(subCategory);
-  const isNecklace = /链|项圈|项链|necklace|choker/i.test(title) || /necklace/i.test(subCategory);
+  const isNecklace = /链|项圈|项链|necklace|choker|jewelry/i.test(title) || /necklace|jewelry/i.test(subCategory);
+  const isBelt = /带|腰带|皮带|waistband|belt/i.test(title) || /belt/i.test(subCategory);
+  const isBag = /包|手提|单肩|斜挎|托特|bag|tote|handbag|crossbody|clutch/i.test(title) || /bag|tote|handbag/i.test(subCategory);
   const isShorts = /短裤|热裤|shorts/i.test(title) || /shorts/i.test(subCategory);
 
   if (isCrown) return { offsetY: -325, offsetX: 0, scale: 0.22, scaleX: 0.22, scaleY: 0.22 };
   if (isHat) return { offsetY: -310, offsetX: 0, scale: 0.32, scaleX: 0.32, scaleY: 0.32 };
   if (isNecklace) return { offsetY: -195, offsetX: 0, scale: 0.28, scaleX: 0.28, scaleY: 0.28 };
+  if (isBelt) return { offsetY: -28, offsetX: 0, scale: 0.38, scaleX: 0.38, scaleY: 0.38 };
+  if (isBag) return { offsetY: 75, offsetX: 105, scale: 0.38, scaleX: 0.38, scaleY: 0.38 };
   if (category === 'ACCESSORIES') return { offsetY: -195, offsetX: 0, scale: 0.32, scaleX: 0.32, scaleY: 0.32 };
   
   if (isDress) return { offsetY: 40, offsetX: 0, scale: 0.94, scaleX: 0.88, scaleY: 0.96 };

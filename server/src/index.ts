@@ -1286,6 +1286,39 @@ app.post('/v1/outfits/render-vton', requireAuth, (req: Request, res: Response) =
   });
 });
 
+// 获取当前登录用户的任务列表 (进行中任务 + 最近 5 条历史任务，严格账号隔离)
+app.get('/v1/tasks', requireAuth, (req: Request, res: Response) => {
+  const userId = req.user!.id;
+  const { runningTasks, historyTasks } = db.getUserTasks(userId, 5);
+
+  const formatTask = (task: any) => ({
+    taskId: task.id,
+    taskType: task.taskType,
+    status: task.status,
+    progressPercent: task.progressPercent,
+    currentStage: task.currentStage,
+    costCredits: task.costCredits,
+    inputPayload: task.inputPayload,
+    resultUrl:
+      task.outputResult?.renderedImageUrl ||
+      task.outputResult?.normalizedImageUrl ||
+      task.outputResult?.resultUrl ||
+      null,
+    outputResult: task.outputResult || null,
+    errorMessage: task.errorMessage || (task as any).error || null,
+    createdAt: task.createdAt,
+    updatedAt: task.updatedAt,
+  });
+
+  res.json({
+    code: 200,
+    data: {
+      runningTasks: runningTasks.map(formatTask),
+      historyTasks: historyTasks.map(formatTask),
+    },
+  });
+});
+
 // 异步任务状态查询接口 (支持 HTTP Polling 兜底与防假死保障)
 app.get('/v1/tasks/:id', requireAuth, (req: Request, res: Response) => {
   const { id } = req.params;

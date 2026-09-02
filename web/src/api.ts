@@ -436,6 +436,30 @@ export async function renderVtonOutfit(
   return data.data;
 }
 
+export interface UserTaskItem {
+  taskId: string;
+  taskType: string;
+  status: 'PENDING' | 'PROCESSING' | 'SUCCESS' | 'FAILED' | 'TIMEOUT';
+  progressPercent: number;
+  currentStage: string;
+  costCredits?: number;
+  inputPayload?: any;
+  resultUrl: string | null;
+  outputResult?: any;
+  errorMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function fetchUserTasks(): Promise<{ runningTasks: UserTaskItem[]; historyTasks: UserTaskItem[] }> {
+  const res = await fetch(`${API_BASE}/tasks`, {
+    headers: authHeaders(),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || '获取任务列表失败');
+  return data.data || { runningTasks: [], historyTasks: [] };
+}
+
 export async function fetchTaskStatus(taskId: string): Promise<{
   taskId: string;
   taskType: string;
