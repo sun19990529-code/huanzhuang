@@ -721,12 +721,12 @@ export const CmsAdminView: React.FC<CmsAdminViewProps> = ({
       {/* ------------------------------------------------------------- */}
       {/* 主体工作区 */}
       {/* ------------------------------------------------------------- */}
-      <main className="flex-1 overflow-y-auto p-6">
+      <main className="flex-1 overflow-y-auto px-4 sm:px-6 py-6">
         {/* ----------------------------------------------------------- */}
         {/* TAB 1: 运营总览 (Dashboard Overview) */}
         {/* ----------------------------------------------------------- */}
         {activeTab === 'DASHBOARD' && (
-          <div className="max-w-6xl mx-auto space-y-6">
+          <div className="w-full max-w-[1580px] mx-auto space-y-6">
             {/* 统计指标卡片 */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="bg-white rounded-2xl border border-[#EAE6DF] p-5 shadow-xs flex flex-col justify-between space-y-3">
@@ -994,7 +994,7 @@ export const CmsAdminView: React.FC<CmsAdminViewProps> = ({
         {/* TAB 2: 用户与权限管理 (User Management) */}
         {/* ----------------------------------------------------------- */}
         {activeTab === 'USERS' && (
-          <div className="max-w-6xl mx-auto space-y-4">
+          <div className="w-full max-w-[1580px] mx-auto space-y-4">
             {/* 过滤工具栏 */}
             <div className="bg-white p-4 rounded-2xl border border-[#EAE6DF] shadow-xs flex flex-col md:flex-row items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
@@ -1075,7 +1075,7 @@ export const CmsAdminView: React.FC<CmsAdminViewProps> = ({
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
                     <tr className="bg-[#FAF8F5] border-b border-[#EAE6DF] text-stone-500 font-bold">
-                      <th className="py-3 px-4 w-10 text-center">
+                      <th className="py-3 px-4 w-12 text-center whitespace-nowrap">
                         <button
                           onClick={handleSelectAllUsers}
                           className="text-stone-400 hover:text-stone-700 transition-colors"
@@ -1087,15 +1087,15 @@ export const CmsAdminView: React.FC<CmsAdminViewProps> = ({
                           )}
                         </button>
                       </th>
-                      <th className="py-3 px-4">用户标识</th>
-                      <th className="py-3 px-4">昵称 / 邮箱</th>
-                      <th className="py-3 px-4">角色</th>
-                      <th className="py-3 px-4">状态</th>
-                      <th className="py-3 px-4">标签</th>
-                      <th className="py-3 px-4">积分 (每日/永久)</th>
-                      <th className="py-3 px-4">档案数</th>
-                      <th className="py-3 px-4">注册时间</th>
-                      <th className="py-3 px-4 text-right">操作</th>
+                      <th className="py-3 px-4 whitespace-nowrap">用户标识</th>
+                      <th className="py-3 px-4 whitespace-nowrap min-w-[200px]">昵称 / 邮箱</th>
+                      <th className="py-3 px-4 whitespace-nowrap text-center">角色</th>
+                      <th className="py-3 px-4 whitespace-nowrap text-center">状态</th>
+                      <th className="py-3 px-4 whitespace-nowrap min-w-[150px]">标签</th>
+                      <th className="py-3 px-4 whitespace-nowrap">积分 (每日 / 永久)</th>
+                      <th className="py-3 px-4 whitespace-nowrap text-center">档案数</th>
+                      <th className="py-3 px-4 whitespace-nowrap">注册时间</th>
+                      <th className="py-3 px-4 text-right whitespace-nowrap">操作</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-stone-100">
@@ -1127,23 +1127,23 @@ export const CmsAdminView: React.FC<CmsAdminViewProps> = ({
                                 )}
                               </button>
                             </td>
-                            <td className="py-3 px-4 font-mono text-[11px] text-stone-400">
+                            <td className="py-3 px-4 font-mono text-[11px] text-stone-400 whitespace-nowrap">
                             {u.id.slice(0, 12)}...
                           </td>
-                          <td className="py-3 px-4">
+                          <td className="py-3 px-4 whitespace-nowrap">
                             <div className="flex items-center gap-2.5">
-                              <div className="w-7 h-7 rounded-full bg-rose-50 text-[#D63031] border border-rose-100 flex items-center justify-center font-bold text-xs">
+                              <div className="w-7 h-7 rounded-full bg-rose-50 text-[#D63031] border border-rose-100 flex items-center justify-center font-bold text-xs shrink-0">
                                 {(u.nickname || u.email)[0]}
                               </div>
                               <div>
-                                <div className="font-bold text-stone-900">{u.nickname || '未设置'}</div>
-                                <div className="text-[10px] text-stone-400">{u.email}</div>
+                                <div className="font-bold text-stone-900 leading-tight">{u.nickname || '未设置'}</div>
+                                <div className="text-[10px] text-stone-400 leading-tight">{u.email}</div>
                               </div>
                             </div>
                           </td>
-                          <td className="py-3 px-4">
+                          <td className="py-3 px-4 whitespace-nowrap text-center">
                             <span
-                              className={`px-2 py-0.5 rounded-md font-bold text-[10px] font-mono ${
+                              className={`inline-flex items-center px-2.5 py-0.5 rounded-md font-bold text-[10px] font-mono whitespace-nowrap ${
                                 u.role === 'ADMIN'
                                   ? 'bg-amber-50 text-amber-700 border border-amber-200'
                                   : 'bg-stone-100 text-stone-600'
@@ -1152,9 +1152,9 @@ export const CmsAdminView: React.FC<CmsAdminViewProps> = ({
                               {u.role}
                             </span>
                           </td>
-                          <td className="py-3 px-4">
+                          <td className="py-3 px-4 whitespace-nowrap text-center">
                             <span
-                              className={`px-2 py-0.5 rounded-md font-bold text-[10px] ${
+                              className={`inline-flex items-center justify-center px-2.5 py-0.5 rounded-md font-bold text-[10px] whitespace-nowrap shrink-0 ${
                                 u.status === 'BANNED'
                                   ? 'bg-rose-100 text-rose-700 border border-rose-200'
                                   : u.status === 'FROZEN'
@@ -1165,13 +1165,13 @@ export const CmsAdminView: React.FC<CmsAdminViewProps> = ({
                               {u.status === 'BANNED' ? '已封禁' : u.status === 'FROZEN' ? '已冻结' : '正常'}
                             </span>
                           </td>
-                          <td className="py-3 px-4">
-                            <div className="flex flex-wrap items-center gap-1">
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            <div className="flex items-center gap-1">
                               {u.tags && u.tags.length > 0 ? (
                                 u.tags.map((tag: string) => (
                                   <span
                                     key={tag}
-                                    className="px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200 text-[10px] font-bold"
+                                    className="px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200 text-[10px] font-bold whitespace-nowrap"
                                   >
                                     {tag}
                                   </span>
@@ -1181,25 +1181,25 @@ export const CmsAdminView: React.FC<CmsAdminViewProps> = ({
                               )}
                               <button
                                 onClick={() => handleOpenTagModal(u)}
-                                className="p-1 text-stone-400 hover:text-stone-700 rounded hover:bg-stone-100"
+                                className="p-1 text-stone-400 hover:text-stone-700 rounded hover:bg-stone-100 transition-colors"
                                 title="管理用户标签"
                               >
                                 <Tag className="w-3 h-3" />
                               </button>
                             </div>
                           </td>
-                          <td className="py-3 px-4 font-mono">
+                          <td className="py-3 px-4 font-mono whitespace-nowrap">
                             <span className="font-bold text-stone-900">{u.dailyCredits}</span>
                             <span className="text-stone-400"> / </span>
                             <span className="text-amber-600 font-bold">+{u.permanentCredits}</span>
                           </td>
-                          <td className="py-3 px-4 font-mono text-stone-600">
+                          <td className="py-3 px-4 font-mono text-stone-600 whitespace-nowrap text-center">
                             {u.profilesCount} 个
                           </td>
-                          <td className="py-3 px-4 text-stone-400 font-mono text-[10px]">
+                          <td className="py-3 px-4 text-stone-400 font-mono text-[11px] whitespace-nowrap">
                             {new Date(u.createdAt).toLocaleDateString()}
                           </td>
-                          <td className="py-3 px-4 text-right">
+                          <td className="py-3 px-4 text-right whitespace-nowrap">
                             <div className="inline-flex items-center gap-1.5">
                               {/* 查看详情 */}
                               <button
@@ -1333,7 +1333,7 @@ export const CmsAdminView: React.FC<CmsAdminViewProps> = ({
         {/* TAB 3: 官方公共单品管理 (Garment CMS) */}
         {/* ----------------------------------------------------------- */}
         {activeTab === 'GARMENTS' && (
-          <div className="max-w-6xl mx-auto space-y-4">
+          <div className="w-full max-w-[1580px] mx-auto space-y-4">
             {/* 顶部动作条 */}
             <div className="flex items-center justify-between bg-white p-4 rounded-2xl border border-[#EAE6DF] shadow-xs">
               <div className="flex items-center gap-3">
@@ -1375,7 +1375,7 @@ export const CmsAdminView: React.FC<CmsAdminViewProps> = ({
             </div>
 
             {/* 单品网格 */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
               {publicGarments.map((g) => {
                 const isSelected = selectedGarmentIds.has(g.id);
                 return (
@@ -1531,7 +1531,7 @@ export const CmsAdminView: React.FC<CmsAdminViewProps> = ({
         {/* TAB 4: 全局积分审计流水 (Audit Ledger) */}
         {/* ----------------------------------------------------------- */}
         {activeTab === 'LEDGER' && (
-          <div className="max-w-6xl mx-auto space-y-4">
+          <div className="w-full max-w-[1580px] mx-auto space-y-4">
             {/* 过滤与导出 Bar */}
             <div className="bg-white p-4 rounded-2xl border border-[#EAE6DF] shadow-xs flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -1576,13 +1576,13 @@ export const CmsAdminView: React.FC<CmsAdminViewProps> = ({
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
                     <tr className="bg-[#FAF8F5] border-b border-[#EAE6DF] text-stone-500 font-bold">
-                      <th className="py-3 px-4">流水号</th>
-                      <th className="py-3 px-4">用户 UID</th>
-                      <th className="py-3 px-4">业务类型</th>
-                      <th className="py-3 px-4">变动数额 (每日/永久)</th>
-                      <th className="py-3 px-4">变动后余额</th>
-                      <th className="py-3 px-4">说明</th>
-                      <th className="py-3 px-4">时间戳</th>
+                      <th className="py-3 px-4 whitespace-nowrap">流水号</th>
+                      <th className="py-3 px-4 whitespace-nowrap">用户 UID</th>
+                      <th className="py-3 px-4 whitespace-nowrap">业务类型</th>
+                      <th className="py-3 px-4 whitespace-nowrap">变动数额 (每日 / 永久)</th>
+                      <th className="py-3 px-4 whitespace-nowrap">变动后余额</th>
+                      <th className="py-3 px-4 whitespace-nowrap min-w-[200px]">说明</th>
+                      <th className="py-3 px-4 whitespace-nowrap">时间戳</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-stone-100">
