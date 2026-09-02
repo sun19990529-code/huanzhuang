@@ -56,6 +56,7 @@ import { CmsAdminView } from './views/CmsAdminView';
 import { ProfileModal } from './components/ProfileModal';
 import { TaskCenterDrawer } from './components/TaskCenterDrawer';
 import { ToastContainer, showToast } from './components/Toast';
+import { Shirt } from 'lucide-react';
 
 export const App: React.FC = () => {
  // 路由与隐藏后台判断
@@ -82,6 +83,11 @@ export const App: React.FC = () => {
  window.removeEventListener('offline', handleOffline);
  };
  }, []);
+
+ // 认证初始化加载状态 (避免刷新页面时登录页 FOUC 闪烁)
+ const [isAuthInitializing, setIsAuthInitializing] = useState<boolean>(() => {
+   return !!localStorage.getItem('SW_AUTH_TOKEN');
+ });
 
  // 用户与角色状态
  const [user, setUser] = useState<CurrentUser | null>(null);
@@ -144,6 +150,8 @@ export const App: React.FC = () => {
  console.log('未登录或凭证过期，展示登录注册页');
  setUser(null);
  loadPublicGarments();
+ } finally {
+ setIsAuthInitializing(false);
  }
  };
 
@@ -704,8 +712,27 @@ export const App: React.FC = () => {
  return (
  <div className="h-screen overflow-hidden flex flex-col font-sans bg-[#FAF8F5] text-stone-800 selection:bg-rose-200">
  
+ {/* 认证初始化静默校验中（高质感品牌启动过渡，彻底消除登录界面 FOUC 闪烁） */}
+ {isAuthInitializing && (
+ <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#FAF8F5]">
+ <div className="flex flex-col items-center gap-4 animate-in fade-in duration-300">
+ <div className="w-14 h-14 rounded-2xl bg-stone-900 text-white flex items-center justify-center shadow-lg shadow-stone-900/10">
+ <Shirt className="w-7 h-7 stroke-[1.75] animate-pulse text-[#FAF8F5]" />
+ </div>
+ <div className="flex flex-col items-center gap-1">
+ <span className="text-xs font-extrabold text-stone-800 tracking-wider">
+ SMARTWARDROBE
+ </span>
+ <span className="text-[10px] text-stone-400 font-mono tracking-widest uppercase">
+ Haute Atelier · 数字化衣橱
+ </span>
+ </div>
+ </div>
+ </div>
+ )}
+
  {/* 隐藏管理员登录专页 (URL hash: #/admin-portal 且未登录为 ADMIN 时呈现) */}
- {isAdminRoute && user?.role !== 'ADMIN' && (
+ {!isAuthInitializing && isAdminRoute && user?.role !== 'ADMIN' && (
  <AdminLoginView
  onAdminLoginSuccess={handleAdminLoginSuccess}
  onExitAdmin={handleExitAdmin}
@@ -713,7 +740,7 @@ export const App: React.FC = () => {
  )}
 
  {/* 常规前台未登录状态 */}
- {!user && !isAdminRoute && (
+ {!isAuthInitializing && !user && !isAdminRoute && (
  <AuthView onLoginSuccess={handleLoginSuccess} />
  )}
 
