@@ -306,6 +306,22 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  const fileInputRef = useRef<HTMLInputElement>(null);
  const avatarInputRef = useRef<HTMLInputElement>(null);
 
+ // 两侧侧翼自适应物理居中与防穿模状态
+ const leftWingSlotRef = useRef<HTMLDivElement>(null);
+ const [isCompactWing, setIsCompactWing] = useState(false);
+
+ useEffect(() => {
+ if (!leftWingSlotRef.current) return;
+ const observer = new ResizeObserver((entries) => {
+ for (const entry of entries) {
+ const width = entry.contentRect.width;
+ setIsCompactWing(width < 160);
+ }
+ });
+ observer.observe(leftWingSlotRef.current);
+ return () => observer.disconnect();
+ }, []);
+
  // 切换颜色多选
  const handleToggleColor = (colorKey: string) => {
  setSelectedColors((prev) =>
@@ -1384,11 +1400,300 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
           </div>
         )}
 
-        {/* 画布中央模特舞台 (3:4 黄金画幅) */}
- <div className="absolute inset-0 flex items-center justify-center p-2 sm:p-3 pointer-events-none">
+        {/* 画布中央舞台与左右自适应居中侧翼坞 (三栏物理对称布局) */}
+        <div className="absolute inset-0 flex items-center justify-between p-2 sm:p-3 pointer-events-none">
+          {/* 左侧翼槽区：自然占据 (舞台左边缘 ~ 画布左边缘) 的全部空间，内部居中放置左翼悬浮坞 */}
+          <div
+            ref={leftWingSlotRef}
+            className="flex-1 h-full flex items-center justify-center pointer-events-none min-w-0"
+          >
+            <div className="relative pointer-events-auto">
+              {/* 左翼·创作辅助悬浮坞 (Left Wing Creation & Staging Dock - A1方案) */}
+      {/* ========================================================================= */}
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className={`pointer-events-auto flex flex-col items-center gap-2 bg-white/95 backdrop-blur-2xl border border-[#EAE6DF] shadow-2xl rounded-3xl transition-all z-30 select-none ${isCompactWing ? "w-12 p-1.5" : "w-12 lg:w-36 p-2.5 text-left"}`}
+      >
+        {/* 1. 2D / 3D 模式纵向切换 (带平滑丝滑滑块动效) */}
+        <div className="w-full relative flex flex-col p-1 bg-stone-100/90 rounded-2xl border border-[#EAE6DF]/60 select-none">
+          {/* 红色平滑移动滑块胶囊 (Sliding Pill Indicator) */}
+          <div
+            className={`absolute left-1 right-1 h-[calc(50%-4px)] bg-[#D63031] rounded-xl shadow-xs transition-all duration-300 ease-out pointer-events-none ${
+              studioDisplayMode === '2D' ? 'top-1' : 'top-[calc(50%+2px)]'
+            }`}
+          />
+
+          <button
+            type="button"
+            onClick={() => setStudioDisplayMode('2D')}
+            title="2D 自由拼搭微调"
+            className={`w-full py-2 rounded-xl text-xs font-bold transition-colors duration-200 flex items-center ${isCompactWing ? "justify-center" : "justify-center lg:justify-start lg:px-2.5"} gap-2 relative z-10 ${
+              studioDisplayMode === '2D'
+                ? 'text-white font-extrabold'
+                : 'text-stone-600 hover:text-stone-900'
+            }`}
+          >
+            <Shirt className="w-4 h-4 shrink-0 stroke-[2]" />
+            <span className={isCompactWing ? "hidden" : "hidden lg:inline text-xs"}>2D 拼搭</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (renderedImageUrl) {
+                setSelectedItemId(null);
+                setStudioDisplayMode('3D');
+              } else {
+                showToast('请先点击右侧「AI 试穿大片」生成 3D 影棚商业大片！', 'info');
+              }
+            }}
+            title="3D 影棚试穿成片"
+            className={`w-full py-2 rounded-xl text-xs font-bold transition-colors duration-200 flex items-center ${isCompactWing ? "justify-center" : "justify-center lg:justify-start lg:px-2.5"} gap-2 relative z-10 ${
+              studioDisplayMode === '3D'
+                ? 'text-white font-extrabold'
+                : 'text-stone-600 hover:text-stone-900'
+            }`}
+          >
+            <Sparkles className="w-4 h-4 shrink-0 stroke-[2]" />
+            <span className={isCompactWing ? "hidden" : "hidden lg:inline text-xs"}>3D 大片</span>
+            {renderedImageUrl && (
+              <span className={`w-2 h-2 rounded-full bg-emerald-400 animate-pulse ${isCompactWing ? "absolute top-1.5 right-1.5" : "absolute top-1.5 right-1.5 lg:static lg:ml-auto"}`} />
+            )}
+          </button>
+        </div>
+
+        <div className="w-full h-[1px] bg-stone-200/70 my-0.5" />
+
+        {/* 2. 形态切换 (替换原身材工坊，智能检测选中/穿戴单品并支持置灰) */}
+        {(() => {
+          const selectedWorn = selectedItemId ? wornItems.find((w) => w.garment.id === selectedItemId) : null;
+          const targetWorn = selectedWorn || wornItems.find((w) =>
+            w.garment.primaryCategory === 'TOPS' ||
+            w.garment.primaryCategory === 'OUTERWEAR' ||
+            (w.garment.assets && w.garment.assets.length > 1)
+          );
+
+          const canToggle = !!targetWorn && (
+            targetWorn.garment.primaryCategory === 'TOPS' ||
+            targetWorn.garment.primaryCategory === 'OUTERWEAR' ||
+            (targetWorn.garment.assets && targetWorn.garment.assets.length > 1)
+          );
+
+          let stateLabel = '形态切换';
+          let stateTooltip = '此衣物无形态切换';
+          if (canToggle && targetWorn) {
+            if (targetWorn.garment.primaryCategory === 'TOPS') {
+              stateLabel = targetWorn.state === 'TUCKED' ? '已塞入' : '已外放';
+              stateTooltip = `点击切换「${targetWorn.garment.title}」: ${targetWorn.state === 'TUCKED' ? '塞入 ➔ 外放' : '外放 ➔ 塞入'}`;
+            } else if (targetWorn.garment.primaryCategory === 'OUTERWEAR') {
+              stateLabel = targetWorn.state === 'OPEN' ? '已敞开' : '已扣合';
+              stateTooltip = `点击切换「${targetWorn.garment.title}」: ${targetWorn.state === 'OPEN' ? '敞开 ➔ 扣合' : '扣合 ➔ 敞开'}`;
+            } else {
+              stateLabel = '切换形态';
+              stateTooltip = `点击切换「${targetWorn.garment.title}」多态切片`;
+            }
+          }
+
+          return (
+            <button
+              type="button"
+              disabled={!canToggle}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (canToggle && targetWorn) {
+                  handleToggleGarmentState(targetWorn.garment.id);
+                }
+              }}
+              title={stateTooltip}
+              className={`w-full py-2 px-1 ${isCompactWing ? "justify-center" : "lg:px-2.5 justify-center lg:justify-start"} rounded-2xl text-xs font-bold transition-all flex items-center gap-2 ${
+                canToggle
+                  ? 'bg-amber-50/90 hover:bg-amber-100 text-amber-900 border border-amber-200/80 shadow-2xs cursor-pointer active:scale-95'
+                  : 'bg-stone-100/50 text-stone-300 border border-transparent cursor-not-allowed opacity-50'
+              }`}
+            >
+              <Shirt className={`w-4 h-4 shrink-0 stroke-[1.75] ${canToggle ? 'text-amber-700' : 'text-stone-300'}`} />
+              <span className={isCompactWing ? "hidden" : "hidden lg:inline text-xs"}>{stateLabel}</span>
+            </button>
+          );
+        })()}
+
+        {/* 3. 图层管理 */}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsLayerPanelOpen(!isLayerPanelOpen);
+          }}
+          title="穿戴图层层级排序与查看"
+          className={`w-full py-2 px-1 ${isCompactWing ? "justify-center" : "lg:px-2.5 justify-center lg:justify-start"} rounded-2xl text-xs font-bold transition-all flex items-center gap-2 relative ${
+            isLayerPanelOpen
+              ? 'bg-[#2D3436] text-white shadow-xs'
+              : 'hover:bg-stone-100 text-stone-700 hover:text-stone-950'
+          }`}
+        >
+          <Layers className="w-4 h-4 shrink-0 stroke-[1.75]" />
+          <span className={isCompactWing ? "hidden" : "hidden lg:inline text-xs"}>图层 ({wornItems.length})</span>{isCompactWing && wornItems.length > 0 && <span className="w-2 h-2 rounded-full bg-[#D63031] absolute top-1.5 right-1.5" />}
+        </button>
+
+        {/* 4. 智能搭配推荐 */}
+        <button
+          type="button"
+          onClick={() => setIsSlotMachineOpen(true)}
+          title="胶囊衣橱气温智能出装推荐"
+          className={`w-full py-2 px-1 ${isCompactWing ? "justify-center" : "lg:px-2.5 justify-center lg:justify-start"} hover:bg-amber-50 hover:text-amber-900 text-stone-700 rounded-2xl text-xs font-bold transition-all flex items-center gap-2`}
+        >
+          <Sparkles className="w-4 h-4 shrink-0 text-amber-600 stroke-[1.75]" />
+          <span className={isCompactWing ? "hidden" : "hidden lg:inline text-xs"}>智能出装</span>
+        </button>
+
+        {/* 5. 一键清空画布 (保持常驻，空状态下置灰禁用) */}
+        <button
+          type="button"
+          disabled={wornItems.length === 0}
+          onClick={onClearCanvas}
+          title={wornItems.length === 0 ? '暂无穿戴单品可清空' : '清空模特身上所有已穿戴单品'}
+          className={`w-full py-2 px-1 ${isCompactWing ? "justify-center" : "lg:px-2.5 justify-center lg:justify-start"} rounded-2xl text-xs font-bold transition-all flex items-center gap-2 ${
+            wornItems.length > 0
+              ? 'hover:bg-rose-50 text-stone-500 hover:text-rose-600 cursor-pointer active:scale-95'
+              : 'text-stone-300 cursor-not-allowed opacity-40'
+          }`}
+        >
+          <RotateCcw className="w-4 h-4 shrink-0 stroke-[1.75]" />
+          <span className={isCompactWing ? "hidden" : "hidden lg:inline text-xs"}>一键清空</span>
+        </button>
+      </div>
+
+      {/* ========================================================================= */}
+              {/* 图层管理浮动抽屉 (Layer Stack Panel) */}
+ {isLayerPanelOpen && (
  <div
+ onClick={(e) => e.stopPropagation()}
+ className="absolute left-full ml-3 top-1/2 -translate-y-1/2 z-40 w-72 bg-white/95 backdrop-blur-2xl border border-[#EAE6DF] rounded-3xl p-4 shadow-2xl space-y-3 animate-in fade-in zoom-in-95 duration-150 text-left pointer-events-auto"
+ >
+ <div className="flex items-center justify-between pb-2 border-b border-[#EAE6DF]">
+ <div className="flex items-center gap-1.5">
+ <Layers className="w-4 h-4 text-[#D63031]" />
+ <h4 className="text-xs font-extrabold text-stone-900">穿戴图层拓扑</h4>
+ </div>
+ <button
+ type="button"
+ onClick={() => setIsLayerPanelOpen(false)}
+ className="text-stone-400 hover:text-stone-700"
+ >
+ <X className="w-4 h-4" />
+ </button>
+ </div>
+
+ {wornItems.length === 0 ? (
+ <div className="py-6 text-center text-xs text-stone-400">暂无穿戴单品，请在左侧点击穿上</div>
+ ) : (
+ <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1 scrollbar-thin">
+ <div className="text-[9px] text-stone-400 font-mono px-1">▲ 最外层 (TOP)</div>
+ {[...wornItems]
+ .sort((a, b) => b.zIndex - a.zIndex)
+ .map((item) => {
+ const isSelected = selectedItemId === item.garment.id;
+ return (
+ <div
+ key={item.garment.id}
+ onClick={() => setSelectedItemId(item.garment.id)}
+ className={`p-2 rounded-2xl border transition-all flex items-center justify-between gap-2 cursor-pointer ${
+ isSelected
+ ? 'bg-rose-50/80 border-[#D63031] ring-1 ring-[#D63031]'
+ : 'bg-[#FAF8F5] border-[#EAE6DF] hover:border-stone-400'
+ }`}
+ >
+ <div className="flex items-center gap-2 min-w-0">
+ <img
+ src={item.garment.assets?.[0]?.pngUrl}
+ alt={item.garment.title}
+ className="w-9 h-9 rounded-xl object-contain bg-white border border-[#EAE6DF] shrink-0 p-0.5"
+ />
+ <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold text-stone-800 truncate">
+                            {item.garment.title}
+                          </p>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className="text-[9px] font-mono text-stone-400">
+                              Z: {item.zIndex}
+                            </span>
+                            {/* 形态切换快捷开关 */}
+                            {item.garment.primaryCategory === 'TOPS' && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleToggleGarmentState(item.garment.id);
+                                }}
+                                className="px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-colors flex items-center gap-0.5 bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100"
+                                title="切换塞衣角 / 外放形态"
+                              >
+                                <Shirt className="w-3 h-3 text-amber-700" />
+                                <span>{item.state === 'TUCKED' ? '已塞入' : '已外放'}</span>
+                              </button>
+                            )}
+                            {item.garment.primaryCategory === 'OUTERWEAR' && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleToggleGarmentState(item.garment.id);
+                                }}
+                                className="px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-colors flex items-center gap-0.5 bg-indigo-50 text-indigo-900 border-indigo-200 hover:bg-indigo-100"
+                                title="切换敞开 / 扣合形态"
+                              >
+                                <Shirt className="w-3 h-3 text-indigo-700" />
+                                <span>{item.state === 'OPEN' ? '已敞开' : '已扣合'}</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+ </div>
+
+ <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+ <button
+ type="button"
+ onClick={() => handleAdjustZIndex(item.garment.id, 'UP')}
+ className="p-1 hover:bg-stone-200 text-stone-600 rounded-lg transition-colors"
+ title="图层上移"
+ >
+ <ChevronUp className="w-3.5 h-3.5" />
+ </button>
+ <button
+ type="button"
+ onClick={() => handleAdjustZIndex(item.garment.id, 'DOWN')}
+ className="p-1 hover:bg-stone-200 text-stone-600 rounded-lg transition-colors"
+ title="图层下移"
+ >
+ <ChevronDown className="w-3.5 h-3.5" />
+ </button>
+ <button
+ type="button"
+ onClick={() => {
+ onRemoveWornItem(item.garment.id);
+ if (selectedItemId === item.garment.id) setSelectedItemId(null);
+ }}
+ className="p-1 hover:bg-rose-100 text-[#D63031] rounded-lg transition-colors ml-0.5"
+ title="脱下此单品"
+ >
+ <Trash2 className="w-3.5 h-3.5" />
+ </button>
+ </div>
+ </div>
+ );
+ })}
+ <div className="text-[9px] text-stone-400 font-mono px-1">▼ 贴身层 (BOTTOM)</div>
+ </div>
+        )}
+      </div>
+    )}
+            </div>
+          </div>
+
+          {/* 中间 3:4 模特舞台：固有比例 shrink-0 居中 */}
+           <div
  onClick={() => setSelectedItemId(null)}
- className="relative h-[56vh] md:h-[88vh] max-h-[880px] aspect-[3/4] rounded-3xl border border-stone-200/80 bg-white/95 shadow-2xl shadow-stone-300/40 flex items-center justify-center overflow-visible pointer-events-auto transition-all"
+ className="relative shrink-0 h-[56vh] md:h-[88vh] max-h-[880px] aspect-[3/4] rounded-3xl border border-stone-200/80 bg-white/95 shadow-2xl shadow-stone-300/40 flex items-center justify-center overflow-visible pointer-events-auto transition-all"
  >
  {/* 模特景深光晕底座 */}
  <div className="absolute inset-x-8 bottom-0 h-16 bg-stone-300/30 blur-xl rounded-full pointer-events-none" />
@@ -1737,170 +2042,16 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  </>
  )}
  </div>
- </div>
 
-      {/* ========================================================================= */}
-      {/* 左翼·创作辅助悬浮坞 (Left Wing Creation & Staging Dock - A1方案) */}
-      {/* ========================================================================= */}
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="absolute left-2 lg:left-3.5 top-1/2 -translate-y-1/2 z-30 pointer-events-auto flex flex-col items-center gap-2 bg-white/95 backdrop-blur-2xl border border-[#EAE6DF] shadow-2xl rounded-3xl p-2.5 transition-all w-12 lg:w-36 text-left"
-      >
-        {/* 1. 2D / 3D 模式纵向切换 (带平滑丝滑滑块动效) */}
-        <div className="w-full relative flex flex-col p-1 bg-stone-100/90 rounded-2xl border border-[#EAE6DF]/60 select-none">
-          {/* 红色平滑移动滑块胶囊 (Sliding Pill Indicator) */}
+          {/* 右侧翼槽区：自然占据 (画布右边缘 ~ 舞台右边缘) 的全部空间，内部居中放置右翼悬浮坞 */}
           <div
-            className={`absolute left-1 right-1 h-[calc(50%-4px)] bg-[#D63031] rounded-xl shadow-xs transition-all duration-300 ease-out pointer-events-none ${
-              studioDisplayMode === '2D' ? 'top-1' : 'top-[calc(50%+2px)]'
-            }`}
-          />
-
-          <button
-            type="button"
-            onClick={() => setStudioDisplayMode('2D')}
-            title="2D 自由拼搭微调"
-            className={`w-full py-2 rounded-xl text-xs font-bold transition-colors duration-200 flex items-center justify-center lg:justify-start lg:px-2.5 gap-2 relative z-10 ${
-              studioDisplayMode === '2D'
-                ? 'text-white font-extrabold'
-                : 'text-stone-600 hover:text-stone-900'
-            }`}
+            className="flex-1 h-full flex items-center justify-center pointer-events-none min-w-0"
           >
-            <Shirt className="w-4 h-4 shrink-0 stroke-[2]" />
-            <span className="hidden lg:inline text-xs">2D 拼搭</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              if (renderedImageUrl) {
-                setSelectedItemId(null);
-                setStudioDisplayMode('3D');
-              } else {
-                showToast('请先点击右侧「AI 试穿大片」生成 3D 影棚商业大片！', 'info');
-              }
-            }}
-            title="3D 影棚试穿成片"
-            className={`w-full py-2 rounded-xl text-xs font-bold transition-colors duration-200 flex items-center justify-center lg:justify-start lg:px-2.5 gap-2 relative z-10 ${
-              studioDisplayMode === '3D'
-                ? 'text-white font-extrabold'
-                : 'text-stone-600 hover:text-stone-900'
-            }`}
-          >
-            <Sparkles className="w-4 h-4 shrink-0 stroke-[2]" />
-            <span className="hidden lg:inline text-xs">3D 大片</span>
-            {renderedImageUrl && (
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse absolute top-1.5 right-1.5 lg:static lg:ml-auto" />
-            )}
-          </button>
-        </div>
-
-        <div className="w-full h-[1px] bg-stone-200/70 my-0.5" />
-
-        {/* 2. 形态切换 (替换原身材工坊，智能检测选中/穿戴单品并支持置灰) */}
-        {(() => {
-          const selectedWorn = selectedItemId ? wornItems.find((w) => w.garment.id === selectedItemId) : null;
-          const targetWorn = selectedWorn || wornItems.find((w) =>
-            w.garment.primaryCategory === 'TOPS' ||
-            w.garment.primaryCategory === 'OUTERWEAR' ||
-            (w.garment.assets && w.garment.assets.length > 1)
-          );
-
-          const canToggle = !!targetWorn && (
-            targetWorn.garment.primaryCategory === 'TOPS' ||
-            targetWorn.garment.primaryCategory === 'OUTERWEAR' ||
-            (targetWorn.garment.assets && targetWorn.garment.assets.length > 1)
-          );
-
-          let stateLabel = '形态切换';
-          let stateTooltip = '此衣物无形态切换';
-          if (canToggle && targetWorn) {
-            if (targetWorn.garment.primaryCategory === 'TOPS') {
-              stateLabel = targetWorn.state === 'TUCKED' ? '已塞入' : '已外放';
-              stateTooltip = `点击切换「${targetWorn.garment.title}」: ${targetWorn.state === 'TUCKED' ? '塞入 ➔ 外放' : '外放 ➔ 塞入'}`;
-            } else if (targetWorn.garment.primaryCategory === 'OUTERWEAR') {
-              stateLabel = targetWorn.state === 'OPEN' ? '已敞开' : '已扣合';
-              stateTooltip = `点击切换「${targetWorn.garment.title}」: ${targetWorn.state === 'OPEN' ? '敞开 ➔ 扣合' : '扣合 ➔ 敞开'}`;
-            } else {
-              stateLabel = '切换形态';
-              stateTooltip = `点击切换「${targetWorn.garment.title}」多态切片`;
-            }
-          }
-
-          return (
-            <button
-              type="button"
-              disabled={!canToggle}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (canToggle && targetWorn) {
-                  handleToggleGarmentState(targetWorn.garment.id);
-                }
-              }}
-              title={stateTooltip}
-              className={`w-full py-2 px-1 lg:px-2.5 rounded-2xl text-xs font-bold transition-all flex items-center justify-center lg:justify-start gap-2 ${
-                canToggle
-                  ? 'bg-amber-50/90 hover:bg-amber-100 text-amber-900 border border-amber-200/80 shadow-2xs cursor-pointer active:scale-95'
-                  : 'bg-stone-100/50 text-stone-300 border border-transparent cursor-not-allowed opacity-50'
-              }`}
-            >
-              <Shirt className={`w-4 h-4 shrink-0 stroke-[1.75] ${canToggle ? 'text-amber-700' : 'text-stone-300'}`} />
-              <span className="hidden lg:inline text-xs">{stateLabel}</span>
-            </button>
-          );
-        })()}
-
-        {/* 3. 图层管理 */}
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            setIsLayerPanelOpen(!isLayerPanelOpen);
-          }}
-          title="穿戴图层层级排序与查看"
-          className={`w-full py-2 px-1 lg:px-2.5 rounded-2xl text-xs font-bold transition-all flex items-center justify-center lg:justify-start gap-2 ${
-            isLayerPanelOpen
-              ? 'bg-[#2D3436] text-white shadow-xs'
-              : 'hover:bg-stone-100 text-stone-700 hover:text-stone-950'
-          }`}
-        >
-          <Layers className="w-4 h-4 shrink-0 stroke-[1.75]" />
-          <span className="hidden lg:inline text-xs">图层 ({wornItems.length})</span>
-        </button>
-
-        {/* 4. 智能搭配推荐 */}
-        <button
-          type="button"
-          onClick={() => setIsSlotMachineOpen(true)}
-          title="胶囊衣橱气温智能出装推荐"
-          className="w-full py-2 px-1 lg:px-2.5 hover:bg-amber-50 hover:text-amber-900 text-stone-700 rounded-2xl text-xs font-bold transition-all flex items-center justify-center lg:justify-start gap-2"
-        >
-          <Sparkles className="w-4 h-4 shrink-0 text-amber-600 stroke-[1.75]" />
-          <span className="hidden lg:inline text-xs">智能出装</span>
-        </button>
-
-        {/* 5. 一键清空画布 (保持常驻，空状态下置灰禁用) */}
-        <button
-          type="button"
-          disabled={wornItems.length === 0}
-          onClick={onClearCanvas}
-          title={wornItems.length === 0 ? '暂无穿戴单品可清空' : '清空模特身上所有已穿戴单品'}
-          className={`w-full py-2 px-1 lg:px-2.5 rounded-2xl text-xs font-bold transition-all flex items-center justify-center lg:justify-start gap-2 ${
-            wornItems.length > 0
-              ? 'hover:bg-rose-50 text-stone-500 hover:text-rose-600 cursor-pointer active:scale-95'
-              : 'text-stone-300 cursor-not-allowed opacity-40'
-          }`}
-        >
-          <RotateCcw className="w-4 h-4 shrink-0 stroke-[1.75]" />
-          <span className="hidden lg:inline text-xs">一键清空</span>
-        </button>
-      </div>
-
-      {/* ========================================================================= */}
-      {/* 右翼·成片交付主行动坞 (Right Wing Production & Delivery Dock - A1方案) */}
+            {/* 右翼·成片交付主行动坞 (Right Wing Production & Delivery Dock - A1方案) */}
       {/* ========================================================================= */}
       <div
         onClick={(e) => e.stopPropagation()}
-        className="absolute right-2.5 lg:right-4 top-1/2 -translate-y-1/2 z-30 pointer-events-auto flex flex-col items-center gap-2 bg-white/95 backdrop-blur-2xl border border-[#EAE6DF] shadow-2xl rounded-3xl p-2.5 transition-all w-12 lg:w-36 text-center"
+        className={`pointer-events-auto flex flex-col items-center gap-2 bg-white/95 backdrop-blur-2xl border border-[#EAE6DF] shadow-2xl rounded-3xl transition-all z-30 select-none ${isCompactWing ? "w-12 p-1.5 text-center" : "w-12 lg:w-36 p-2.5 text-center"}`}
       >
         {/* 1. 主行动点：AI 试穿大片 */}
         <button
@@ -1920,15 +2071,13 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
           }}
           disabled={isRendering || wornItems.length === 0}
           title={wornItems.length === 0 ? '请先穿戴至少 1 件单品上身' : '消耗 5 积分生成 8K 影棚试穿大片'}
-          className="w-full py-2.5 px-1 lg:px-2.5 bg-gradient-to-tr from-[#9E1B1B] via-[#D63031] to-[#E17055] hover:opacity-95 text-white rounded-2xl text-xs font-black shadow-md flex flex-col items-center justify-center gap-0.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed group active:scale-95"
+          className={`w-full py-2.5 px-1 ${isCompactWing ? "justify-center" : "lg:px-2.5 justify-center"} bg-gradient-to-tr from-[#9E1B1B] via-[#D63031] to-[#E17055] hover:opacity-95 text-white rounded-2xl text-xs font-black shadow-md flex flex-col items-center gap-0.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed group active:scale-95`}
         >
           <div className="flex items-center gap-1.5">
             <Sparkles className={`w-4 h-4 ${isRendering ? 'animate-spin' : 'group-hover:rotate-12'} transition-transform`} />
-            <span className="hidden lg:inline">{isRendering ? 'AI 渲染中' : 'AI 试穿大片'}</span>
+            <span className={isCompactWing ? "hidden" : "hidden lg:inline"}>{isRendering ? "AI 渲染中" : "AI 试穿大片"}</span>
           </div>
-          <span className="hidden lg:inline text-[9px] text-white/80 font-mono font-medium">
-            8K 影棚 (5分)
-          </span>
+          <span className={isCompactWing ? "hidden" : "hidden lg:inline text-[9px] text-white/80 font-mono font-medium"}>8K 影棚 (5分)</span>
         </button>
 
         <div className="w-full h-[1px] bg-stone-200/70 my-0.5" />
@@ -1939,10 +2088,10 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
           onClick={() => setIsLookbookModalOpen(true)}
           disabled={wornItems.length === 0}
           title="保存当前搭配套装至 Lookbook 灵感库"
-          className="w-full py-2 px-1 lg:px-2.5 bg-stone-100 hover:bg-stone-200/80 text-stone-800 rounded-2xl text-xs font-bold transition-all flex items-center justify-center lg:justify-start gap-2 disabled:opacity-40"
+          className={`w-full py-2 px-1 ${isCompactWing ? "justify-center" : "lg:px-2.5 justify-center lg:justify-start"} bg-stone-100 hover:bg-stone-200/80 text-stone-800 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 disabled:opacity-40`}
         >
           <Heart className="w-4 h-4 shrink-0 text-[#D63031] stroke-[2]" />
-          <span className="hidden lg:inline text-xs">保存搭配</span>
+          <span className={isCompactWing ? "hidden" : "hidden lg:inline text-xs"}>保存搭配</span>
         </button>
 
         {/* 3. 今日 OOTD 打卡 */}
@@ -1957,10 +2106,10 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
           }}
           disabled={wornItems.length === 0}
           title="将当前穿搭保存并打卡至今日 OOTD 穿搭日历"
-          className="w-full py-2 px-1 lg:px-2.5 bg-stone-100 hover:bg-stone-200/80 text-stone-800 rounded-2xl text-xs font-bold transition-all flex items-center justify-center lg:justify-start gap-2 disabled:opacity-40"
+          className={`w-full py-2 px-1 ${isCompactWing ? "justify-center" : "lg:px-2.5 justify-center lg:justify-start"} bg-stone-100 hover:bg-stone-200/80 text-stone-800 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 disabled:opacity-40`}
         >
           <Calendar className="w-4 h-4 shrink-0 text-stone-700 stroke-[1.75]" />
-          <span className="hidden lg:inline text-xs">打卡 OOTD</span>
+          <span className={isCompactWing ? "hidden" : "hidden lg:inline text-xs"}>打卡 OOTD</span>
         </button>
 
         {/* 4. 当 3D 渲染成片就绪时的功能 (卷帘对比 & 高清下载) */}
@@ -1973,7 +2122,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
                 setStudioDisplayMode('3D');
                 setIsSplitCompareMode(!isSplitCompareMode);
               }}
-              className={`w-full py-2 px-1 lg:px-2.5 rounded-2xl text-xs font-bold transition-all flex items-center justify-center lg:justify-start gap-2 ${
+              className={`w-full py-2 px-1 ${isCompactWing ? "justify-center" : "lg:px-2.5 justify-center lg:justify-start"} rounded-2xl text-xs font-bold transition-all flex items-center gap-2 ${
                 isSplitCompareMode
                   ? 'bg-amber-400 text-stone-950 font-extrabold shadow-xs'
                   : 'bg-stone-100 hover:bg-stone-200 text-stone-800'
@@ -1981,7 +2130,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
               title="左右拖拽对比 2D 原稿 与 8K 试穿成片"
             >
               <Sliders className="w-4 h-4 shrink-0" />
-              <span className="hidden lg:inline text-xs">卷帘对比</span>
+              <span className={isCompactWing ? "hidden" : "hidden lg:inline text-xs"}>卷帘对比</span>
             </button>
 
             <a
@@ -1989,147 +2138,25 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
               download="SmartWardrobe_VTON_8K.jpg"
               target="_blank"
               rel="noreferrer"
-              className="w-full py-2 px-1 lg:px-2.5 bg-stone-900 hover:bg-black text-white rounded-2xl text-xs font-bold shadow-xs flex items-center justify-center lg:justify-start gap-2 transition-colors"
+              className={`w-full py-2 px-1 ${isCompactWing ? "justify-center" : "lg:px-2.5 justify-center lg:justify-start"} bg-stone-900 hover:bg-black text-white rounded-2xl text-xs font-bold shadow-xs flex items-center gap-2 transition-colors`}
               title="无损下载 8K 商业成片"
             >
               <UploadCloud className="w-4 h-4 shrink-0 rotate-180" />
-              <span className="hidden lg:inline text-xs">高清下载</span>
+              <span className={isCompactWing ? "hidden" : "hidden lg:inline text-xs"}>高清下载</span>
             </a>
           </>
         )}
 
         {/* 5. 3:4 黄金画幅指示标签 */}
-        <div className="hidden lg:flex items-center justify-center gap-1 text-[10px] font-mono text-stone-400 font-bold bg-[#FAF8F5] py-1 px-2 rounded-xl border border-[#EAE6DF] w-full">
+        <div className={`${isCompactWing ? "hidden" : "hidden lg:flex"} items-center justify-center gap-1 text-[10px] font-mono text-stone-400 font-bold bg-[#FAF8F5] py-1 px-2 rounded-xl border border-[#EAE6DF] w-full`}>
           <span>3:4 画幅</span>
         </div>
       </div>
-
- {/* 图层管理浮动抽屉 (Layer Stack Panel) */}
- {isLayerPanelOpen && (
- <div
- onClick={(e) => e.stopPropagation()}
- className="absolute left-16 lg:left-44 top-1/2 -translate-y-1/2 z-40 w-72 bg-white/95 backdrop-blur-2xl border border-[#EAE6DF] rounded-3xl p-4 shadow-2xl space-y-3 animate-in fade-in zoom-in-95 duration-150 text-left"
- >
- <div className="flex items-center justify-between pb-2 border-b border-[#EAE6DF]">
- <div className="flex items-center gap-1.5">
- <Layers className="w-4 h-4 text-[#D63031]" />
- <h4 className="text-xs font-extrabold text-stone-900">穿戴图层拓扑</h4>
- </div>
- <button
- type="button"
- onClick={() => setIsLayerPanelOpen(false)}
- className="text-stone-400 hover:text-stone-700"
- >
- <X className="w-4 h-4" />
- </button>
- </div>
-
- {wornItems.length === 0 ? (
- <div className="py-6 text-center text-xs text-stone-400">暂无穿戴单品，请在左侧点击穿上</div>
- ) : (
- <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1 scrollbar-thin">
- <div className="text-[9px] text-stone-400 font-mono px-1">▲ 最外层 (TOP)</div>
- {[...wornItems]
- .sort((a, b) => b.zIndex - a.zIndex)
- .map((item) => {
- const isSelected = selectedItemId === item.garment.id;
- return (
- <div
- key={item.garment.id}
- onClick={() => setSelectedItemId(item.garment.id)}
- className={`p-2 rounded-2xl border transition-all flex items-center justify-between gap-2 cursor-pointer ${
- isSelected
- ? 'bg-rose-50/80 border-[#D63031] ring-1 ring-[#D63031]'
- : 'bg-[#FAF8F5] border-[#EAE6DF] hover:border-stone-400'
- }`}
- >
- <div className="flex items-center gap-2 min-w-0">
- <img
- src={item.garment.assets?.[0]?.pngUrl}
- alt={item.garment.title}
- className="w-9 h-9 rounded-xl object-contain bg-white border border-[#EAE6DF] shrink-0 p-0.5"
- />
- <div className="min-w-0 flex-1">
-                          <p className="text-xs font-bold text-stone-800 truncate">
-                            {item.garment.title}
-                          </p>
-                          <div className="flex items-center gap-1.5 mt-0.5">
-                            <span className="text-[9px] font-mono text-stone-400">
-                              Z: {item.zIndex}
-                            </span>
-                            {/* 形态切换快捷开关 */}
-                            {item.garment.primaryCategory === 'TOPS' && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleToggleGarmentState(item.garment.id);
-                                }}
-                                className="px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-colors flex items-center gap-0.5 bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100"
-                                title="切换塞衣角 / 外放形态"
-                              >
-                                <Shirt className="w-3 h-3 text-amber-700" />
-                                <span>{item.state === 'TUCKED' ? '已塞入' : '已外放'}</span>
-                              </button>
-                            )}
-                            {item.garment.primaryCategory === 'OUTERWEAR' && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleToggleGarmentState(item.garment.id);
-                                }}
-                                className="px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-colors flex items-center gap-0.5 bg-indigo-50 text-indigo-900 border-indigo-200 hover:bg-indigo-100"
-                                title="切换敞开 / 扣合形态"
-                              >
-                                <Shirt className="w-3 h-3 text-indigo-700" />
-                                <span>{item.state === 'OPEN' ? '已敞开' : '已扣合'}</span>
-                              </button>
-                            )}
-                          </div>
-                        </div>
- </div>
-
- <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
- <button
- type="button"
- onClick={() => handleAdjustZIndex(item.garment.id, 'UP')}
- className="p-1 hover:bg-stone-200 text-stone-600 rounded-lg transition-colors"
- title="图层上移"
- >
- <ChevronUp className="w-3.5 h-3.5" />
- </button>
- <button
- type="button"
- onClick={() => handleAdjustZIndex(item.garment.id, 'DOWN')}
- className="p-1 hover:bg-stone-200 text-stone-600 rounded-lg transition-colors"
- title="图层下移"
- >
- <ChevronDown className="w-3.5 h-3.5" />
- </button>
- <button
- type="button"
- onClick={() => {
- onRemoveWornItem(item.garment.id);
- if (selectedItemId === item.garment.id) setSelectedItemId(null);
- }}
- className="p-1 hover:bg-rose-100 text-[#D63031] rounded-lg transition-colors ml-0.5"
- title="脱下此单品"
- >
- <Trash2 className="w-3.5 h-3.5" />
- </button>
- </div>
- </div>
- );
- })}
- <div className="text-[9px] text-stone-400 font-mono px-1">▼ 贴身层 (BOTTOM)</div>
- </div>
-        )}
+          </div>
+        </div>
       </div>
-    )}
-    </div>
 
- {/* 灵感抽签转盘 Modal */}
+  {/* 灵感抽签转盘 Modal */}
  {isSlotMachineOpen && (
  <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
  <div className="bg-white rounded-3xl border border-[#EAE6DF] shadow-2xl p-6 w-full max-w-xl space-y-4 text-left relative">
