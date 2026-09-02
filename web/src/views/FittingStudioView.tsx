@@ -1,4 +1,11 @@
 import { GarmentDetailDrawer } from '../components/GarmentDetailDrawer';
+import {
+  COLOR_PALETTE,
+  SUB_CATEGORIES,
+  PATTERN_OPTIONS,
+  isGarmentMatchingColor,
+  isGarmentMatchingSubCategory,
+} from '../utils/fashionFilterMatcher';
 import { generate2DCanvasSnapshot } from '../utils/canvasSnapshot';
 import React, { useState, useRef, useEffect } from 'react';
 import {
@@ -99,32 +106,7 @@ interface FittingStudioViewProps {
  renderedImageUrl?: string | null;
 }
 
-// 12 标准色谱
-const COLOR_PALETTE = [
- { key: 'black', label: '黑色', hex: '#1A1A1A', matchHexes: ['#000000', '#1a1a1a', '#212121', '#0f0c29', '#24243e', '#333333'] },
- { key: 'white', label: '白色', hex: '#FFFFFF', matchHexes: ['#ffffff', '#fafafa', '#f5f5f5', '#f8f9fa', '#eeeeee'] },
- { key: 'grey', label: '灰色', hex: '#808080', matchHexes: ['#808080', '#9e9e9e', '#757575', '#616161'] },
- { key: 'beige', label: '米杏', hex: '#E8D8C8', matchHexes: ['#e8d8c8', '#f5f2eb', '#f7ebd2', '#eae0d0', '#d7ccc8'] },
- { key: 'red', label: '红色', hex: '#E74C3C', matchHexes: ['#e74c3c', '#ff4d4f', '#f5222d', '#d63031', '#c0392b'] },
- { key: 'pink', label: '粉色', hex: '#FF85A2', matchHexes: ['#ff85a2', '#ff69b4', '#ffc0cb', '#f759ab', '#e84393'] },
- { key: 'orange', label: '橙色', hex: '#E67E22', matchHexes: ['#e67e22', '#fa8c16', '#ff7a45', '#d35400'] },
- { key: 'yellow', label: '黄色', hex: '#F1C40F', matchHexes: ['#f1c40f', '#ffd700', '#fadb14', '#ffec3d'] },
- { key: 'green', label: '绿色', hex: '#2ECC71', matchHexes: ['#2ecc71', '#52c41a', '#389e0d', '#27ae60', '#135200'] },
- { key: 'blue', label: '蓝色', hex: '#3498DB', matchHexes: ['#3498db', '#1890ff', '#096dd9', '#2980b9', '#302b63'] },
- { key: 'purple', label: '紫色', hex: '#9B59B6', matchHexes: ['#9b59b6', '#722ed1', '#531dab', '#8e44ad', '#800080'] },
- { key: 'brown', label: '棕褐', hex: '#8D6E63', matchHexes: ['#8d6e63', '#795548', '#5d4037', '#4e342e', '#a1887f'] },
-];
-
-const SUB_CATEGORIES = [
- 'T恤', '衬衫', '卫衣', '西装', '夹克', '大衣', '短裙', '长裤', '阔腿裤', '牛仔裤', '连衣裙', '礼服', '发冠/配饰'
-];
-
-const PATTERN_OPTIONS = [
- { key: 'SOLID', label: '纯色' },
- { key: 'STRIPED', label: '条纹' },
- { key: 'PLAID', label: '格纹' },
- { key: 'FLORAL', label: '印花/碎花' },
-];
+// 色彩与款式选项已迁移至 fashionFilterMatcher.ts
 
 export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  profile,
@@ -357,27 +339,23 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  // 当前源单品池
  const currentGarmentPool = wardrobeTab === 'PRIVATE' ? allGarments : publicGarments;
 
- // 执行多维交集筛选
+ // 执行多维交集筛选 (融合 HSL 连续色彩空间聚类 + 中英文义原词典模糊匹配)
  const filteredGarments = currentGarmentPool.filter((item) => {
  if (selectedCategory !== 'ALL' && item.primaryCategory !== selectedCategory) return false;
+
+ // 1. 智能色系模糊匹配 (解决细分 Hex 颜色如 #8EA6B4 无法匹配基准蓝色的痛点)
  if (selectedColors.length > 0) {
- const matchColor = selectedColors.some((cKey) => {
- const pal = COLOR_PALETTE.find((p) => p.key === cKey);
- if (!pal) return false;
- return item.colors.some((itemColor) => {
- const lower = itemColor.toLowerCase();
- return pal.matchHexes.some((hex) => lower.includes(hex.toLowerCase()));
- });
- });
- if (!matchColor) return false;
+   const matchColor = selectedColors.some((cKey) => isGarmentMatchingColor(item, cKey));
+   if (!matchColor) return false;
  }
+
+ // 2. 款式同义词与包含关系语义匹配
  if (selectedSubCategories.length > 0) {
- const matchSub = selectedSubCategories.some((sub) =>
- item.subCategory?.toLowerCase().includes(sub.toLowerCase()) ||
- item.title?.toLowerCase().includes(sub.toLowerCase())
- );
- if (!matchSub) return false;
+   const matchSub = selectedSubCategories.some((sub) => isGarmentMatchingSubCategory(item, sub));
+   if (!matchSub) return false;
  }
+
+ // 3. 花纹图案匹配
  if (selectedPatterns.length > 0) {
  const matchPat = selectedPatterns.some((pat) =>
  item.patterns?.includes(pat as any)
