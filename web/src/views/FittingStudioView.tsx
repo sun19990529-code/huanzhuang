@@ -314,6 +314,41 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
   // 移动端底部滑盖衣橱吸附档位 ('PEEK' 125px 常驻横滑 | 'HALF' 48vh 网格 | 'FULL' 80vh 深度筛选)
   const [mobileSheetSnap, setMobileSheetSnap] = useState<'PEEK' | 'HALF' | 'FULL'>('PEEK');
 
+  // 移动端底部滑盖衣橱触摸滑动手势引擎 (避免与内部列表滚动冲突)
+  const sheetTouchStartY = useRef<number | null>(null);
+  const sheetTouchStartX = useRef<number | null>(null);
+
+  const handleSheetTouchStart = (e: React.TouchEvent) => {
+    if (e.touches && e.touches[0]) {
+      sheetTouchStartY.current = e.touches[0].clientY;
+      sheetTouchStartX.current = e.touches[0].clientX;
+    }
+  };
+
+  const handleSheetTouchEnd = (e: React.TouchEvent) => {
+    if (sheetTouchStartY.current === null || sheetTouchStartX.current === null) return;
+    const touch = e.changedTouches?.[0];
+    if (!touch) return;
+    const deltaY = touch.clientY - sheetTouchStartY.current;
+    const deltaX = touch.clientX - sheetTouchStartX.current;
+
+    sheetTouchStartY.current = null;
+    sheetTouchStartX.current = null;
+
+    // 只有当纵向滑动距离明显大于横向滑动，且位移超过 20px 时触发抽屉档位吸附
+    if (Math.abs(deltaY) > 20 && Math.abs(deltaY) > Math.abs(deltaX)) {
+      if (deltaY < 0) {
+        // 手指向上滑动 (Swipe Up) -> 展开更高档位
+        if (mobileSheetSnap === 'PEEK') setMobileSheetSnap('HALF');
+        else if (mobileSheetSnap === 'HALF') setMobileSheetSnap('FULL');
+      } else {
+        // 手指向下滑动 (Swipe Down) -> 收起较低档位
+        if (mobileSheetSnap === 'FULL') setMobileSheetSnap('HALF');
+        else if (mobileSheetSnap === 'HALF') setMobileSheetSnap('PEEK');
+      }
+    }
+  };
+
   // 移动端快捷等比步进缩放
   const handleScaleStep = (garmentId: string, factor: number) => {
     const item = wornItems.find((i) => i.garment.id === garmentId);
@@ -1154,29 +1189,45 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  {/* ------------------------------------------------------------- */}
  {/* 左侧 45%：巴黎法式 Ins 数字化衣橱 */}
  {/* ------------------------------------------------------------- */}
+  {/* 移动端抽屉展开时的半透明轻奢遮罩 (点击空白一键回弹至 PEEK) */}
+  {mobileSheetSnap !== 'PEEK' && (
+    <div
+      onClick={() => setMobileSheetSnap('PEEK')}
+      className="md:hidden fixed inset-0 bg-stone-950/25 backdrop-blur-[2px] z-30 transition-opacity duration-300 animate-in fade-in"
+    />
+  )}
+
   {/* 移动端三档滑盖 Bottom Sheet / 桌面端左侧 45% 分栏 */}
-  <div className={`bg-white/95 backdrop-blur-xl shrink-0 z-30 transition-all duration-300 ease-out flex flex-col ${
+  <div className={`bg-white/95 backdrop-blur-xl shrink-0 z-40 transition-all duration-300 ease-out flex flex-col ${
      isWardrobeCollapsed
        ? 'w-0 h-0 opacity-0 overflow-hidden border-0 pointer-events-none'
        : mobileSheetSnap === 'PEEK'
        ? 'fixed md:relative bottom-[60px] md:bottom-0 left-0 right-0 h-[125px] md:h-full w-full md:w-[48%] lg:w-[46%] xl:w-[45%] 2xl:w-[44%] rounded-t-3xl md:rounded-none border-t md:border-t-0 md:border-r border-[#EAE6DF] shadow-2xl md:shadow-xs'
        : mobileSheetSnap === 'HALF'
-       ? 'fixed md:relative bottom-[60px] md:bottom-0 left-0 right-0 h-[48vh] md:h-full w-full md:w-[48%] lg:w-[46%] xl:w-[45%] 2xl:w-[44%] rounded-t-3xl md:rounded-none border-t md:border-t-0 md:border-r border-[#EAE6DF] shadow-2xl md:shadow-xs'
-       : 'fixed md:relative bottom-[60px] md:bottom-0 left-0 right-0 h-[80vh] md:h-full w-full md:w-[48%] lg:w-[46%] xl:w-[45%] 2xl:w-[44%] rounded-t-3xl md:rounded-none border-t md:border-t-0 md:border-r border-[#EAE6DF] shadow-2xl md:shadow-xs'
+       ? 'fixed md:relative bottom-[60px] md:bottom-0 left-0 right-0 h-[50vh] md:h-full w-full md:w-[48%] lg:w-[46%] xl:w-[45%] 2xl:w-[44%] rounded-t-3xl md:rounded-none border-t md:border-t-0 md:border-r border-[#EAE6DF] shadow-2xl md:shadow-xs'
+       : 'fixed md:relative bottom-[60px] md:bottom-0 left-0 right-0 h-[calc(100dvh-115px)] md:h-full w-full md:w-[48%] lg:w-[46%] xl:w-[45%] 2xl:w-[44%] rounded-t-3xl md:rounded-none border-t md:border-t-0 md:border-r border-[#EAE6DF] shadow-2xl md:shadow-xs'
    }`}>
 
-    {/* 移动端吸顶拖拽指示手柄 */}
+    {/* 移动端吸顶拖拽指示手柄 (手势滑动 + 点击双模支持) */}
     <div
+      onTouchStart={handleSheetTouchStart}
+      onTouchEnd={handleSheetTouchEnd}
       onClick={() => {
         if (mobileSheetSnap === 'PEEK') setMobileSheetSnap('HALF');
         else if (mobileSheetSnap === 'HALF') setMobileSheetSnap('FULL');
         else setMobileSheetSnap('PEEK');
       }}
-      className="md:hidden w-full pt-2 pb-1 flex flex-col items-center justify-center cursor-pointer select-none active:opacity-60 shrink-0"
+      className="md:hidden w-full pt-2.5 pb-1 flex flex-col items-center justify-center cursor-pointer select-none active:opacity-60 shrink-0 touch-none"
     >
       <div className="w-10 h-1.5 bg-stone-300 rounded-full" />
       <div className="flex items-center gap-1 text-[9px] text-stone-400 font-bold mt-0.5">
-        <span>{mobileSheetSnap === 'PEEK' ? '▲ 上滑展开全部单品' : mobileSheetSnap === 'HALF' ? '▲ 展开高级筛选 / ▼ 收起' : '▼ 点击收起至单排'}</span>
+        <span>
+          {mobileSheetSnap === 'PEEK'
+            ? '▲ 上滑展开全部单品'
+            : mobileSheetSnap === 'HALF'
+            ? '▲ 上滑展开高级筛选 / ▼ 下滑收起'
+            : '▼ 下滑或点击收起'}
+        </span>
       </div>
     </div>
  
@@ -1370,9 +1421,13 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  )}
  </div>
 
-        {/* 移动端 PEEK 模式单排横滑流 (零遮挡模特，即点即穿) */}
+        {/* 移动端 PEEK 模式单排横滑流 (零遮挡模特，即点即穿，支持上滑展开) */}
         {mobileSheetSnap === 'PEEK' && (
-          <div className="md:hidden flex flex-col gap-1 px-3 pb-1 overflow-hidden shrink-0">
+          <div
+            onTouchStart={handleSheetTouchStart}
+            onTouchEnd={handleSheetTouchEnd}
+            className="md:hidden flex flex-col gap-1 px-3 pb-1 overflow-hidden shrink-0"
+          >
             {/* 极简分类胶囊条 */}
             <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-0.5 shrink-0">
               {[
@@ -1513,8 +1568,10 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
           background: 'radial-gradient(circle at 50% 40%, #FFFFFF 0%, #FAF8F5 55%, #EDE7DD 100%)',
         }}
  >
-        {/* 移动端专属：画布顶端内嵌轻奢控制胶囊条 (md:hidden) */}
-        <div className="md:hidden absolute top-2.5 inset-x-3 z-30 flex items-center justify-between pointer-events-auto select-none">
+        {/* 移动端专属：画布顶端内嵌轻奢控制胶囊条 (抽屉展开时智能淡出避让) */}
+        <div className={`md:hidden absolute top-2.5 inset-x-3 z-20 flex items-center justify-between pointer-events-auto select-none transition-all duration-200 ${
+          mobileSheetSnap === 'PEEK' ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        }`}>
           {/* 2D / 3D 模式微型胶囊 */}
           <div className="flex items-center bg-white/95 backdrop-blur-md p-0.5 rounded-2xl border border-[#EAE6DF] shadow-md">
             <button
@@ -1577,8 +1634,10 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
           </div>
         </div>
 
-        {/* 移动端专属：大拇指热区悬浮核心行动 FAB (md:hidden) */}
-        <div className="md:hidden absolute bottom-[195px] right-3 z-20 flex flex-col items-end gap-2 pointer-events-auto">
+        {/* 移动端专属：大拇指热区悬浮核心行动 FAB (抽屉展开时智能淡出避让) */}
+        <div className={`md:hidden absolute bottom-[195px] right-3 z-20 flex flex-col items-end gap-2 pointer-events-auto transition-all duration-200 ${
+          mobileSheetSnap === 'PEEK' ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        }`}>
           {/* 保存搭配按钮 */}
           <button
             disabled={wornItems.length === 0}
@@ -1615,8 +1674,8 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
           </div>
         )}
 
-        {/* 画布中央舞台与左右自适应居中侧翼坞 (三栏物理对称布局) */}
-        <div className="absolute inset-0 flex items-center justify-center md:justify-between p-2 sm:p-3 pointer-events-none">
+        {/* 画布中央舞台与左右自适应居中侧翼坞 (手机端顶部靠齐消除死白，宽屏三栏物理对称) */}
+        <div className="absolute inset-0 flex flex-col md:flex-row items-center justify-start md:justify-between pt-13 pb-2 px-2 sm:p-3 pointer-events-none">
           {/* 左侧翼槽区：自然占据 (舞台左边缘 ~ 画布左边缘) 的全部空间，内部居中放置左翼悬浮坞 */}
           <div
             ref={leftWingSlotRef}
@@ -1908,7 +1967,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
           {/* 中间 3:4 模特舞台：固有比例 shrink-0 居中 */}
            <div
  onClick={() => setSelectedItemId(null)}
- className="relative shrink-0 h-[46dvh] md:h-[88vh] max-h-[880px] aspect-[3/4] rounded-3xl border border-stone-200/80 bg-white/95 shadow-2xl shadow-stone-300/40 flex items-center justify-center overflow-hidden md:overflow-visible pointer-events-auto transition-all"
+ className="relative shrink-0 w-full max-w-[calc(100vw-28px)] max-h-[calc(100dvh-250px)] h-[calc(100dvh-250px)] md:w-auto md:h-[88vh] md:max-h-[880px] aspect-[3/4] rounded-3xl border border-stone-200/80 bg-white/95 shadow-2xl shadow-stone-300/40 flex items-center justify-center overflow-hidden md:overflow-visible pointer-events-auto transition-all"
  >
  {/* 模特景深光晕底座 */}
  <div className="absolute inset-x-8 bottom-0 h-16 bg-stone-300/30 blur-xl rounded-full pointer-events-none" />
@@ -1977,7 +2036,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
                             src={activePng}
                             alt={worn.garment.title}
                             draggable={false}
-                            className="max-h-[250px] max-w-[190px] md:max-h-[580px] md:max-w-[340px] object-contain filter drop-shadow-sm pointer-events-none select-none"
+                            className="max-h-[300px] max-w-[225px] md:max-h-[580px] md:max-w-[340px] object-contain filter drop-shadow-sm pointer-events-none select-none"
                           />
                         </div>
                       </div>
@@ -2090,7 +2149,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  src={activeAsset?.pngUrl || worn.garment.assets?.[0]?.pngUrl}
  alt={worn.garment.title}
  draggable={false}
-                            className="max-h-[250px] max-w-[190px] md:max-h-[580px] md:max-w-[340px] object-contain filter drop-shadow-sm pointer-events-auto select-none"
+                            className="max-h-[300px] max-w-[225px] md:max-h-[580px] md:max-w-[340px] object-contain filter drop-shadow-sm pointer-events-auto select-none"
  />
 
  {/* Figma Pro 级交互式微调与缩放选框 (视口解耦，绝对恒定尺寸与清晰度) */}
