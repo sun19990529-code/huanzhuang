@@ -923,6 +923,9 @@ export const App: React.FC = () => {
         isLoading={isTasksLoading}
         onRefresh={loadUserTasks}
       />
+
+      {/* 全局高质感 Toast 提示与确认模态框 */}
+      <ToastContainer />
     </div>
   );
 };

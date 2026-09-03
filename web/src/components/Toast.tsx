@@ -93,7 +93,7 @@ export const ToastContainer: React.FC = () => {
   return (
     <>
       {/* 浮动 Toast 提示容器 */}
-      <div className="fixed top-5 right-5 z-[9999] flex flex-col gap-2.5 max-w-sm w-full pointer-events-none px-4 md:px-0">
+      <div className="fixed top-4 left-1/2 -translate-x-1/2 md:left-auto md:right-5 md:translate-x-0 z-[9999] flex flex-col items-center md:items-end gap-2.5 max-w-sm w-[92%] sm:w-full pointer-events-none px-2 md:px-0">
         {toasts.map((t) => (
           <div
             key={t.id}

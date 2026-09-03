@@ -329,7 +329,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
       } else {
         sheetTouchStartHeight.current =
           mobileSheetSnap === 'PEEK'
-            ? 125
+            ? 130
             : mobileSheetSnap === 'HALF'
             ? window.innerHeight * 0.5
             : window.innerHeight - 115;
@@ -348,7 +348,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
     if (Math.abs(deltaY) > 5) {
       isDraggingSheet.current = true;
       const targetHeight = sheetTouchStartHeight.current - deltaY;
-      const minHeight = 125;
+      const minHeight = 130;
       const maxHeight = window.innerHeight - 115;
       const clampedHeight = Math.max(minHeight, Math.min(maxHeight, targetHeight));
 
@@ -412,7 +412,11 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
 
   // 移动端触发 AI 试穿大片渲染
   const handleMobileTriggerVton = async () => {
-    if (isRendering || wornItems.length === 0) return;
+    if (isRendering) return;
+    if (wornItems.length === 0) {
+      showToast('请先在下方衣橱挑选单品穿戴上身，再生成 8K 试穿大片哦！', 'info');
+      return;
+    }
     let snapshotBase64: string | undefined = undefined;
     try {
       snapshotBase64 = await generate2DCanvasSnapshot(
@@ -1240,7 +1244,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
   {(mobileSheetSnap !== 'PEEK' || (sheetDragHeight !== null && sheetDragHeight > 140)) && (
     <div
       onClick={() => setMobileSheetSnap('PEEK')}
-      className="md:hidden fixed top-[56px] bottom-[60px] inset-x-0 bg-stone-950/25 backdrop-blur-[2px] z-[35] transition-opacity duration-300 animate-in fade-in"
+      className="md:hidden fixed top-[56px] bottom-[60px] inset-x-0 bg-gradient-to-b from-stone-950/15 via-stone-950/25 to-stone-950/30 backdrop-blur-[2px] z-[35] transition-opacity duration-300 animate-in fade-in"
     />
   )}
 
@@ -1252,10 +1256,10 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
      isWardrobeCollapsed
        ? 'w-0 h-0 opacity-0 overflow-hidden border-0 pointer-events-none'
        : mobileSheetSnap === 'PEEK'
-       ? 'fixed md:relative bottom-[60px] md:bottom-0 left-0 right-0 h-[125px] md:h-full w-full md:w-[48%] lg:w-[46%] xl:w-[45%] 2xl:w-[44%] rounded-t-3xl md:rounded-none border-t md:border-t-0 md:border-r border-[#EAE6DF] shadow-2xl md:shadow-xs'
+       ? 'fixed md:relative bottom-[calc(60px+env(safe-area-inset-bottom,0px))] md:bottom-0 left-0 right-0 h-[130px] md:h-full w-full md:w-[48%] lg:w-[46%] xl:w-[45%] 2xl:w-[44%] rounded-t-3xl md:rounded-none border-t md:border-t-0 md:border-r border-[#EAE6DF] shadow-2xl md:shadow-xs overflow-hidden md:overflow-visible'
        : mobileSheetSnap === 'HALF'
-       ? 'fixed md:relative bottom-[60px] md:bottom-0 left-0 right-0 h-[50vh] md:h-full w-full md:w-[48%] lg:w-[46%] xl:w-[45%] 2xl:w-[44%] rounded-t-3xl md:rounded-none border-t md:border-t-0 md:border-r border-[#EAE6DF] shadow-2xl md:shadow-xs'
-       : 'fixed md:relative bottom-[60px] md:bottom-0 left-0 right-0 h-[calc(100dvh-115px)] md:h-full w-full md:w-[48%] lg:w-[46%] xl:w-[45%] 2xl:w-[44%] rounded-t-3xl md:rounded-none border-t md:border-t-0 md:border-r border-[#EAE6DF] shadow-2xl md:shadow-xs'
+       ? 'fixed md:relative bottom-[calc(60px+env(safe-area-inset-bottom,0px))] md:bottom-0 left-0 right-0 h-[50vh] md:h-full w-full md:w-[48%] lg:w-[46%] xl:w-[45%] 2xl:w-[44%] rounded-t-3xl md:rounded-none border-t md:border-t-0 md:border-r border-[#EAE6DF] shadow-2xl md:shadow-xs'
+       : 'fixed md:relative bottom-[calc(60px+env(safe-area-inset-bottom,0px))] md:bottom-0 left-0 right-0 h-[calc(100dvh-115px)] md:h-full w-full md:w-[48%] lg:w-[46%] xl:w-[45%] 2xl:w-[44%] rounded-t-3xl md:rounded-none border-t md:border-t-0 md:border-r border-[#EAE6DF] shadow-2xl md:shadow-xs'
    }`}>
 
     {/* 移动端吸顶拖拽指示手柄 (实时跟手拖拽 + 点击双模支持) */}
@@ -1285,11 +1289,11 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  
  {/* 顶部控制栏 */}
   <div className={`p-4 border-b border-[#EAE6DF] space-y-3 bg-[#FAF8F5]/60 shrink-0 ${mobileSheetSnap === 'PEEK' ? 'hidden md:block' : 'block'}`}>
- <div className="flex items-center justify-between">
- <div className="flex items-center gap-1 bg-[#EFECE6] p-1 rounded-2xl">
+ <div className="flex items-center justify-between gap-2 overflow-x-auto scrollbar-none pb-0.5">
+ <div className="flex items-center gap-1 bg-[#EFECE6] p-1 rounded-2xl shrink-0">
  <button
  onClick={() => setWardrobeTab('PRIVATE')}
- className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
+ className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap shrink-0 ${
  wardrobeTab === 'PRIVATE'
  ? 'bg-white text-[#D63031] shadow-xs'
  : 'text-stone-600 hover:text-stone-900'
@@ -1299,7 +1303,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  </button>
  <button
  onClick={() => setWardrobeTab('PUBLIC')}
- className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
+ className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap shrink-0 ${
  wardrobeTab === 'PUBLIC'
  ? 'bg-white text-[#D63031] shadow-xs'
  : 'text-stone-600 hover:text-stone-900'
@@ -1309,10 +1313,10 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  </button>
  </div>
 
- <div className="flex items-center gap-1.5">
+ <div className="flex items-center gap-1.5 shrink-0">
  <button
  onClick={() => setIsSlotMachineOpen(true)}
- className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200/80 rounded-xl text-xs font-bold flex items-center gap-1 transition-all shadow-2xs"
+ className="px-2.5 sm:px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200/80 rounded-xl text-xs font-bold flex items-center gap-1 transition-all shadow-2xs whitespace-nowrap shrink-0"
  >
  <Dices className="w-3.5 h-3.5 text-amber-700 stroke-[1.75]" />
  <span>随机推荐</span>
@@ -1320,7 +1324,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
 
  <button
  onClick={() => fileInputRef.current?.click()}
- className="px-3.5 py-1.5 bg-[#2D3436] hover:bg-black text-white rounded-xl text-xs font-bold flex items-center gap-1 transition-all shadow-2xs"
+ className="px-3 py-1.5 bg-[#2D3436] hover:bg-black text-white rounded-xl text-xs font-bold flex items-center gap-1 transition-all shadow-2xs whitespace-nowrap shrink-0"
  >
  <Plus className="w-3.5 h-3.5 stroke-[2]" />
  <span>智能录入</span>
@@ -1328,7 +1332,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
               <button
                 type="button"
                 onClick={() => setIsWardrobeCollapsed(true)}
-                className="p-1.5 hover:bg-stone-200 text-stone-500 hover:text-stone-800 rounded-xl transition-colors ml-1 cursor-pointer"
+                className="hidden md:inline-flex p-1.5 hover:bg-stone-200 text-stone-500 hover:text-stone-800 rounded-xl transition-colors ml-1 cursor-pointer"
                 title="折叠衣橱列表，获得全屏沉浸试穿大视野"
               >
                 <PanelLeftClose className="w-4 h-4" />
@@ -1701,15 +1705,23 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
           </div>
         </div>
 
-        {/* 移动端专属：大拇指热区悬浮核心行动 FAB (抽屉展开时智能淡出避让) */}
-        <div className={`md:hidden absolute bottom-[195px] right-3 z-20 flex flex-col items-end gap-2 pointer-events-auto transition-all duration-200 ${
-          (mobileSheetSnap === 'PEEK' && (sheetDragHeight === null || sheetDragHeight <= 140)) ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        {/* 移动端专属：大拇指热区悬浮核心行动 FAB (视口固定安全避让，抽屉展开时平滑隐退) */}
+        <div className={`md:hidden fixed right-4 bottom-[calc(60px+130px+12px+env(safe-area-inset-bottom,0px))] z-30 flex flex-col items-end gap-2 pointer-events-auto transition-all duration-200 ${
+          (mobileSheetSnap === 'PEEK' && (sheetDragHeight === null || sheetDragHeight <= 140)) ? 'opacity-100 scale-100 translate-y-0 pointer-events-auto' : 'opacity-0 scale-90 translate-y-3 pointer-events-none'
         }`}>
           {/* 保存搭配按钮 */}
           <button
-            disabled={wornItems.length === 0}
-            onClick={() => setIsLookbookModalOpen(true)}
-            className="w-10 h-10 bg-white/95 backdrop-blur-md text-stone-700 rounded-full border border-[#EAE6DF] shadow-lg flex items-center justify-center disabled:opacity-30 active:scale-90 transition-transform cursor-pointer"
+            type="button"
+            onClick={() => {
+              if (wornItems.length === 0) {
+                showToast('请先穿戴衣物后再保存搭配至 Lookbook！', 'info');
+                return;
+              }
+              setIsLookbookModalOpen(true);
+            }}
+            className={`w-10 h-10 bg-white/95 backdrop-blur-md text-stone-700 rounded-full border border-[#EAE6DF] shadow-lg flex items-center justify-center active:scale-90 transition-all cursor-pointer ${
+              wornItems.length === 0 ? 'opacity-60' : 'opacity-100'
+            }`}
             title="保存至搭配日历"
           >
             <Heart className="w-4 h-4 text-[#D63031] stroke-[2]" />
@@ -1717,12 +1729,15 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
 
           {/* AI 试穿大片高光 FAB */}
           <button
-            disabled={wornItems.length === 0 || isRendering}
+            type="button"
+            disabled={isRendering}
             onClick={handleMobileTriggerVton}
-            className="relative overflow-hidden px-4 py-2.5 bg-gradient-to-tr from-[#9E1B1B] via-[#D63031] to-[#E17055] text-white rounded-full text-xs font-black shadow-xl flex items-center gap-1.5 active:scale-95 transition-transform disabled:opacity-40 cursor-pointer group"
+            className={`relative overflow-hidden px-4 py-2.5 bg-gradient-to-tr from-[#9E1B1B] via-[#D63031] to-[#E17055] text-white rounded-full text-xs font-black shadow-xl flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer group ${
+              isRendering ? 'opacity-70 cursor-wait' : wornItems.length === 0 ? 'opacity-65' : 'opacity-100'
+            }`}
           >
             <div className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/20 to-transparent animate-luxury-shimmer pointer-events-none" />
-            <Sparkles className="w-4 h-4 animate-spin stroke-[2] relative z-10" />
+            <Sparkles className={`w-4 h-4 ${isRendering ? 'animate-spin' : ''} stroke-[2] relative z-10`} />
             <span className="relative z-10">{isRendering ? 'AI 渲染中' : 'AI 试穿大片'}</span>
           </button>
         </div>

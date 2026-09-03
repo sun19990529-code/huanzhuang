@@ -77,6 +77,16 @@
 }
 
 
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+}
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
@@ -86,24 +96,38 @@ body {
     radial-gradient(circle at 90% 80%, rgba(253, 226, 230, 0.5) 0%, transparent 45%),
     radial-gradient(circle at 50% 50%, rgba(245, 243, 255, 0.4) 0%, transparent 60%);
   color: #292524;
-  min-height: 100vh;
 }
 
-/* 小红书 Ins 奶油色系滚动条 */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+/* 桌面端高定奶油色系细腻滚动条 */
+@media (min-width: 769px) and (pointer: fine) {
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: rgba(245, 240, 235, 0.6);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgba(251, 113, 133, 0.3);
+    border-radius: 9999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(251, 113, 133, 0.6);
+  }
 }
 
-::-webkit-scrollbar-track {
-  background: rgba(245, 240, 235, 0.6);
-}
-
-::-webkit-scrollbar-thumb {
-  background: rgba(251, 113, 133, 0.3);
-  border-radius: 9999px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(251, 113, 133, 0.6);
+/* 移动端与触控设备全面隐藏 WebKit 滚动条，还原原生自然手势滑动体验 */
+@media (max-width: 768px), (pointer: coarse) {
+  ::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+  }
+  * {
+    -ms-overflow-style: none !important;
+    scrollbar-width: none !important;
+  }
 }
