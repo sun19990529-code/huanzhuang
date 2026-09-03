@@ -88,6 +88,7 @@ export const App: React.FC = () => {
  const [isAuthInitializing, setIsAuthInitializing] = useState<boolean>(() => {
    return !!localStorage.getItem('SW_AUTH_TOKEN');
  });
+	const [isAuthFadingOut, setIsAuthFadingOut] = useState<boolean>(false);
 
  // 用户与角色状态
  const [user, setUser] = useState<CurrentUser | null>(null);
@@ -151,7 +152,11 @@ export const App: React.FC = () => {
  setUser(null);
  loadPublicGarments();
  } finally {
- setIsAuthInitializing(false);
+		setIsAuthFadingOut(true);
+		setTimeout(() => {
+			setIsAuthInitializing(false);
+			setIsAuthFadingOut(false);
+		}, 450);
  }
  };
 
@@ -714,7 +719,7 @@ export const App: React.FC = () => {
  
  {/* 认证初始化静默校验中（高质感品牌启动过渡，彻底消除登录界面 FOUC 闪烁） */}
  {isAuthInitializing && (
- <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-[#FAF8F5]">
+ <div className={`fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-[#FAF8F5] transition-all duration-450 ease-[cubic-bezier(0.16,1,0.3,1)] ${isAuthFadingOut ? 'opacity-0 pointer-events-none scale-105 backdrop-blur-none' : 'opacity-100 pointer-events-auto'}`}>
  <div className="flex flex-col items-center gap-4 animate-in fade-in duration-300">
  <div className="w-14 h-14 rounded-2xl bg-stone-900 text-white flex items-center justify-center shadow-lg shadow-stone-900/10">
  <Shirt className="w-7 h-7 stroke-[1.75] animate-pulse text-[#FAF8F5]" />
@@ -745,7 +750,7 @@ export const App: React.FC = () => {
  )}
 
  {/* 已登录状态：顶栏导航 */}
- {!isAuthInitializing && user && (!isAdminRoute || user.role === 'ADMIN') && (
+ {(!isAuthInitializing || isAuthFadingOut) && user && (!isAdminRoute || user.role === 'ADMIN') && (
  <Header
  user={user}
  profiles={profiles}
@@ -762,7 +767,7 @@ export const App: React.FC = () => {
  )}
 
  {/* 已登录状态：核心视图路由呈现 */}
- {!isAuthInitializing && user && (
+ {(!isAuthInitializing || isAuthFadingOut) && user && (
  <main className={`flex-1 min-h-0 overflow-hidden bg-[#FAF8F5] ${activeView !== 'STUDIO' ? 'pb-16 md:pb-0' : ''}`}>
  {activeView === 'WARDROBE' && (
  <WardrobeGalleryView

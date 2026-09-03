@@ -1246,7 +1246,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
   <div
     ref={sheetContainerRef}
     style={sheetDragHeight !== null ? { height: `${sheetDragHeight}px`, transition: 'none' } : undefined}
-    className={`bg-white md:bg-white/95 backdrop-blur-xl shrink-0 z-50 md:z-auto transition-all duration-300 ease-out flex flex-col ${
+    className={`bg-white md:bg-white/95 backdrop-blur-xl shrink-0 z-50 md:z-auto transition-all duration-350 ease-[cubic-bezier(0.32,0.72,0,1)] flex flex-col ${
      isWardrobeCollapsed
        ? 'w-0 h-0 opacity-0 overflow-hidden border-0 pointer-events-none'
        : mobileSheetSnap === 'PEEK'
@@ -1584,7 +1584,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  />
 
  {isWorn && (
- <div className="absolute top-1.5 right-1.5 bg-[#D63031] text-white p-0.5 rounded-full shadow-xs">
+ <div className="absolute top-1.5 right-1.5 bg-[#D63031] text-white p-0.5 rounded-full shadow-xs animate-in zoom-in-50 duration-200">
  <Check className="w-3 h-3 stroke-[3]" />
  </div>
  )}
@@ -1717,10 +1717,11 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
           <button
             disabled={wornItems.length === 0 || isRendering}
             onClick={handleMobileTriggerVton}
-            className="px-4 py-2.5 bg-gradient-to-tr from-[#9E1B1B] via-[#D63031] to-[#E17055] text-white rounded-full text-xs font-black shadow-xl flex items-center gap-1.5 active:scale-95 transition-transform disabled:opacity-40 cursor-pointer"
+            className="relative overflow-hidden px-4 py-2.5 bg-gradient-to-tr from-[#9E1B1B] via-[#D63031] to-[#E17055] text-white rounded-full text-xs font-black shadow-xl flex items-center gap-1.5 active:scale-95 transition-transform disabled:opacity-40 cursor-pointer group"
           >
-            <Sparkles className="w-4 h-4 animate-spin stroke-[2]" />
-            <span>{isRendering ? 'AI 渲染中' : 'AI 试穿大片'}</span>
+            <div className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/20 to-transparent animate-luxury-shimmer pointer-events-none" />
+            <Sparkles className="w-4 h-4 animate-spin stroke-[2] relative z-10" />
+            <span className="relative z-10">{isRendering ? 'AI 渲染中' : 'AI 试穿大片'}</span>
           </button>
         </div>
 
@@ -2214,7 +2215,8 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  src={activeAsset?.pngUrl || worn.garment.assets?.[0]?.pngUrl}
  alt={worn.garment.title}
  draggable={false}
-                            className="max-h-[300px] max-w-[225px] md:max-h-[580px] md:max-w-[340px] object-contain filter drop-shadow-sm pointer-events-auto select-none"
+                            key={activeAsset?.pngUrl || worn.garment.assets?.[0]?.pngUrl}
+                          className="max-h-[300px] max-w-[225px] md:max-h-[580px] md:max-w-[340px] object-contain filter drop-shadow-sm pointer-events-auto select-none animate-garment-snap transition-opacity duration-200"
  />
 
  {/* Figma Pro 级交互式微调与缩放选框 (视口解耦，绝对恒定尺寸与清晰度) */}
@@ -2457,13 +2459,14 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
           }}
           disabled={isRendering || wornItems.length === 0}
           title={wornItems.length === 0 ? '请先穿戴至少 1 件单品上身' : '消耗 5 积分生成 8K 影棚试穿大片'}
-          className={`w-full py-2.5 px-1 ${isCompactWing ? "justify-center" : "lg:px-2.5 justify-center"} bg-gradient-to-tr from-[#9E1B1B] via-[#D63031] to-[#E17055] hover:opacity-95 text-white rounded-2xl text-xs font-black shadow-md flex flex-col items-center gap-0.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed group active:scale-95`}
+          className={`relative overflow-hidden w-full py-2.5 px-1 ${isCompactWing ? "justify-center" : "lg:px-2.5 justify-center"} bg-gradient-to-tr from-[#9E1B1B] via-[#D63031] to-[#E17055] hover:opacity-95 text-white rounded-2xl text-xs font-black shadow-md flex flex-col items-center gap-0.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed group active:scale-95`}
         >
-          <div className="flex items-center gap-1.5">
+          <div className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/20 to-transparent animate-luxury-shimmer pointer-events-none" />
+          <div className="flex items-center gap-1.5 relative z-10">
             <Sparkles className={`w-4 h-4 ${isRendering ? 'animate-spin' : 'group-hover:rotate-12'} transition-transform`} />
             <span className={isCompactWing ? "hidden" : "hidden lg:inline"}>{isRendering ? "AI 渲染中" : "AI 试穿大片"}</span>
           </div>
-          <span className={isCompactWing ? "hidden" : "hidden lg:inline text-[9px] text-white/80 font-mono font-medium"}>8K 影棚 (5分)</span>
+          <span className={isCompactWing ? "hidden" : "hidden lg:inline text-[9px] text-white/80 font-mono font-medium relative z-10"}>8K 影棚 (5分)</span>
         </button>
 
         <div className="w-full h-[1px] bg-stone-200/70 my-0.5" />
