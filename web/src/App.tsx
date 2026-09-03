@@ -141,8 +141,8 @@ export const App: React.FC = () => {
  const initAuth = async () => {
  try {
  const currentUser = await fetchCurrentUser();
- setUser(currentUser);
  await loadUserData(currentUser);
+ setUser(currentUser);
  if (currentUser.role === 'ADMIN' && (window.location.hash === '#/admin-portal' || window.location.hash === '#admin-portal')) {
  setActiveView('CMS');
  }
@@ -714,7 +714,7 @@ export const App: React.FC = () => {
  
  {/* 认证初始化静默校验中（高质感品牌启动过渡，彻底消除登录界面 FOUC 闪烁） */}
  {isAuthInitializing && (
- <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#FAF8F5]">
+ <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-[#FAF8F5]">
  <div className="flex flex-col items-center gap-4 animate-in fade-in duration-300">
  <div className="w-14 h-14 rounded-2xl bg-stone-900 text-white flex items-center justify-center shadow-lg shadow-stone-900/10">
  <Shirt className="w-7 h-7 stroke-[1.75] animate-pulse text-[#FAF8F5]" />
@@ -745,7 +745,7 @@ export const App: React.FC = () => {
  )}
 
  {/* 已登录状态：顶栏导航 */}
- {user && (!isAdminRoute || user.role === 'ADMIN') && (
+ {!isAuthInitializing && user && (!isAdminRoute || user.role === 'ADMIN') && (
  <Header
  user={user}
  profiles={profiles}
@@ -762,7 +762,7 @@ export const App: React.FC = () => {
  )}
 
  {/* 已登录状态：核心视图路由呈现 */}
- {user && (
+ {!isAuthInitializing && user && (
  <main className={`flex-1 min-h-0 overflow-hidden bg-[#FAF8F5] ${activeView !== 'STUDIO' ? 'pb-16 md:pb-0' : ''}`}>
  {activeView === 'WARDROBE' && (
  <WardrobeGalleryView

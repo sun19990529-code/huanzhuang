@@ -1246,7 +1246,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
   <div
     ref={sheetContainerRef}
     style={sheetDragHeight !== null ? { height: `${sheetDragHeight}px`, transition: 'none' } : undefined}
-    className={`bg-white md:bg-white/95 backdrop-blur-xl shrink-0 z-50 transition-all duration-300 ease-out flex flex-col ${
+    className={`bg-white md:bg-white/95 backdrop-blur-xl shrink-0 z-50 md:z-auto transition-all duration-300 ease-out flex flex-col ${
      isWardrobeCollapsed
        ? 'w-0 h-0 opacity-0 overflow-hidden border-0 pointer-events-none'
        : mobileSheetSnap === 'PEEK'
