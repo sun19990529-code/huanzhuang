@@ -21,7 +21,7 @@ export const FriendSocialModal: React.FC<FriendSocialModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 z-50">
+    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 pb-8 md:pb-4 z-[100]">
       <div className="bg-slate-900 border border-purple-500/30 w-full max-w-2xl rounded-3xl p-6 shadow-2xl space-y-4">
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-slate-800">

@@ -56,7 +56,7 @@ export const GarmentDetailDrawer: React.FC<GarmentDetailDrawerProps> = ({
   );
 
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden bg-black/40 backdrop-blur-xs flex justify-end transition-opacity duration-300 animate-in fade-in">
+    <div className="fixed inset-0 z-[100] overflow-hidden bg-black/40 backdrop-blur-xs flex justify-end transition-opacity duration-300 animate-in fade-in">
       <div
         className="w-full max-w-md bg-white h-full shadow-2xl flex flex-col justify-between border-l border-[#EAE6DF] text-left p-6 overflow-y-auto scrollbar-thin animate-in slide-in-from-right duration-300"
       >

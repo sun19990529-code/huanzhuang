@@ -979,7 +979,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  {/* 4 阶段平滑上传进度条浮层 */}
  {/* ------------------------------------------------------------- */}
  {uploadProgress !== null && (
- <div className="absolute inset-0 z-50 bg-black/30 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+ <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 pb-8 md:pb-4 animate-in fade-in">
  <div className="bg-white rounded-3xl border border-[#EAE6DF] shadow-2xl p-6 w-full max-w-md space-y-4 text-center">
  <div className="w-12 h-12 rounded-2xl bg-rose-50 text-[#D63031] flex items-center justify-center mx-auto shadow-2xs">
  <Sparkles className="w-6 h-6 animate-spin stroke-[1.75]" />
@@ -1009,7 +1009,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  {/* VTON 高清试穿渲染全屏平滑进度条浮层 */}
  {/* ------------------------------------------------------------- */}
  {isRendering && (
- <div className="absolute inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+ <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 pb-8 md:pb-4 animate-in fade-in">
  <div className="bg-white rounded-3xl border border-[#EAE6DF] shadow-2xl p-6 w-full max-w-md space-y-4 text-center">
  <div className="w-12 h-12 rounded-2xl bg-rose-50 text-[#D63031] flex items-center justify-center mx-auto shadow-2xs">
  <Sparkles className="w-6 h-6 animate-spin stroke-[1.75]" />
@@ -1041,7 +1041,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  {/* VTON 高清试穿成片大图预览与下载弹窗 */}
  {/* ------------------------------------------------------------- */}
  {isVtonResultModalOpen && renderedImageUrl && (
- <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+ <div className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 pb-8 md:pb-4 animate-in fade-in">
  <div className="bg-white rounded-3xl border border-[#EAE6DF] shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden text-left">
  <div className="px-6 py-4 border-b border-[#EAE6DF] flex items-center justify-between bg-[#FAF8F5]/80">
  <div className="flex items-center gap-2">
@@ -1111,7 +1111,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  {/* 入库前单品预览与勾选确认弹窗 (Option A 双按钮) */}
  {/* ------------------------------------------------------------- */}
  {detectedGarmentsToConfirm && (
- <div className="absolute inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+ <div className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 pb-8 md:pb-4 animate-in fade-in">
  <div className="bg-white rounded-3xl border border-[#EAE6DF] shadow-2xl w-full max-w-xl max-h-[85vh] flex flex-col overflow-hidden text-left">
  {/* Header */}
  <div className="px-6 py-4 border-b border-[#EAE6DF] flex items-center justify-between bg-[#FAF8F5]/80">
@@ -1149,14 +1149,16 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  : 'bg-white border-[#EAE6DF] opacity-60'
  }`}
  >
- {/* 复选框 */}
- <div className="shrink-0 text-[#D63031]">
- {item.selected ? (
- <CheckSquare className="w-5 h-5 fill-[#D63031] text-white stroke-[2]" />
- ) : (
- <Square className="w-5 h-5 text-stone-300 stroke-[1.75]" />
- )}
- </div>
+                  {/* 复选框 (高定圆角设计，彻底杜绝 SVG fill 污染为实心红块) */}
+                  <div className="shrink-0">
+                    {item.selected ? (
+                      <div className="w-5 h-5 rounded-lg bg-[#D63031] text-white flex items-center justify-center shadow-xs">
+                        <Check className="w-3.5 h-3.5 stroke-[3]" />
+                      </div>
+                    ) : (
+                      <div className="w-5 h-5 rounded-lg border-2 border-stone-300 bg-white" />
+                    )}
+                  </div>
 
  {/* 切片缩略图 */}
  <div className="w-16 h-16 rounded-xl bg-[#FAF8F5] border border-[#EAE6DF] p-1 flex items-center justify-center shrink-0 overflow-hidden">
@@ -1238,7 +1240,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
   {(mobileSheetSnap !== 'PEEK' || (sheetDragHeight !== null && sheetDragHeight > 140)) && (
     <div
       onClick={() => setMobileSheetSnap('PEEK')}
-      className="md:hidden fixed inset-0 bg-stone-950/25 backdrop-blur-[2px] z-40 transition-opacity duration-300 animate-in fade-in"
+      className="md:hidden fixed top-[56px] bottom-[60px] inset-x-0 bg-stone-950/25 backdrop-blur-[2px] z-[35] transition-opacity duration-300 animate-in fade-in"
     />
   )}
 
@@ -2547,7 +2549,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
 
   {/* 灵感抽签转盘 Modal */}
  {isSlotMachineOpen && (
- <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+ <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 pb-8 md:pb-4 animate-in fade-in">
  <div className="bg-white rounded-3xl border border-[#EAE6DF] shadow-2xl p-6 w-full max-w-xl space-y-4 text-left relative">
  <div className="flex items-center justify-between border-b border-stone-100 pb-2">
  <h4 className="text-sm font-extrabold text-stone-900">胶囊衣橱灵感推荐</h4>
@@ -2572,7 +2574,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
 
  {/* 保存搭配 Modal */}
  {isLookbookModalOpen && (
- <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+ <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 pb-8 md:pb-4 animate-in fade-in">
  <div className="bg-white rounded-3xl border border-[#EAE6DF] shadow-2xl p-6 w-full max-w-md space-y-4 text-left">
  <div className="flex items-center justify-between border-b border-stone-100 pb-2">
  <h4 className="text-sm font-extrabold text-stone-900">保存至 Lookbook 套装库</h4>
@@ -2658,52 +2660,6 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  </div>
  )}
 
- {/* VTON 成片结果全屏大图预览 Modal */}
- {isVtonResultModalOpen && renderedImageUrl && (
- <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-4">
- <div className="bg-white rounded-3xl border border-[#EAE6DF] shadow-2xl p-6 w-full max-w-lg space-y-4 text-left relative animate-in fade-in zoom-in-95">
- <div className="flex items-center justify-between border-b border-stone-100 pb-2">
- <div className="flex items-center gap-2">
- <Sparkles className="w-4 h-4 text-[#D63031]" />
- <h4 className="text-sm font-extrabold text-stone-900"> AI 高清试穿成片已生成</h4>
- </div>
- <button onClick={() => setIsVtonResultModalOpen(false)} className="text-stone-400 hover:text-stone-700">
- <X className="w-4 h-4" />
- </button>
- </div>
-
- <div className="relative aspect-[3/4] max-h-[60vh] mx-auto rounded-2xl overflow-hidden bg-stone-100 border border-stone-200 flex items-center justify-center">
- <img
- src={renderedImageUrl}
- alt="AI VTON 成片"
- className="h-full w-full object-contain"
- />
- </div>
-
- <div className="flex gap-2 pt-2">
- <button
- type="button"
- onClick={() => {
- setIsVtonResultModalOpen(false);
- setIsLookbookModalOpen(true);
- }}
- className="flex-1 py-2.5 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5"
- >
- <Heart className="w-3.5 h-3.5 text-[#D63031]" />
- <span>保存至 Lookbook</span>
- </button>
- <button
- type="button"
- onClick={() => setIsVtonResultModalOpen(false)}
- className="flex-1 py-2.5 bg-[#D63031] hover:bg-[#c0392b] text-white rounded-xl text-xs font-bold shadow-xs transition-colors flex items-center justify-center gap-1.5"
- >
- <Check className="w-3.5 h-3.5" />
- <span>完成试穿</span>
- </button>
- </div>
- </div>
- </div>
- )}
       {/* 7. 单品 360° 档案详情抽屉 (支持安全删除私人单品) */}
       <GarmentDetailDrawer
         garment={selectedGarmentForDrawer}

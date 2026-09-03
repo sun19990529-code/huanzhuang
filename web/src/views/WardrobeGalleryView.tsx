@@ -436,7 +436,7 @@ export const WardrobeGalleryView: React.FC<WardrobeGalleryViewProps> = ({
 
       {/* 4. [V2.5 核心] 一拍多衣多单品清单确认弹窗 */}
       {isBatchModal && (
-        <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-xs flex items-center justify-center p-4 pb-8 md:pb-4 z-[100]">
           <div className="bg-white border border-rose-100 rounded-[36px] p-6 max-w-lg w-full shadow-2xl space-y-4 text-left animate-float-soft">
             <div className="space-y-1 border-b border-[#EAE6DF]/60 pb-3">
               <div className="flex items-center justify-between">
@@ -514,7 +514,7 @@ export const WardrobeGalleryView: React.FC<WardrobeGalleryViewProps> = ({
 
       {/* 5. 单件上传确认弹窗 */}
       {isSingleUploadModal && (
-        <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-xs flex items-center justify-center p-4 pb-8 md:pb-4 z-[100]">
           <div className="bg-white border border-rose-100 rounded-[32px] p-6 max-w-md w-full shadow-2xl space-y-4 text-left animate-float-soft">
             <h3 className="text-base font-extrabold text-stone-800 flex items-center gap-1.5">
               <Sparkles className="w-4 h-4 text-rose-500" /> 单件服装标准化与多态切片

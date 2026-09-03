@@ -374,7 +374,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
  onClick={(e) => {
  if (e.target === e.currentTarget) onClose();
  }}
- className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in"
+ className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 pb-8 md:pb-4 animate-in fade-in"
  >
  <div className="bg-white rounded-3xl border border-[#EAE6DF] shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden text-left">
  

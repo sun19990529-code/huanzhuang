@@ -42,7 +42,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
  };
 
  return (
- <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+ <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-xs flex items-center justify-center p-4 pb-8 md:pb-4 z-[100] animate-in fade-in duration-200">
  <div className="bg-white border border-[#EAE6DF] w-full max-w-xl rounded-3xl p-6 shadow-2xl space-y-4 text-left">
  <div className="flex items-center justify-between pb-3 border-b border-[#EAE6DF]">
  <div className="flex items-center gap-2">

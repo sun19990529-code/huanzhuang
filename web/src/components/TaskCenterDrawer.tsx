@@ -75,12 +75,12 @@ export const TaskCenterDrawer: React.FC<TaskCenterDrawerProps> = ({
     <>
       {/* 遮罩背景 */}
       <div
-        className="fixed inset-0 bg-stone-900/40 backdrop-blur-xs z-50 transition-opacity animate-in fade-in"
+        className="fixed inset-0 bg-stone-900/40 backdrop-blur-xs z-[100] transition-opacity animate-in fade-in"
         onClick={onClose}
       />
 
       {/* 侧滑抽屉面板 */}
-      <aside className="fixed inset-y-0 right-0 z-50 w-full max-w-md bg-[#FAF8F5] border-l border-[#EAE6DF] shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
+      <aside className="fixed inset-y-0 right-0 z-[100] w-full max-w-md bg-[#FAF8F5] border-l border-[#EAE6DF] shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
         {/* 顶部 Header */}
         <div className="p-4 md:p-5 border-b border-[#EAE6DF] bg-white/70 backdrop-blur-md flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -313,7 +313,7 @@ export const TaskCenterDrawer: React.FC<TaskCenterDrawerProps> = ({
       {/* 8K 高清大图预览弹窗 */}
       {selectedPreviewImage && (
         <div
-          className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 md:p-8 animate-in fade-in"
+          className="fixed inset-0 z-[110] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 md:p-8 animate-in fade-in"
           onClick={() => setSelectedPreviewImage(null)}
         >
           <div
