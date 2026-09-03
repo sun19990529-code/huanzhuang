@@ -314,39 +314,84 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
   // 移动端底部滑盖衣橱吸附档位 ('PEEK' 125px 常驻横滑 | 'HALF' 48vh 网格 | 'FULL' 80vh 深度筛选)
   const [mobileSheetSnap, setMobileSheetSnap] = useState<'PEEK' | 'HALF' | 'FULL'>('PEEK');
 
-  // 移动端底部滑盖衣橱触摸滑动手势引擎 (避免与内部列表滚动冲突)
+  // 移动端实时跟手拖拽高度 (null 时处于非拖拽状态，使用 CSS 档位吸附)
+  const [sheetDragHeight, setSheetDragHeight] = useState<number | null>(null);
+  const sheetContainerRef = useRef<HTMLDivElement | null>(null);
   const sheetTouchStartY = useRef<number | null>(null);
-  const sheetTouchStartX = useRef<number | null>(null);
+  const sheetTouchStartHeight = useRef<number | null>(null);
+  const isDraggingSheet = useRef<boolean>(false);
 
   const handleSheetTouchStart = (e: React.TouchEvent) => {
     if (e.touches && e.touches[0]) {
       sheetTouchStartY.current = e.touches[0].clientY;
-      sheetTouchStartX.current = e.touches[0].clientX;
+      if (sheetContainerRef.current) {
+        sheetTouchStartHeight.current = sheetContainerRef.current.getBoundingClientRect().height;
+      } else {
+        sheetTouchStartHeight.current =
+          mobileSheetSnap === 'PEEK'
+            ? 125
+            : mobileSheetSnap === 'HALF'
+            ? window.innerHeight * 0.5
+            : window.innerHeight - 115;
+      }
+      isDraggingSheet.current = false;
     }
   };
 
-  const handleSheetTouchEnd = (e: React.TouchEvent) => {
-    if (sheetTouchStartY.current === null || sheetTouchStartX.current === null) return;
-    const touch = e.changedTouches?.[0];
+  const handleSheetTouchMove = (e: React.TouchEvent) => {
+    if (sheetTouchStartY.current === null || sheetTouchStartHeight.current === null) return;
+    const touch = e.touches?.[0];
     if (!touch) return;
     const deltaY = touch.clientY - sheetTouchStartY.current;
-    const deltaX = touch.clientX - sheetTouchStartX.current;
+
+    // 当手指纵向位移超过 5px 时，开启 60fps 实时跟手拖拽
+    if (Math.abs(deltaY) > 5) {
+      isDraggingSheet.current = true;
+      const targetHeight = sheetTouchStartHeight.current - deltaY;
+      const minHeight = 125;
+      const maxHeight = window.innerHeight - 115;
+      const clampedHeight = Math.max(minHeight, Math.min(maxHeight, targetHeight));
+
+      // 原生 DOM 直通赋能：突破 React 状态刷新队列，实现毫秒级 0 延迟硬件级跟手
+      if (sheetContainerRef.current) {
+        sheetContainerRef.current.style.height = `${clampedHeight}px`;
+        sheetContainerRef.current.style.transition = 'none';
+      }
+      setSheetDragHeight(clampedHeight);
+    }
+  };
+
+  const handleSheetTouchEnd = () => {
+    if (sheetContainerRef.current) {
+      sheetContainerRef.current.style.height = '';
+      sheetContainerRef.current.style.transition = '';
+    }
+
+    if (!isDraggingSheet.current || sheetDragHeight === null) {
+      sheetTouchStartY.current = null;
+      sheetTouchStartHeight.current = null;
+      isDraggingSheet.current = false;
+      setSheetDragHeight(null);
+      return;
+    }
+
+    const finalHeight = sheetDragHeight;
+    const vh = window.innerHeight;
+    const peekThreshold = 180;
+    const halfThreshold = vh * 0.65;
+
+    if (finalHeight < peekThreshold) {
+      setMobileSheetSnap('PEEK');
+    } else if (finalHeight < halfThreshold) {
+      setMobileSheetSnap('HALF');
+    } else {
+      setMobileSheetSnap('FULL');
+    }
 
     sheetTouchStartY.current = null;
-    sheetTouchStartX.current = null;
-
-    // 只有当纵向滑动距离明显大于横向滑动，且位移超过 20px 时触发抽屉档位吸附
-    if (Math.abs(deltaY) > 20 && Math.abs(deltaY) > Math.abs(deltaX)) {
-      if (deltaY < 0) {
-        // 手指向上滑动 (Swipe Up) -> 展开更高档位
-        if (mobileSheetSnap === 'PEEK') setMobileSheetSnap('HALF');
-        else if (mobileSheetSnap === 'HALF') setMobileSheetSnap('FULL');
-      } else {
-        // 手指向下滑动 (Swipe Down) -> 收起较低档位
-        if (mobileSheetSnap === 'FULL') setMobileSheetSnap('HALF');
-        else if (mobileSheetSnap === 'HALF') setMobileSheetSnap('PEEK');
-      }
-    }
+    sheetTouchStartHeight.current = null;
+    isDraggingSheet.current = false;
+    setSheetDragHeight(null);
   };
 
   // 移动端快捷等比步进缩放
@@ -1189,8 +1234,8 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  {/* ------------------------------------------------------------- */}
  {/* 左侧 45%：巴黎法式 Ins 数字化衣橱 */}
  {/* ------------------------------------------------------------- */}
-  {/* 移动端抽屉展开时的半透明轻奢遮罩 (点击空白一键回弹至 PEEK) */}
-  {mobileSheetSnap !== 'PEEK' && (
+  {/* 移动端抽屉展开或拖拽时的半透明轻奢遮罩 (点击空白一键回弹至 PEEK) */}
+  {(mobileSheetSnap !== 'PEEK' || (sheetDragHeight !== null && sheetDragHeight > 140)) && (
     <div
       onClick={() => setMobileSheetSnap('PEEK')}
       className="md:hidden fixed inset-0 bg-stone-950/25 backdrop-blur-[2px] z-30 transition-opacity duration-300 animate-in fade-in"
@@ -1198,7 +1243,10 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
   )}
 
   {/* 移动端三档滑盖 Bottom Sheet / 桌面端左侧 45% 分栏 */}
-  <div className={`bg-white/95 backdrop-blur-xl shrink-0 z-40 transition-all duration-300 ease-out flex flex-col ${
+  <div
+    ref={sheetContainerRef}
+    style={sheetDragHeight !== null ? { height: `${sheetDragHeight}px`, transition: 'none' } : undefined}
+    className={`bg-white/95 backdrop-blur-xl shrink-0 z-40 transition-all duration-300 ease-out flex flex-col ${
      isWardrobeCollapsed
        ? 'w-0 h-0 opacity-0 overflow-hidden border-0 pointer-events-none'
        : mobileSheetSnap === 'PEEK'
@@ -1208,11 +1256,13 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
        : 'fixed md:relative bottom-[60px] md:bottom-0 left-0 right-0 h-[calc(100dvh-115px)] md:h-full w-full md:w-[48%] lg:w-[46%] xl:w-[45%] 2xl:w-[44%] rounded-t-3xl md:rounded-none border-t md:border-t-0 md:border-r border-[#EAE6DF] shadow-2xl md:shadow-xs'
    }`}>
 
-    {/* 移动端吸顶拖拽指示手柄 (手势滑动 + 点击双模支持) */}
+    {/* 移动端吸顶拖拽指示手柄 (实时跟手拖拽 + 点击双模支持) */}
     <div
       onTouchStart={handleSheetTouchStart}
+      onTouchMove={handleSheetTouchMove}
       onTouchEnd={handleSheetTouchEnd}
       onClick={() => {
+        if (isDraggingSheet.current) return;
         if (mobileSheetSnap === 'PEEK') setMobileSheetSnap('HALF');
         else if (mobileSheetSnap === 'HALF') setMobileSheetSnap('FULL');
         else setMobileSheetSnap('PEEK');
@@ -1421,10 +1471,11 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  )}
  </div>
 
-        {/* 移动端 PEEK 模式单排横滑流 (零遮挡模特，即点即穿，支持上滑展开) */}
+        {/* 移动端 PEEK 模式单排横滑流 (零遮挡模特，即点即穿，支持跟手拖拽) */}
         {mobileSheetSnap === 'PEEK' && (
           <div
             onTouchStart={handleSheetTouchStart}
+            onTouchMove={handleSheetTouchMove}
             onTouchEnd={handleSheetTouchEnd}
             className="md:hidden flex flex-col gap-1 px-3 pb-1 overflow-hidden shrink-0"
           >
@@ -1570,7 +1621,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  >
         {/* 移动端专属：画布顶端内嵌轻奢控制胶囊条 (抽屉展开时智能淡出避让) */}
         <div className={`md:hidden absolute top-2.5 inset-x-3 z-20 flex items-center justify-between pointer-events-auto select-none transition-all duration-200 ${
-          mobileSheetSnap === 'PEEK' ? 'opacity-100' : 'opacity-0 pointer-events-none'
+          (mobileSheetSnap === 'PEEK' && (sheetDragHeight === null || sheetDragHeight <= 140)) ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}>
           {/* 2D / 3D 模式微型胶囊 */}
           <div className="flex items-center bg-white/95 backdrop-blur-md p-0.5 rounded-2xl border border-[#EAE6DF] shadow-md">
@@ -1594,23 +1645,37 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
 
           {/* 右侧：形态切换 + 图层 + 清空 */}
           <div className="flex items-center gap-1.5">
-            {/* 动态计算当前可切换多态的上衣 */}
+            {/* 动态计算当前可切换多态的上衣/外套 (精准形态名称，杜绝模糊“默认”) */}
             {(() => {
               let targetWorn = selectedItemId ? wornItems.find((w) => w.garment.id === selectedItemId) : null;
               if (!targetWorn) {
                 targetWorn = wornItems.find((w) => w.garment.primaryCategory === 'TOPS' || w.garment.primaryCategory === 'OUTERWEAR') || null;
               }
               const canToggle = Boolean(targetWorn && (targetWorn.garment.primaryCategory === 'TOPS' || targetWorn.garment.primaryCategory === 'OUTERWEAR'));
-              const stateLabel = targetWorn ? (targetWorn.state === 'CLOSED' ? '扣合' : targetWorn.state === 'UNTUCKED' ? '外放' : '默认') : '形态';
               if (!canToggle || !targetWorn) return null;
+
+              let currentStateLabel = '形态';
+              let nextActionLabel = '切换';
+
+              if (targetWorn.garment.primaryCategory === 'TOPS') {
+                const isTucked = targetWorn.state === 'TUCKED';
+                currentStateLabel = isTucked ? '塞腰' : '外放';
+                nextActionLabel = isTucked ? '外放' : '塞腰';
+              } else if (targetWorn.garment.primaryCategory === 'OUTERWEAR') {
+                const isClosed = targetWorn.state === 'CLOSED';
+                currentStateLabel = isClosed ? '扣合' : '敞开';
+                nextActionLabel = isClosed ? '敞开' : '扣合';
+              }
+
               return (
                 <button
                   type="button"
                   onClick={() => handleToggleGarmentState(targetWorn.garment.id)}
                   className="px-2.5 py-1 bg-white/95 backdrop-blur-md text-stone-700 rounded-2xl border border-[#EAE6DF] text-[11px] font-bold shadow-md flex items-center gap-1 active:scale-95 transition-transform"
+                  title={`当前形态:「${currentStateLabel}」，点击切换为「${nextActionLabel}」`}
                 >
                   <Shirt className="w-3 h-3 text-amber-700" />
-                  <span>{stateLabel}</span>
+                  <span>{currentStateLabel}</span>
                 </button>
               );
             })()}
@@ -1636,7 +1701,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
 
         {/* 移动端专属：大拇指热区悬浮核心行动 FAB (抽屉展开时智能淡出避让) */}
         <div className={`md:hidden absolute bottom-[195px] right-3 z-20 flex flex-col items-end gap-2 pointer-events-auto transition-all duration-200 ${
-          mobileSheetSnap === 'PEEK' ? 'opacity-100' : 'opacity-0 pointer-events-none'
+          (mobileSheetSnap === 'PEEK' && (sheetDragHeight === null || sheetDragHeight <= 140)) ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}>
           {/* 保存搭配按钮 */}
           <button
@@ -2240,43 +2305,58 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  title="左右拉伸"
  />
 
- {/* 底部极简控制胶囊：磁吸复位 + 图层层级微调 + 一键脱下 */}
+ {/* 底部极简控制胶囊：纯图标紧凑布局(防穿模) + 靠下时智能翻转到上方(防遮挡) */}
+ {(() => {
+ const isFlippedToTop = (worn.offsetY ?? 0) > 15;
+ return (
  <div
  onClick={(e) => e.stopPropagation()}
  style={{
+ ...(isFlippedToTop
+ ? {
+ top: `${-24 * invScY}px`,
+ transform: `translate(-50%, -100%) scale(${invScX}, ${invScY})`,
+ transformOrigin: 'center bottom',
+ }
+ : {
  bottom: `${-24 * invScY}px`,
  transform: `translate(-50%, 100%) scale(${invScX}, ${invScY})`,
  transformOrigin: 'center top',
+ }),
  }}
- className="absolute left-1/2 flex items-center gap-1.5 pointer-events-auto z-50"
+ className="absolute left-1/2 flex items-center gap-1 md:gap-1.5 pointer-events-auto z-50 bg-white/95 backdrop-blur-md px-1.5 py-1 md:px-2 md:py-1 rounded-full border border-[#EAE6DF] shadow-xl"
  >
-                {/* 移动端/触屏大靶心放大缩小 */}
-                <button
-                  type="button"
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleScaleStep(worn.garment.id, 1.08);
-                  }}
-                  className="bg-white hover:bg-stone-50 text-stone-700 hover:text-stone-900 border border-[#EAE6DF] px-2.5 py-1 rounded-full text-xs font-bold shadow-md flex items-center gap-0.5 whitespace-nowrap transition-colors cursor-pointer"
-                  title="放大"
-                >
-                  <Plus className="w-3 h-3 text-emerald-600 stroke-[2.5]" />
-                  <span>放大</span>
-                </button>
-                <button
-                  type="button"
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleScaleStep(worn.garment.id, 0.92);
-                  }}
-                  className="bg-white hover:bg-stone-50 text-stone-700 hover:text-stone-900 border border-[#EAE6DF] px-2.5 py-1 rounded-full text-xs font-bold shadow-md flex items-center gap-0.5 whitespace-nowrap transition-colors cursor-pointer"
-                  title="缩小"
-                >
-                  <Minus className="w-3 h-3 text-amber-600 stroke-[2.5]" />
-                  <span>缩小</span>
-                </button>
+ {/* 放大 */}
+ <button
+ type="button"
+ onPointerDown={(e) => e.stopPropagation()}
+ onClick={(e) => {
+ e.stopPropagation();
+ handleScaleStep(worn.garment.id, 1.08);
+ }}
+ className="p-1.5 md:px-2.5 md:py-1 hover:bg-stone-100 text-stone-700 rounded-full text-xs font-bold flex items-center gap-0.5 whitespace-nowrap transition-colors cursor-pointer"
+ title="放大"
+ >
+ <Plus className="w-3.5 h-3.5 text-emerald-600 stroke-[2.5]" />
+ <span className="hidden md:inline">放大</span>
+ </button>
+
+ {/* 缩小 */}
+ <button
+ type="button"
+ onPointerDown={(e) => e.stopPropagation()}
+ onClick={(e) => {
+ e.stopPropagation();
+ handleScaleStep(worn.garment.id, 0.92);
+ }}
+ className="p-1.5 md:px-2.5 md:py-1 hover:bg-stone-100 text-stone-700 rounded-full text-xs font-bold flex items-center gap-0.5 whitespace-nowrap transition-colors cursor-pointer"
+ title="缩小"
+ >
+ <Minus className="w-3.5 h-3.5 text-amber-600 stroke-[2.5]" />
+ <span className="hidden md:inline">缩小</span>
+ </button>
+
+ {/* 磁吸复位 */}
  <button
  type="button"
  onMouseDown={(e) => e.stopPropagation()}
@@ -2284,13 +2364,14 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  e.stopPropagation();
  handleResetPlacement(worn.garment);
  }}
- className="bg-white hover:bg-stone-50 text-stone-700 hover:text-stone-900 border border-[#EAE6DF] px-3 py-1 rounded-full text-xs font-bold shadow-md flex items-center gap-1 whitespace-nowrap transition-colors cursor-pointer"
+ className="p-1.5 md:px-2.5 md:py-1 hover:bg-stone-100 text-stone-700 rounded-full text-xs font-bold flex items-center gap-1 whitespace-nowrap transition-colors cursor-pointer"
  title="恢复至默认人体工学基准位"
  >
- <RotateCcw className="w-3 h-3" />
- <span>磁吸复位</span>
+ <RotateCcw className="w-3.5 h-3.5 text-stone-600" />
+ <span className="hidden md:inline">磁吸复位</span>
  </button>
 
+ {/* 图层上移 */}
  <button
  type="button"
  onMouseDown={(e) => e.stopPropagation()}
@@ -2298,13 +2379,14 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  e.stopPropagation();
  handleAdjustZIndex(worn.garment.id, 'UP');
  }}
- className="bg-white hover:bg-stone-50 text-stone-700 hover:text-stone-900 border border-[#EAE6DF] px-2.5 py-1 rounded-full text-xs font-bold shadow-md flex items-center gap-0.5 whitespace-nowrap transition-colors cursor-pointer"
+ className="p-1.5 md:px-2.5 md:py-1 hover:bg-stone-100 text-stone-700 rounded-full text-xs font-bold flex items-center gap-0.5 whitespace-nowrap transition-colors cursor-pointer"
  title="图层上移 (移向更外层)"
  >
- <ChevronUp className="w-3 h-3 text-[#D63031]" />
- <span>上移</span>
+ <ChevronUp className="w-3.5 h-3.5 text-[#D63031]" />
+ <span className="hidden md:inline">上移</span>
  </button>
 
+ {/* 图层下移 */}
  <button
  type="button"
  onMouseDown={(e) => e.stopPropagation()}
@@ -2312,13 +2394,14 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  e.stopPropagation();
  handleAdjustZIndex(worn.garment.id, 'DOWN');
  }}
- className="bg-white hover:bg-stone-50 text-stone-700 hover:text-stone-900 border border-[#EAE6DF] px-2.5 py-1 rounded-full text-xs font-bold shadow-md flex items-center gap-0.5 whitespace-nowrap transition-colors cursor-pointer"
+ className="p-1.5 md:px-2.5 md:py-1 hover:bg-stone-100 text-stone-700 rounded-full text-xs font-bold flex items-center gap-0.5 whitespace-nowrap transition-colors cursor-pointer"
  title="图层下移 (移向更内层)"
  >
- <ChevronDown className="w-3 h-3 text-[#D63031]" />
- <span>下移</span>
+ <ChevronDown className="w-3.5 h-3.5 text-[#D63031]" />
+ <span className="hidden md:inline">下移</span>
  </button>
 
+ {/* 一键脱下 */}
  <button
  type="button"
  onMouseDown={(e) => e.stopPropagation()}
@@ -2327,13 +2410,15 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  onRemoveWornItem(worn.garment.id);
  setSelectedItemId(null);
  }}
- className="bg-rose-50 hover:bg-rose-100 text-[#D63031] border border-rose-200 px-2.5 py-1 rounded-full text-xs font-bold shadow-md flex items-center gap-1 whitespace-nowrap transition-colors cursor-pointer"
+ className="p-1.5 md:px-2.5 md:py-1 bg-rose-50 hover:bg-rose-100 text-[#D63031] rounded-full text-xs font-bold flex items-center gap-1 whitespace-nowrap transition-colors cursor-pointer"
  title="脱下此单品"
  >
- <Trash2 className="w-3 h-3" />
- <span>脱下</span>
+ <Trash2 className="w-3.5 h-3.5" />
+ <span className="hidden md:inline">脱下</span>
  </button>
  </div>
+ );
+ })()}
  </div>
  )}
  </div>
