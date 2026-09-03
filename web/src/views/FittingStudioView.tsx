@@ -1238,15 +1238,15 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
   {(mobileSheetSnap !== 'PEEK' || (sheetDragHeight !== null && sheetDragHeight > 140)) && (
     <div
       onClick={() => setMobileSheetSnap('PEEK')}
-      className="md:hidden fixed inset-0 bg-stone-950/25 backdrop-blur-[2px] z-30 transition-opacity duration-300 animate-in fade-in"
+      className="md:hidden fixed inset-0 bg-stone-950/25 backdrop-blur-[2px] z-40 transition-opacity duration-300 animate-in fade-in"
     />
   )}
 
-  {/* 移动端三档滑盖 Bottom Sheet / 桌面端左侧 45% 分栏 */}
+  {/* 移动端三档滑盖 Bottom Sheet / 桌面端左侧 45% 分栏 (移动端实心纯白防透，层级z-50绝对统治) */}
   <div
     ref={sheetContainerRef}
     style={sheetDragHeight !== null ? { height: `${sheetDragHeight}px`, transition: 'none' } : undefined}
-    className={`bg-white/95 backdrop-blur-xl shrink-0 z-40 transition-all duration-300 ease-out flex flex-col ${
+    className={`bg-white md:bg-white/95 backdrop-blur-xl shrink-0 z-50 transition-all duration-300 ease-out flex flex-col ${
      isWardrobeCollapsed
        ? 'w-0 h-0 opacity-0 overflow-hidden border-0 pointer-events-none'
        : mobileSheetSnap === 'PEEK'
@@ -1614,7 +1614,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  onClick={() => setSelectedItemId(null)}
  onMouseMove={handleCanvasMouseMove}
  onMouseUp={handleCanvasMouseUp}
- className="flex-1 h-full flex flex-col justify-between relative overflow-hidden select-none"
+ className="flex-1 h-full flex flex-col justify-between relative overflow-hidden select-none z-0 isolate"
         style={{
           background: 'radial-gradient(circle at 50% 40%, #FFFFFF 0%, #FAF8F5 55%, #EDE7DD 100%)',
         }}
@@ -1825,8 +1825,8 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
               stateLabel = targetWorn.state === 'TUCKED' ? '已塞入' : '已外放';
               stateTooltip = `点击切换「${targetWorn.garment.title}」: ${targetWorn.state === 'TUCKED' ? '塞入 ➔ 外放' : '外放 ➔ 塞入'}`;
             } else if (targetWorn.garment.primaryCategory === 'OUTERWEAR') {
-              stateLabel = targetWorn.state === 'OPEN' ? '已敞开' : '已扣合';
-              stateTooltip = `点击切换「${targetWorn.garment.title}」: ${targetWorn.state === 'OPEN' ? '敞开 ➔ 扣合' : '扣合 ➔ 敞开'}`;
+              stateLabel = targetWorn.state === 'CLOSED' ? '已扣合' : '已敞开';
+              stateTooltip = `点击切换「${targetWorn.garment.title}」: ${targetWorn.state === 'CLOSED' ? '扣合 ➔ 敞开' : '敞开 ➔ 扣合'}`;
             } else {
               stateLabel = '切换形态';
               stateTooltip = `点击切换「${targetWorn.garment.title}」多态切片`;
@@ -2032,7 +2032,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
           {/* 中间 3:4 模特舞台：固有比例 shrink-0 居中 */}
            <div
  onClick={() => setSelectedItemId(null)}
- className="relative shrink-0 w-full max-w-[calc(100vw-28px)] max-h-[calc(100dvh-250px)] h-[calc(100dvh-250px)] md:w-auto md:h-[88vh] md:max-h-[880px] aspect-[3/4] rounded-3xl border border-stone-200/80 bg-white/95 shadow-2xl shadow-stone-300/40 flex items-center justify-center overflow-hidden md:overflow-visible pointer-events-auto transition-all"
+ className="relative shrink-0 w-full max-w-[calc(100vw-28px)] max-h-[calc(100dvh-250px)] h-[calc(100dvh-250px)] md:w-auto md:h-[88vh] md:max-h-[880px] aspect-[3/4] rounded-3xl border border-stone-200/80 bg-white/95 shadow-2xl shadow-stone-300/40 flex items-center justify-center overflow-visible pointer-events-auto transition-all"
  >
  {/* 模特景深光晕底座 */}
  <div className="absolute inset-x-8 bottom-0 h-16 bg-stone-300/30 blur-xl rounded-full pointer-events-none" />
@@ -2218,7 +2218,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  />
 
  {/* Figma Pro 级交互式微调与缩放选框 (视口解耦，绝对恒定尺寸与清晰度) */}
-                  {isSelected && studioDisplayMode === '2D' && !isRendering && !isLookbookModalOpen && !isSlotMachineOpen && !isVtonResultModalOpen && !selectedGarmentForDrawer && (
+                  {isSelected && studioDisplayMode === '2D' && !isRendering && !isLookbookModalOpen && !isSlotMachineOpen && !isVtonResultModalOpen && !selectedGarmentForDrawer && ((mobileSheetSnap === 'PEEK' && (sheetDragHeight === null || sheetDragHeight <= 140)) || (typeof window !== 'undefined' && window.innerWidth >= 768)) && (
  <div
  onClick={(e) => e.stopPropagation()}
  style={{
@@ -2324,7 +2324,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  transformOrigin: 'center top',
  }),
  }}
- className="absolute left-1/2 flex items-center gap-1 md:gap-1.5 pointer-events-auto z-50 bg-white/95 backdrop-blur-md px-1.5 py-1 md:px-2 md:py-1 rounded-full border border-[#EAE6DF] shadow-xl"
+ className="absolute left-1/2 flex items-center gap-1 md:gap-1.5 pointer-events-auto z-50 bg-white/95 backdrop-blur-md px-1.5 py-1 md:px-2 md:py-1 rounded-full border border-[#EAE6DF] shadow-xl max-w-[calc(100vw-24px)] shrink-0 select-none"
  >
  {/* 放大 */}
  <button
