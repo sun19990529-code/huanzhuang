@@ -18,6 +18,11 @@
    - 只修改必须修改的代码，严禁顺手重构未损坏的模块。
    - 每一行代码修改必须能直接追溯到用户的具体诉求。
 
+3. **【实用主义体验优先准则】**
+   - 用户的即时交互响应（1~3ms 极速反馈）与平滑无白屏秒切体验，永远凌驾于理论上的过度设计之上；
+   - 严禁为了追求理论上的绝对强一致性而给轻量高频交互强行增加磁盘阻塞事务；
+   - 严禁为了消除常规构建体积提示而盲目引入 `React.lazy` 懒加载，避免页面路由切换产生白屏或加载顿挫。
+
 ---
 
 ## 二、 资产权限、公共衣橱隔离与单品批量管理规范
@@ -63,7 +68,10 @@
 
 4. **【2D 模特舞台几何居中规范】**
    - 3:4 模特黄金画幅在工作台视口内必须实现**绝对水平与垂直几何居中**；
-   - 高度计算必须动态扣除顶部全局 Header 和底部移动端折叠抽屉占用的实际物理高度，严禁出现“上窄下宽”或“偏头失衡”的视觉倾斜。
+   - 高度计算必须动态扣除顶部全局 Header 和底部移动端抽屉占用的实际物理高度：
+     - 在 `PEEK` 模式下，按实际小抽屉高度（142px）动态扣除；
+     - 在 `COLLAPSED` 全收模式下，按极简指示条高度（28px）动态扣除，使模特舞台向下延展并自适应占满整幅画布；
+     - **严禁在容器类名中硬编码写死单一模式的底部间距**，彻底杜绝全收状态下底部留出 114px 的无效黑洞空白。
 
 5. **【移动端底部抽屉 (BottomSheet) 手势与状态守则】**
    - **三阶段状态机**：移动端抽屉支持 `COLLAPSED`（全收隐藏以完全露出画布）、`PEEK`（露出单品卡片头部与抓手）、`EXPANDED`（全开大视域）三种明确状态；
@@ -101,6 +109,11 @@
      - **标准用户测试账号**：`test@smartwardrobe.com` / 密码：`password123`
      - **平台管理员测试账号**：`admin@smartwardrobe.com` / 密码：`admin123456`
    - 仅在专门测试“新用户注册向导全流程”时才允许创建临时测试账号，并在测试完成后保持数据整洁。
+
+3. **【自动化测试契约与真实数据严格对齐】**
+   - 严禁在测试代码（`server/tests/`）中随机构造或硬编码假用户 ID、假单品 ID；
+   - 所有测试脚本必须统一绑定固定测试账号（`test@smartwardrobe.com` / `admin@smartwardrobe.com`）及其关联数据资产；
+   - 测试启动前必须先执行 `await db.init()` 预加载真实落盘数据，严禁撞破数据库外键约束，保证本地测试套件 100% 随时通过。
 
 ---
 
@@ -149,11 +162,11 @@
 
 ---
 
-## 九、 全局弹窗与抽屉架构规范 (React Portal 与 Containing Block 隔离)
+## 九、 全局弹窗与抽屉架构规范 (React Portal 防御与 Containing Block 隔离)
 
-1. **【强制使用 React Portal 挂载到根节点】**
-   - 所有全屏级别的抽屉组件（如 `GarmentDetailDrawer`）、全局弹窗（如 `InstantOotdPosterModal`、`LookbookModal`、`AccountSettingsModal`）**必须强制使用 `createPortal(drawerNode, document.body)` 挂载到根 DOM 上**；
-   - 严禁将全局抽屉渲染在具有 `overflow-y-auto`、`transform`、`filter` 或 `backdrop-filter` 的父级容器内，彻底避免 CSS 包含块（Containing Block）污染导致抽屉定位退化、被兄弟元素（如顶栏切换器）压制下移或顶部露底。
+1. **【精准按需使用 React Portal，严禁无故重构】**
+   - **适用场景与防御边界**：当且仅当全局抽屉或弹窗被嵌套在带有局部滚动（`overflow-y-auto`）、或含有 `transform`、`filter`、`backdrop-filter` 等会创建局部包含块（Containing Block）和局部层叠上下文的祖先节点中，且引发了**定位偏移、被截断、露缝或被兄弟元素压制**时，才必须使用 `createPortal(node, document.body)` 隔离挂载到根节点（如已修复对齐的 `GarmentDetailDrawer`）；
+   - **防破坏性重构红线**：对于当前挂载层级定位正常、居中良好、遮罩层无破损的模态弹窗（如 `InstantOotdPosterModal`、`LookbookModal`、`CapsuleSlotMachine` 等），**坚决保持现有组件架构不变，严禁为了教条式规范进行盲目重构**，杜绝引入样式上下文断裂或非预期手势冲突；
 
 2. **【移动端全宽满屏与各端对齐标准】**
    - 全局抽屉容器宽度在 Tailwind 中必须声明为 **`w-full md:max-w-md`**；

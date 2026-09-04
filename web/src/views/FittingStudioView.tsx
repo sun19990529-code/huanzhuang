@@ -1883,8 +1883,14 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
           </div>
         )}
 
-        {/* 画布中央舞台与左右侧翼坞 (移动端自适应净工作区绝对物理垂直居中，杜绝上窄下宽；宽屏三栏物理对称) */}
-        <div className="absolute top-0 bottom-[calc(60px+142px+env(safe-area-inset-bottom,0px))] inset-x-0 md:inset-0 flex flex-col md:flex-row items-center justify-center md:justify-between pt-11 pb-2 px-3 md:p-3 pointer-events-none">
+        {/* 画布中央舞台与左右侧翼坞 (移动端自适应净工作区绝对物理垂直居中，全收28px与常驻142px动态自适应，杜绝上窄下宽与留白；宽屏三栏物理对称) */}
+        <div
+          className={`absolute top-0 ${
+            mobileSheetSnap === 'COLLAPSED'
+              ? 'bottom-[calc(60px+28px+env(safe-area-inset-bottom,0px))]'
+              : 'bottom-[calc(60px+142px+env(safe-area-inset-bottom,0px))]'
+          } inset-x-0 md:inset-0 flex flex-col md:flex-row items-center justify-center md:justify-between pt-11 pb-2 px-3 md:p-3 pointer-events-none transition-all duration-300`}
+        >
           {/* 左侧翼槽区：自然占据 (舞台左边缘 ~ 画布左边缘) 的全部空间，内部居中放置左翼悬浮坞 */}
           <div
             ref={leftWingSlotRef}
