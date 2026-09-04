@@ -1,4 +1,5 @@
 import { GarmentDetailDrawer } from '../components/GarmentDetailDrawer';
+import { GarmentFilterBar, GarmentFilterState } from '../components/GarmentFilterBar';
 import {
   COLOR_PALETTE,
   SUB_CATEGORIES,
@@ -7,6 +8,10 @@ import {
   isGarmentMatchingSubCategory,
 } from '../utils/fashionFilterMatcher';
 import { generate2DCanvasSnapshot } from '../utils/canvasSnapshot';
+import { downloadOriginalImage } from '../utils/imageUpscaler';
+import { InstantOotdPosterModal } from '../components/InstantOotdPosterModal';
+import { generateSmartOutfitTitle } from '../utils/outfitAiNamer';
+import { OutfitData } from '../api';
 import React, { useState, useRef, useEffect } from 'react';
 import {
   UserProfile,
@@ -58,6 +63,7 @@ import {
   Info,
   Calendar,
   UploadCloud,
+  BookmarkCheck,
 } from 'lucide-react';
 import { CapsuleSlotMachine } from '../components/CapsuleSlotMachine';
 import { showToast } from '../components/Toast';
@@ -86,8 +92,19 @@ interface FittingStudioViewProps {
  garmentId: string,
  updates: Partial<{ state: GarmentState; offsetX: number; offsetY: number; scale: number; scaleX: number; scaleY: number; zIndex: number }>
  ) => void;
- onWearGarment: (garment: GarmentItem) => void;
- onRemoveWornItem: (garmentId: string) => void;
+ onWearGarment: (
+    garment: GarmentItem,
+    initialPlacement?: Partial<{
+      offsetX: number;
+      offsetY: number;
+      scale: number;
+      scaleX: number;
+      scaleY: number;
+      zIndex: number;
+      state: GarmentState;
+    }>
+  ) => void;
+  onRemoveWornItem: (garmentId: string) => void;
  onClearCanvas: () => void;
  onSaveLookbook: (title: string, syncToOotdToday?: boolean, sceneTag?: string) => void;
  onRenderVton: (compositeCanvasBase64?: string) => void;
@@ -105,6 +122,8 @@ interface FittingStudioViewProps {
  renderProgress?: number;
  renderStage?: string;
  renderedImageUrl?: string | null;
+ outfits?: OutfitData[];
+ onApplyOutfitToStudio?: (outfit: OutfitData) => void;
 }
 
 // 色彩与款式选项已迁移至 fashionFilterMatcher.ts
@@ -136,15 +155,26 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  renderProgress,
  renderStage,
  renderedImageUrl,
+ outfits = [],
+ onApplyOutfitToStudio,
 }) => {
- // 衣橱 Tab 与筛选状态
- const [wardrobeTab, setWardrobeTab] = useState<'PRIVATE' | 'PUBLIC'>('PRIVATE');
- const [selectedCategory, setSelectedCategory] = useState<GarmentCategory | 'ALL'>('ALL');
- const [selectedColors, setSelectedColors] = useState<string[]>([]);
- const [selectedSubCategories, setSelectedSubCategories] = useState<string[]>([]);
- const [selectedPatterns, setSelectedPatterns] = useState<string[]>([]);
- const [searchQuery, setSearchQuery] = useState('');
- const [isAdvancedFilterOpen, setIsAdvancedFilterOpen] = useState(false);
+  // 海报直出弹窗与 AI 起名状态
+  const [isInstantPosterOpen, setIsInstantPosterOpen] = useState(false);
+  const [isLookbookDrawerOpen, setIsLookbookDrawerOpen] = useState(false);
+  const [isAiNaming, setIsAiNaming] = useState(false);
+
+  // 衣橱 Tab 与综合多维筛选状态
+  const [wardrobeTab, setWardrobeTab] = useState<'PRIVATE' | 'PUBLIC'>('PRIVATE');
+  const [filterState, setFilterState] = useState<GarmentFilterState>({
+    category: 'ALL',
+    colors: [],
+    subCategories: [],
+    patterns: [],
+    seasons: [],
+    occasions: [],
+    searchQuery: '',
+    wearState: 'ALL',
+  });
 
  // 选项 B：9:16 画布原位 2D 拼搭 / 3D 真人大片双模切换模式
  const [studioDisplayMode, setStudioDisplayMode] = useState<'2D' | '3D'>('2D');
@@ -164,28 +194,65 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  return `sw_adjustments_${profile.userId}_${profile.id}`;
  };
 
- const [customAdjustments, setCustomAdjustments] = useState<
- Record<string, { offsetX: number; offsetY: number; scale: number; scaleX: number; scaleY: number }>
- >(() => {
- try {
- const key = profile?.userId && profile?.id ? `sw_adjustments_${profile.userId}_${profile.id}` : 'sw_adjustments_guest';
- const raw = localStorage.getItem(key);
- return raw ? JSON.parse(raw) : {};
- } catch {
- return {};
- }
- });
+  // 严格的微调记忆安全沙箱 (拦截超出视口的脏数据或极小缩放，防止单品异常消失)
+  const getSafeAdjustment = (adj: any): { offsetX: number; offsetY: number; scale: number; scaleX: number; scaleY: number } | null => {
+    if (!adj || typeof adj !== 'object') return null;
+    const sc = typeof adj.scale === 'number' ? adj.scale : 1;
+    const scX = typeof adj.scaleX === 'number' ? adj.scaleX : sc;
+    const scY = typeof adj.scaleY === 'number' ? adj.scaleY : sc;
+    const offX = typeof adj.offsetX === 'number' ? adj.offsetX : 0;
+    const offY = typeof adj.offsetY === 'number' ? adj.offsetY : 0;
 
- // 当 profile (切换用户或切换角色) 改变时，重新加载对应的微调记忆，100% 账号隔离
- useEffect(() => {
- const key = getStorageKey();
- try {
- const raw = localStorage.getItem(key);
- setCustomAdjustments(raw ? JSON.parse(raw) : {});
- } catch {
- setCustomAdjustments({});
- }
- }, [profile?.userId, profile?.id]);
+    // 越界脏数据安全拦截 (scale 必须在 0.2~2.5 之间，|offsetY| <= 400，|offsetX| <= 250)
+    if (sc < 0.2 || sc > 2.5 || scX < 0.15 || scX > 2.5 || scY < 0.15 || scY > 2.5 || Math.abs(offY) > 400 || Math.abs(offX) > 250) {
+      return null;
+    }
+    return { offsetX: offX, offsetY: offY, scale: sc, scaleX: scX, scaleY: scY };
+  };
+
+  const sanitizeAdjustments = (rawObj: any): Record<string, { offsetX: number; offsetY: number; scale: number; scaleX: number; scaleY: number }> => {
+    if (!rawObj || typeof rawObj !== 'object') return {};
+    const sanitized: Record<string, { offsetX: number; offsetY: number; scale: number; scaleX: number; scaleY: number }> = {};
+    for (const [id, val] of Object.entries(rawObj)) {
+      const safe = getSafeAdjustment(val);
+      if (safe) sanitized[id] = safe;
+    }
+    return sanitized;
+  };
+
+  const [customAdjustments, setCustomAdjustments] = useState<
+    Record<string, { offsetX: number; offsetY: number; scale: number; scaleX: number; scaleY: number }>
+  >(() => {
+    try {
+      const key = profile?.userId && profile?.id ? `sw_adjustments_${profile.userId}_${profile.id}` : 'sw_adjustments_guest';
+      const raw = localStorage.getItem(key);
+      return raw ? sanitizeAdjustments(JSON.parse(raw)) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  // 当 profile (切换用户或切换角色) 改变时，重新加载对应的微调记忆，100% 账号隔离
+  useEffect(() => {
+    const key = getStorageKey();
+    try {
+      const raw = localStorage.getItem(key);
+      const clean = raw ? sanitizeAdjustments(JSON.parse(raw)) : {};
+      setCustomAdjustments(clean);
+    } catch {
+      setCustomAdjustments({});
+    }
+  }, [profile?.userId, profile?.id]);
+
+  // ESC 键快速关闭 Lookbook 抽屉
+  useEffect(() => {
+    if (!isLookbookDrawerOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsLookbookDrawerOpen(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isLookbookDrawerOpen]);
 
  // 同步更新并落盘微调参数
  const saveCustomAdjustment = (
@@ -233,7 +300,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
       setSelectedItemId(null);
                 setStudioDisplayMode('3D');
       setIsOutfitChangedSinceRender(false);
-      showToast('✨ AI 8K 影棚试穿大片已生成完毕，已呈现在画布中央！', 'info');
+      showToast('✨ AI 影棚试穿大片已生成完毕，已呈现在画布中央！', 'info');
     }
   }, [renderedImageUrl, isRendering]);
 
@@ -311,102 +378,142 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  const leftWingSlotRef = useRef<HTMLDivElement>(null);
  const [isCompactWing, setIsCompactWing] = useState(false);
 
-  // 移动端底部滑盖衣橱吸附档位 ('PEEK' 125px 常驻横滑 | 'HALF' 48vh 网格 | 'FULL' 80vh 深度筛选)
-  const [mobileSheetSnap, setMobileSheetSnap] = useState<'PEEK' | 'HALF' | 'FULL'>('PEEK');
+  // 移动端底部滑盖衣橱吸附档位 ('COLLAPSED' 28px 全收极简 | 'PEEK' 142px 常驻小抽屉 | 'FULL' 大半屏沉浸式网格)
+  const [mobileSheetSnap, setMobileSheetSnap] = useState<'COLLAPSED' | 'PEEK' | 'FULL'>('PEEK');
+  // 移动端高级多维筛选弹窗受控状态 (仅用户主动点击筛选按钮时弹出，抽屉展开时绝不自动弹出)
+  const [isAdvFilterOpen, setIsAdvFilterOpen] = useState(false);
 
-  // 移动端实时跟手拖拽高度 (null 时处于非拖拽状态，使用 CSS 档位吸附)
-  const [sheetDragHeight, setSheetDragHeight] = useState<number | null>(null);
   const sheetContainerRef = useRef<HTMLDivElement | null>(null);
   const sheetTouchStartY = useRef<number | null>(null);
-  const sheetTouchStartHeight = useRef<number | null>(null);
+  const sheetTouchStartH = useRef<number>(142);
   const isDraggingSheet = useRef<boolean>(false);
 
   const handleSheetTouchStart = (e: React.TouchEvent) => {
     if (e.touches && e.touches[0]) {
       sheetTouchStartY.current = e.touches[0].clientY;
-      if (sheetContainerRef.current) {
-        sheetTouchStartHeight.current = sheetContainerRef.current.getBoundingClientRect().height;
-      } else {
-        sheetTouchStartHeight.current =
-          mobileSheetSnap === 'PEEK'
-            ? 130
-            : mobileSheetSnap === 'HALF'
-            ? window.innerHeight * 0.5
-            : window.innerHeight - 115;
-      }
+      sheetTouchStartH.current = sheetContainerRef.current
+        ? sheetContainerRef.current.offsetHeight
+        : (mobileSheetSnap === 'COLLAPSED' ? 28 : mobileSheetSnap === 'PEEK' ? 142 : Math.min(window.innerHeight - 120, window.innerHeight * 0.78));
       isDraggingSheet.current = false;
     }
   };
 
   const handleSheetTouchMove = (e: React.TouchEvent) => {
-    if (sheetTouchStartY.current === null || sheetTouchStartHeight.current === null) return;
+    if (sheetTouchStartY.current === null) return;
     const touch = e.touches?.[0];
     if (!touch) return;
     const deltaY = touch.clientY - sheetTouchStartY.current;
 
-    // 当手指纵向位移超过 5px 时，开启 60fps 实时跟手拖拽
+    // 当手指纵向位移超过 5px 时，开启原生级实时高度伸缩动画
     if (Math.abs(deltaY) > 5) {
       isDraggingSheet.current = true;
-      const targetHeight = sheetTouchStartHeight.current - deltaY;
-      const minHeight = 130;
-      const maxHeight = window.innerHeight - 115;
-      const clampedHeight = Math.max(minHeight, Math.min(maxHeight, targetHeight));
 
-      // 原生 DOM 直通赋能：突破 React 状态刷新队列，实现毫秒级 0 延迟硬件级跟手
-      if (sheetContainerRef.current) {
-        sheetContainerRef.current.style.height = `${clampedHeight}px`;
-        sheetContainerRef.current.style.transition = 'none';
+      // 目标高度 = 起始高度 - deltaY (向上拉 deltaY < 0 高度长高，向下拉 deltaY > 0 高度减小)
+      let targetH = sheetTouchStartH.current - deltaY;
+      const minH = 28;
+      const maxH = Math.min(window.innerHeight - 115, window.innerHeight * 0.82);
+
+      // 边界外阻尼保护
+      if (targetH < minH) {
+        targetH = minH - (minH - targetH) * 0.2;
+      } else if (targetH > maxH) {
+        targetH = maxH + (targetH - maxH) * 0.2;
       }
-      setSheetDragHeight(clampedHeight);
+
+      // 直接操作 DOM 保持 60fps/120fps 满帧，底部严丝合缝贴合菜单栏上方，绝对 0 悬空、0 遮挡
+      if (sheetContainerRef.current) {
+        sheetContainerRef.current.style.transition = 'none';
+        sheetContainerRef.current.style.height = `${targetH}px`;
+      }
     }
   };
 
-  const handleSheetTouchEnd = () => {
+  const handleSheetTouchEnd = (e: React.TouchEvent) => {
     if (sheetContainerRef.current) {
-      sheetContainerRef.current.style.height = '';
       sheetContainerRef.current.style.transition = '';
+      sheetContainerRef.current.style.height = '';
     }
 
-    if (!isDraggingSheet.current || sheetDragHeight === null) {
-      sheetTouchStartY.current = null;
-      sheetTouchStartHeight.current = null;
-      isDraggingSheet.current = false;
-      setSheetDragHeight(null);
-      return;
-    }
+    if (sheetTouchStartY.current !== null && isDraggingSheet.current) {
+      const touch = e.changedTouches?.[0];
+      const deltaY = touch ? (touch.clientY - sheetTouchStartY.current) : 0;
 
-    const finalHeight = sheetDragHeight;
-    const vh = window.innerHeight;
-    const peekThreshold = 180;
-    const halfThreshold = vh * 0.65;
-
-    if (finalHeight < peekThreshold) {
-      setMobileSheetSnap('PEEK');
-    } else if (finalHeight < halfThreshold) {
-      setMobileSheetSnap('HALF');
-    } else {
-      setMobileSheetSnap('FULL');
+      if (mobileSheetSnap === 'PEEK') {
+        // 在 PEEK 向上推超过 40px -> 升起至 FULL 大抽屉；向下拉超过 35px -> 全收到 COLLAPSED
+        if (deltaY < -40) {
+          setMobileSheetSnap('FULL');
+        } else if (deltaY > 35) {
+          setMobileSheetSnap('COLLAPSED');
+        }
+      } else if (mobileSheetSnap === 'COLLAPSED') {
+        // 在 COLLAPSED 向上轻推超过 15px -> 展开至 PEEK
+        if (deltaY < -15) {
+          setMobileSheetSnap('PEEK');
+        }
+      } else {
+        // 在 FULL 向下拉超过 50px -> 收缩回弹至 PEEK
+        if (deltaY > 50) {
+          setMobileSheetSnap('PEEK');
+        }
+      }
     }
 
     sheetTouchStartY.current = null;
-    sheetTouchStartHeight.current = null;
     isDraggingSheet.current = false;
-    setSheetDragHeight(null);
   };
 
-  // 移动端快捷等比步进缩放
+  // 智能上下自适应步进缩放 (保持纵横比，自动执行解剖锚点上下位移补偿)
   const handleScaleStep = (garmentId: string, factor: number) => {
     const item = wornItems.find((i) => i.garment.id === garmentId);
     if (!item) return;
-    const cur = item.scale || 1;
-    const next = Math.max(0.15, Math.min(2.5, Number((cur * factor).toFixed(3))));
-    onUpdateWornItem(garmentId, { scale: next, scaleX: next, scaleY: next });
+    const defaultOffs = getCategoryDefaultOffsets(
+      item.garment.primaryCategory,
+      item.garment.subCategory,
+      item.garment.title
+    );
+    const curScale = item.scale !== undefined ? item.scale : defaultOffs.scale;
+    const curScaleX = item.scaleX !== undefined ? item.scaleX : curScale;
+    const curScaleY = item.scaleY !== undefined ? item.scaleY : curScale;
+    const curOffsetY = item.offsetY !== undefined ? item.offsetY : defaultOffs.offsetY;
+    const curOffsetX = item.offsetX !== undefined ? item.offsetX : defaultOffs.offsetX;
+
+    const nextScale = Math.max(0.2, Math.min(2.5, Number((curScale * factor).toFixed(3))));
+    const ratio = nextScale / Math.max(0.01, curScale);
+    const nextScaleX = Math.max(0.15, Math.min(2.5, Number((curScaleX * ratio).toFixed(3))));
+    const nextScaleY = Math.max(0.15, Math.min(2.5, Number((curScaleY * ratio).toFixed(3))));
+
+    // 解剖学上下自适应位移补偿 (上衣锁定领口/肩线，下装锁定腰线，鞋靴锁定鞋底地面)
+    const isTop = item.garment.primaryCategory === 'TOPS' || item.garment.primaryCategory === 'OUTERWEAR';
+    const isBottom = item.garment.primaryCategory === 'BOTTOMS';
+    const isShoes = item.garment.primaryCategory === 'FOOTWEAR';
+    const baseH = 260; // 基础参考高度
+    const deltaScaleY = nextScaleY - curScaleY;
+    let nextOffsetY = curOffsetY;
+
+    if (isTop) {
+      // 上衣/外套领口锚定在锁骨：放大时下摆向下延伸，缩小时下摆向上收缩
+      nextOffsetY = Number((curOffsetY + deltaScaleY * (baseH * 0.42)).toFixed(2));
+    } else if (isBottom) {
+      // 下装腰头锚定在腰际：放大时裤腿/裙摆向下延伸，缩小时裤腿向上收缩
+      nextOffsetY = Number((curOffsetY + deltaScaleY * (baseH * 0.45)).toFixed(2));
+    } else if (isShoes) {
+      // 鞋靴鞋底锚定在地面：放大时鞋帮向上延展，缩小时鞋帮向下收缩
+      nextOffsetY = Number((curOffsetY - deltaScaleY * (baseH * 0.45)).toFixed(2));
+    }
+
+    onUpdateWornItem(garmentId, {
+      scale: nextScale,
+      scaleX: nextScaleX,
+      scaleY: nextScaleY,
+      offsetY: nextOffsetY,
+      offsetX: curOffsetX,
+    });
     saveCustomAdjustment(garmentId, {
-      offsetX: item.offsetX,
-      offsetY: item.offsetY,
-      scale: next,
-      scaleX: next,
-      scaleY: next,
+      offsetX: curOffsetX,
+      offsetY: nextOffsetY,
+      scale: nextScale,
+      scaleX: nextScaleX,
+      scaleY: nextScaleY,
     });
   };
 
@@ -414,7 +521,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
   const handleMobileTriggerVton = async () => {
     if (isRendering) return;
     if (wornItems.length === 0) {
-      showToast('请先在下方衣橱挑选单品穿戴上身，再生成 8K 试穿大片哦！', 'info');
+      showToast('请先在下方衣橱挑选单品穿戴上身，再生成试穿大片哦！', 'info');
       return;
     }
     let snapshotBase64: string | undefined = undefined;
@@ -442,72 +549,69 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  return () => observer.disconnect();
  }, []);
 
- // 切换颜色多选
- const handleToggleColor = (colorKey: string) => {
- setSelectedColors((prev) =>
- prev.includes(colorKey) ? prev.filter((k) => k !== colorKey) : [...prev, colorKey]
- );
- };
+  // 一键重置所有筛选条件
+  const handleResetAllFilters = () => {
+    setFilterState({
+      category: 'ALL',
+      colors: [],
+      subCategories: [],
+      patterns: [],
+      seasons: [],
+      occasions: [],
+      searchQuery: '',
+      wearState: 'ALL',
+    });
+  };
 
- // 切换子类多选
- const handleToggleSubCategory = (sub: string) => {
- setSelectedSubCategories((prev) =>
- prev.includes(sub) ? prev.filter((s) => s !== sub) : [...prev, sub]
- );
- };
+  // 当前源单品池
+  const currentGarmentPool = wardrobeTab === 'PRIVATE' ? allGarments : publicGarments;
 
- // 切换花纹多选
- const handleTogglePattern = (pat: string) => {
- setSelectedPatterns((prev) =>
- prev.includes(pat) ? prev.filter((p) => p !== pat) : [...prev, pat]
- );
- };
+  // 执行多维交集筛选 (融合 HSL 连续物理色彩空间聚类 + 中英文义原同义词典 + 穿戴状态)
+  const filteredGarments = currentGarmentPool.filter((item) => {
+    // 一级品类
+    if (filterState.category !== 'ALL' && item.primaryCategory !== filterState.category) return false;
 
- // 一键重置所有筛选
- const handleResetFilters = () => {
- setSelectedCategory('ALL');
- setSelectedColors([]);
- setSelectedSubCategories([]);
- setSelectedPatterns([]);
- setSearchQuery('');
- };
+    // 1. 智能色系匹配 (13 基础色 + 彩色)
+    if (filterState.colors.length > 0) {
+      const matchColor = filterState.colors.some((cKey) => isGarmentMatchingColor(item, cKey));
+      if (!matchColor) return false;
+    }
 
- // 当前源单品池
- const currentGarmentPool = wardrobeTab === 'PRIVATE' ? allGarments : publicGarments;
+    // 2. 细分款式同义词与包含关系语义匹配
+    if (filterState.subCategories.length > 0) {
+      const matchSub = filterState.subCategories.some((sub) => isGarmentMatchingSubCategory(item, sub));
+      if (!matchSub) return false;
+    }
 
- // 执行多维交集筛选 (融合 HSL 连续色彩空间聚类 + 中英文义原词典模糊匹配)
- const filteredGarments = currentGarmentPool.filter((item) => {
- if (selectedCategory !== 'ALL' && item.primaryCategory !== selectedCategory) return false;
+    // 3. 花纹图案匹配
+    if (filterState.patterns.length > 0) {
+      const matchPat = filterState.patterns.some((pat) =>
+        item.patterns?.some((p) => p.toUpperCase() === pat || p === pat)
+      );
+      if (!matchPat) return false;
+    }
 
- // 1. 智能色系模糊匹配 (解决细分 Hex 颜色如 #8EA6B4 无法匹配基准蓝色的痛点)
- if (selectedColors.length > 0) {
-   const matchColor = selectedColors.some((cKey) => isGarmentMatchingColor(item, cKey));
-   if (!matchColor) return false;
- }
+    // 4. 穿戴状态筛选 (已在身上 / 闲置未穿)
+    if (filterState.wearState && filterState.wearState !== 'ALL') {
+      const isWorn = wornItems.some((w) => w.garment.id === item.id);
+      if (filterState.wearState === 'WORN' && !isWorn) return false;
+      if (filterState.wearState === 'UNWORN' && isWorn) return false;
+    }
 
- // 2. 款式同义词与包含关系语义匹配
- if (selectedSubCategories.length > 0) {
-   const matchSub = selectedSubCategories.some((sub) => isGarmentMatchingSubCategory(item, sub));
-   if (!matchSub) return false;
- }
+    // 5. 搜索词综合匹配 (标题、子类目、面料、细化颜色名称)
+    if (filterState.searchQuery.trim()) {
+      const q = filterState.searchQuery.trim().toLowerCase();
+      const colorNamesText = ((item as any).colorNames || []).join(' ').toLowerCase();
+      const matchQuery =
+        item.title.toLowerCase().includes(q) ||
+        (item.subCategory && item.subCategory.toLowerCase().includes(q)) ||
+        (item.material && item.material.toLowerCase().includes(q)) ||
+        colorNamesText.includes(q);
+      if (!matchQuery) return false;
+    }
 
- // 3. 花纹图案匹配
- if (selectedPatterns.length > 0) {
- const matchPat = selectedPatterns.some((pat) =>
- item.patterns?.includes(pat as any)
- );
- if (!matchPat) return false;
- }
- if (searchQuery.trim()) {
- const q = searchQuery.trim().toLowerCase();
- const matchQuery =
- item.title.toLowerCase().includes(q) ||
- (item.subCategory && item.subCategory.toLowerCase().includes(q)) ||
- (item.material && item.material.toLowerCase().includes(q));
- if (!matchQuery) return false;
- }
- return true;
- });
+    return true;
+  });
 
  // 处理文件选择与带进度条多模态识别
  const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -533,10 +637,18 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
 
  try {
  const compressed = await compressImageFile(file);
- const newGarments = await autoDetectUploadGarments(profile.id, compressed);
+ const res = await autoDetectUploadGarments(profile.id, compressed);
 
- clearTimeout(timer1);
- clearTimeout(timer2);
+    clearTimeout(timer1);
+    clearTimeout(timer2);
+
+    if (res && ((res as any).taskId || (res as any).data?.taskId)) {
+      setUploadProgress(null);
+      showToast('✨ 已成功提交「智能衣物识别」任务，可在右上角「任务中心」实时查看多单品切片！', 'info');
+      return;
+    }
+
+    const newGarments: any[] = (res as any).garments || (res as any) || [];
 
  setUploadProgress(90);
  setUploadStageText('正在执行 AI 幽灵模特平铺素图透明通道提纯...');
@@ -553,7 +665,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  if (transparentUrl) {
  previewUrl = transparentUrl;
  if (g.assets && g.assets.length > 0) {
- g.assets.forEach((a) => {
+ g.assets.forEach((a: any) => {
  a.pngUrl = transparentUrl;
  });
  }
@@ -667,24 +779,34 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  }
  }
 
- onWearGarment(garment);
- setSelectedItemId(garment.id);
+ // 检查是否有合法的自定义微调记忆
+ const rawAdjust = customAdjustments[garment.id];
+ const safeAdjust = getSafeAdjustment(rawAdjust);
 
-    // 移动端选衣后自动平滑回弹至 PEEK 档，立即将穿上后的模特大图呈现出来
-    if (mobileSheetSnap !== 'PEEK') {
-      setMobileSheetSnap('PEEK');
-    }
+ // 若发现脏数据则清理脏记忆，杜绝飞出画幅消失
+ if (rawAdjust && !safeAdjust) {
+   setCustomAdjustments((prev) => {
+     const next = { ...prev };
+     delete next[garment.id];
+     try {
+       localStorage.setItem(getStorageKey(), JSON.stringify(next));
+     } catch (e) {}
+     return next;
+   });
+ }
 
- // 如果用户曾手动微调过此单品，优先恢复该账号该角色的自定义微调记忆
- const userAdjust = customAdjustments[garment.id];
- if (userAdjust) {
- onUpdateWornItem(garment.id, {
- offsetX: userAdjust.offsetX,
- offsetY: userAdjust.offsetY,
- scale: userAdjust.scale,
- scaleX: userAdjust.scaleX,
- scaleY: userAdjust.scaleY,
- });
+ // 原子化一步到位穿戴，消除两步时序闪烁抽搐
+ onWearGarment(garment, safeAdjust || undefined);
+
+ if (typeof window !== 'undefined' && window.innerWidth >= 768) {
+   setSelectedItemId(garment.id);
+ } else {
+   setSelectedItemId(null);
+ }
+
+ // 移动端选衣后自动平滑回弹至 PEEK 档，立即将穿上后的模特大图呈现出来
+ if (mobileSheetSnap !== 'PEEK') {
+   setMobileSheetSnap('PEEK');
  }
  };
 
@@ -789,11 +911,11 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
       item.garment.subCategory,
       item.garment.title
     );
-    const curOffX = item.offsetX !== 0 ? item.offsetX : defaultOffs.offsetX;
-    const curOffY = item.offsetY !== 0 ? item.offsetY : defaultOffs.offsetY;
-    const curScale = item.scale !== 1 ? item.scale : defaultOffs.scale;
-    const curScaleX = item.scaleX ?? curScale;
-    const curScaleY = item.scaleY ?? curScale;
+    const curOffX = item.offsetX !== undefined ? item.offsetX : defaultOffs.offsetX;
+    const curOffY = item.offsetY !== undefined ? item.offsetY : defaultOffs.offsetY;
+    const curScale = item.scale !== undefined ? item.scale : defaultOffs.scale;
+    const curScaleX = item.scaleX !== undefined ? item.scaleX : curScale;
+    const curScaleY = item.scaleY !== undefined ? item.scaleY : curScale;
 
     setSelectedItemId(garmentId);
     setTransformDrag({
@@ -836,18 +958,39 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
       } else if (type === 'RESIZE_BR') {
         const diagDelta = (deltaX + deltaY) / 2;
         const scaleDelta = diagDelta * 0.0035;
-        const newScale = Math.max(0.12, Math.min(2.5, Number((startScale + scaleDelta).toFixed(3))));
+        const newScale = Math.max(0.15, Math.min(2.5, Number((startScale + scaleDelta).toFixed(3))));
+        const ratio = newScale / Math.max(0.01, startScale);
+        const newScaleX = Math.max(0.12, Math.min(2.5, Number((startScaleX * ratio).toFixed(3))));
+        const newScaleY = Math.max(0.12, Math.min(2.5, Number((startScaleY * ratio).toFixed(3))));
+
+        // 解剖学上下自适应位移补偿 (上衣锁骨锚定、下装腰线锚定、鞋靴地面锚定)
+        const currentItem = wornItems.find((i) => i.garment.id === garmentId);
+        const isTop = currentItem?.garment.primaryCategory === 'TOPS' || currentItem?.garment.primaryCategory === 'OUTERWEAR';
+        const isBottom = currentItem?.garment.primaryCategory === 'BOTTOMS';
+        const isShoes = currentItem?.garment.primaryCategory === 'FOOTWEAR';
+        const baseH = 260;
+        const deltaScaleY = newScaleY - startScaleY;
+        let newOffsetY = startOffsetY;
+        if (isTop) {
+          newOffsetY = Number((startOffsetY + deltaScaleY * (baseH * 0.42)).toFixed(2));
+        } else if (isBottom) {
+          newOffsetY = Number((startOffsetY + deltaScaleY * (baseH * 0.45)).toFixed(2));
+        } else if (isShoes) {
+          newOffsetY = Number((startOffsetY - deltaScaleY * (baseH * 0.45)).toFixed(2));
+        }
+
         onUpdateWornItem(garmentId, {
           scale: newScale,
-          scaleX: newScale,
-          scaleY: newScale,
+          scaleX: newScaleX,
+          scaleY: newScaleY,
+          offsetY: newOffsetY,
         });
         saveCustomAdjustment(garmentId, {
           offsetX: customAdjustments[garmentId]?.offsetX ?? startOffsetX,
-          offsetY: customAdjustments[garmentId]?.offsetY ?? startOffsetY,
+          offsetY: newOffsetY,
           scale: newScale,
-          scaleX: newScale,
-          scaleY: newScale,
+          scaleX: newScaleX,
+          scaleY: newScaleY,
         });
       } else if (type === 'STRETCH_R' || type === 'STRETCH_L') {
         const factor = type === 'STRETCH_R' ? 1 : -1;
@@ -867,12 +1010,20 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
         const factor = type === 'STRETCH_B' ? 1 : -1;
         const scaleYDelta = deltaY * 0.0035 * factor;
         const newScaleY = Math.max(0.12, Math.min(2.5, Number((startScaleY + scaleYDelta).toFixed(3))));
+        const baseH = 260;
+        const deltaYChange = (newScaleY - startScaleY) * (baseH * 0.5);
+        // 底部手柄向下拉：顶部领口固定，下摆向下延展 => offsetY += deltaYChange / 2
+        // 顶部手柄向上拉：底部下摆固定，领口向上延展 => offsetY -= deltaYChange / 2
+        const offsetCompensation = type === 'STRETCH_B' ? (deltaYChange / 2) : -(deltaYChange / 2);
+        const newOffsetY = Number((startOffsetY + offsetCompensation).toFixed(2));
+
         onUpdateWornItem(garmentId, {
           scaleY: newScaleY,
+          offsetY: newOffsetY,
         });
         saveCustomAdjustment(garmentId, {
           offsetX: customAdjustments[garmentId]?.offsetX ?? startOffsetX,
-          offsetY: customAdjustments[garmentId]?.offsetY ?? startOffsetY,
+          offsetY: newOffsetY,
           scale: customAdjustments[garmentId]?.scale ?? startScale,
           scaleX: customAdjustments[garmentId]?.scaleX ?? startScaleX,
           scaleY: newScaleY,
@@ -1054,7 +1205,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  </div>
  <div>
  <h3 className="text-sm font-extrabold text-stone-900"> AI 高清试穿成片已就绪</h3>
- <p className="text-[10px] text-stone-400">Diffusion VTON 商业杂志级 8K 影棚试穿成片</p>
+ <p className="text-[10px] text-stone-400">AI 商业摄影试穿大片</p>
  </div>
  </div>
  <button
@@ -1103,7 +1254,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  className="px-4 py-2 bg-[#D63031] hover:bg-[#c0392b] text-white rounded-xl text-xs font-bold shadow-xs flex items-center gap-1.5 transition-colors"
  >
  <Eye className="w-3.5 h-3.5" />
- <span>下载 8K 原图</span>
+ <span>下载成片原图</span>
  </a>
  </div>
  </div>
@@ -1240,95 +1391,128 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  {/* ------------------------------------------------------------- */}
  {/* 左侧 45%：巴黎法式 Ins 数字化衣橱 */}
  {/* ------------------------------------------------------------- */}
-  {/* 移动端抽屉展开或拖拽时的半透明轻奢遮罩 (点击空白一键回弹至 PEEK) */}
-  {(mobileSheetSnap !== 'PEEK' || (sheetDragHeight !== null && sheetDragHeight > 140)) && (
+  {/* 移动端抽屉展开时的半透明轻奢遮罩 (点击空白一键回弹至 PEEK) */}
+  {mobileSheetSnap === 'FULL' && (
     <div
       onClick={() => setMobileSheetSnap('PEEK')}
-      className="md:hidden fixed top-[56px] bottom-[60px] inset-x-0 bg-gradient-to-b from-stone-950/15 via-stone-950/25 to-stone-950/30 backdrop-blur-[2px] z-[35] transition-opacity duration-300 animate-in fade-in"
+      className="md:hidden fixed top-[56px] bottom-[calc(60px+env(safe-area-inset-bottom,0px))] inset-x-0 bg-gradient-to-b from-stone-950/15 via-stone-950/25 to-stone-950/30 backdrop-blur-[2px] z-[35] transition-opacity duration-300 animate-in fade-in"
     />
   )}
 
-  {/* 移动端三档滑盖 Bottom Sheet / 桌面端左侧 45% 分栏 (移动端实心纯白防透，层级z-50绝对统治) */}
-  <div
-    ref={sheetContainerRef}
-    style={sheetDragHeight !== null ? { height: `${sheetDragHeight}px`, transition: 'none' } : undefined}
-    className={`bg-white md:bg-white/95 backdrop-blur-xl shrink-0 z-50 md:z-auto transition-all duration-350 ease-[cubic-bezier(0.32,0.72,0,1)] flex flex-col ${
-     isWardrobeCollapsed
-       ? 'w-0 h-0 opacity-0 overflow-hidden border-0 pointer-events-none'
-       : mobileSheetSnap === 'PEEK'
-       ? 'fixed md:relative bottom-[calc(60px+env(safe-area-inset-bottom,0px))] md:bottom-0 left-0 right-0 h-[130px] md:h-full w-full md:w-[48%] lg:w-[46%] xl:w-[45%] 2xl:w-[44%] rounded-t-3xl md:rounded-none border-t md:border-t-0 md:border-r border-[#EAE6DF] shadow-2xl md:shadow-xs overflow-hidden md:overflow-visible'
-       : mobileSheetSnap === 'HALF'
-       ? 'fixed md:relative bottom-[calc(60px+env(safe-area-inset-bottom,0px))] md:bottom-0 left-0 right-0 h-[50vh] md:h-full w-full md:w-[48%] lg:w-[46%] xl:w-[45%] 2xl:w-[44%] rounded-t-3xl md:rounded-none border-t md:border-t-0 md:border-r border-[#EAE6DF] shadow-2xl md:shadow-xs'
-       : 'fixed md:relative bottom-[calc(60px+env(safe-area-inset-bottom,0px))] md:bottom-0 left-0 right-0 h-[calc(100dvh-115px)] md:h-full w-full md:w-[48%] lg:w-[46%] xl:w-[45%] 2xl:w-[44%] rounded-t-3xl md:rounded-none border-t md:border-t-0 md:border-r border-[#EAE6DF] shadow-2xl md:shadow-xs'
-   }`}>
+  {/* 移动端两档滑盖视口容器 (下边界严格锚定在 bottom: 60px 之上，下沿与菜单栏严丝合缝贴合，0 悬空、0 遮挡) */}
+  <div className="fixed md:relative top-[56px] md:top-auto bottom-[calc(60px+env(safe-area-inset-bottom,0px))] md:bottom-0 left-0 right-0 z-40 md:z-auto pointer-events-none md:pointer-events-auto overflow-hidden md:overflow-visible w-full md:w-[48%] lg:w-[46%] xl:w-[45%] 2xl:w-[44%] md:h-full flex flex-col justify-end md:justify-start">
+    <div
+      ref={sheetContainerRef}
+      className={`bg-white md:bg-white/95 backdrop-blur-xl shrink-0 pointer-events-auto transition-[height] duration-320 ease-[cubic-bezier(0.32,0.72,0,1)] flex flex-col overflow-hidden md:overflow-visible ${
+        isWardrobeCollapsed
+          ? 'w-0 h-0 opacity-0 overflow-hidden border-0 pointer-events-none'
+          : mobileSheetSnap === 'COLLAPSED'
+          ? 'w-full h-[28px] md:h-full rounded-t-2xl md:rounded-none border-t md:border-t-0 md:border-r border-[#EAE6DF] shadow-md md:shadow-xs'
+          : mobileSheetSnap === 'PEEK'
+          ? 'w-full h-[142px] md:h-full rounded-t-3xl md:rounded-none border-t md:border-t-0 md:border-r border-[#EAE6DF] shadow-2xl md:shadow-xs'
+          : 'w-full h-[calc(100dvh-130px)] md:h-full rounded-t-3xl md:rounded-none border-t md:border-t-0 md:border-r border-[#EAE6DF] shadow-2xl md:shadow-xs'
+      }`}>
 
-    {/* 移动端吸顶拖拽指示手柄 (实时跟手拖拽 + 点击双模支持) */}
+    {/* 移动端专属：吸顶拖拽指示手柄 (上半部专用触摸块，支持全收、常驻小抽屉与沉浸大抽屉) */}
     <div
       onTouchStart={handleSheetTouchStart}
       onTouchMove={handleSheetTouchMove}
       onTouchEnd={handleSheetTouchEnd}
       onClick={() => {
         if (isDraggingSheet.current) return;
-        if (mobileSheetSnap === 'PEEK') setMobileSheetSnap('HALF');
-        else if (mobileSheetSnap === 'HALF') setMobileSheetSnap('FULL');
-        else setMobileSheetSnap('PEEK');
+        if (mobileSheetSnap === 'COLLAPSED') {
+          setMobileSheetSnap('PEEK');
+        } else if (mobileSheetSnap === 'PEEK') {
+          setMobileSheetSnap('FULL');
+        } else {
+          setMobileSheetSnap('PEEK');
+        }
       }}
-      className="md:hidden w-full pt-2.5 pb-1 flex flex-col items-center justify-center cursor-pointer select-none active:opacity-60 shrink-0 touch-none"
+      className={`md:hidden w-full flex items-center justify-center cursor-pointer select-none active:opacity-60 shrink-0 touch-none transition-all ${
+        mobileSheetSnap === 'COLLAPSED' ? 'h-[28px] px-3' : 'pt-2.5 pb-1.5 px-3'
+      }`}
     >
-      <div className="w-10 h-1.5 bg-stone-300 rounded-full" />
-      <div className="flex items-center gap-1 text-[9px] text-stone-400 font-bold mt-0.5">
-        <span>
-          {mobileSheetSnap === 'PEEK'
-            ? '▲ 上滑展开全部单品'
-            : mobileSheetSnap === 'HALF'
-            ? '▲ 上滑展开高级筛选 / ▼ 下滑收起'
-            : '▼ 下滑或点击收起'}
-        </span>
-      </div>
+      {mobileSheetSnap === 'COLLAPSED' ? (
+        <div className="flex items-center justify-center gap-1.5 text-[10px] font-bold text-stone-500">
+          <ChevronUp className="w-3.5 h-3.5 text-[#D63031] animate-bounce" />
+          <span>展开衣橱 ({allGarments.length})</span>
+        </div>
+      ) : (
+        <div className="w-full relative flex flex-col items-center justify-center">
+          <div className="w-10 h-1.5 bg-stone-300 rounded-full" />
+          <div className="flex items-center gap-1 text-[9px] text-stone-400 font-bold mt-0.5">
+            <span>
+              {mobileSheetSnap === 'PEEK'
+                ? '▲ 上滑大抽屉'
+                : '▼ 下滑收起'}
+            </span>
+          </div>
+          {/* PEEK 模式下右侧常驻一键全收按钮 */}
+          {mobileSheetSnap === 'PEEK' && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setMobileSheetSnap('COLLAPSED');
+              }}
+              className="absolute right-0 top-1/2 -translate-y-1/2 px-2 py-0.5 bg-stone-100 hover:bg-stone-200 text-stone-600 rounded-full text-[9px] font-bold flex items-center gap-0.5 shadow-2xs transition-all active:scale-95 cursor-pointer"
+              title="全收起衣橱，纯净预览模特全身"
+            >
+              <ChevronDown className="w-2.5 h-2.5 text-stone-500" />
+              <span>全收</span>
+            </button>
+          )}
+        </div>
+      )}
     </div>
  
- {/* 顶部控制栏 */}
-  <div className={`p-4 border-b border-[#EAE6DF] space-y-3 bg-[#FAF8F5]/60 shrink-0 ${mobileSheetSnap === 'PEEK' ? 'hidden md:block' : 'block'}`}>
- <div className="flex items-center justify-between gap-2 overflow-x-auto scrollbar-none pb-0.5">
- <div className="flex items-center gap-1 bg-[#EFECE6] p-1 rounded-2xl shrink-0">
- <button
- onClick={() => setWardrobeTab('PRIVATE')}
- className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap shrink-0 ${
- wardrobeTab === 'PRIVATE'
- ? 'bg-white text-[#D63031] shadow-xs'
- : 'text-stone-600 hover:text-stone-900'
- }`}
- >
- 私有衣橱 ({allGarments.length})
- </button>
- <button
- onClick={() => setWardrobeTab('PUBLIC')}
- className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap shrink-0 ${
- wardrobeTab === 'PUBLIC'
- ? 'bg-white text-[#D63031] shadow-xs'
- : 'text-stone-600 hover:text-stone-900'
- }`}
- >
- 公共单品 ({publicGarments.length})
- </button>
- </div>
+  {/* 顶部控制栏 */}
+  <div className={`px-3 py-2.5 sm:p-4 border-b border-[#EAE6DF] space-y-2.5 bg-[#FAF8F5]/60 shrink-0 ${mobileSheetSnap === 'PEEK' || mobileSheetSnap === 'COLLAPSED' ? 'hidden md:block' : 'block'}`}>
+    <div className="flex items-center justify-between gap-1.5 sm:gap-2 overflow-x-auto scrollbar-none pb-0.5">
+      <div className="flex items-center gap-0.5 sm:gap-1 bg-[#EFECE6] p-0.5 sm:p-1 rounded-xl sm:rounded-2xl shrink-0">
+        <button
+          onClick={() => setWardrobeTab('PRIVATE')}
+          className={`px-2.5 sm:px-3.5 py-1.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition-all whitespace-nowrap shrink-0 ${
+            wardrobeTab === 'PRIVATE'
+              ? 'bg-white text-[#D63031] shadow-xs'
+              : 'text-stone-600 hover:text-stone-900'
+          }`}
+        >
+          <span className="inline sm:hidden">私有 ({allGarments.length})</span>
+          <span className="hidden sm:inline">私有衣橱 ({allGarments.length})</span>
+        </button>
+        <button
+          onClick={() => setWardrobeTab('PUBLIC')}
+          className={`px-2.5 sm:px-3.5 py-1.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition-all whitespace-nowrap shrink-0 ${
+            wardrobeTab === 'PUBLIC'
+              ? 'bg-white text-[#D63031] shadow-xs'
+              : 'text-stone-600 hover:text-stone-900'
+          }`}
+        >
+          <span className="inline sm:hidden">公共 ({publicGarments.length})</span>
+          <span className="hidden sm:inline">公共单品 ({publicGarments.length})</span>
+        </button>
+      </div>
 
- <div className="flex items-center gap-1.5 shrink-0">
- <button
- onClick={() => setIsSlotMachineOpen(true)}
- className="px-2.5 sm:px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200/80 rounded-xl text-xs font-bold flex items-center gap-1 transition-all shadow-2xs whitespace-nowrap shrink-0"
- >
- <Dices className="w-3.5 h-3.5 text-amber-700 stroke-[1.75]" />
- <span>随机推荐</span>
- </button>
+      <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+        <button
+          onClick={() => setIsSlotMachineOpen(true)}
+          className="p-1.5 sm:px-3 sm:py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200/80 rounded-xl text-xs font-bold flex items-center gap-1 transition-all shadow-2xs whitespace-nowrap shrink-0"
+          title="随机推荐搭配灵感"
+        >
+          <Dices className="w-3.5 h-3.5 text-amber-700 stroke-[1.75]" />
+          <span className="hidden sm:inline">随机推荐</span>
+        </button>
 
- <button
- onClick={() => fileInputRef.current?.click()}
- className="px-3 py-1.5 bg-[#2D3436] hover:bg-black text-white rounded-xl text-xs font-bold flex items-center gap-1 transition-all shadow-2xs whitespace-nowrap shrink-0"
- >
- <Plus className="w-3.5 h-3.5 stroke-[2]" />
- <span>智能录入</span>
- </button>
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          className="px-2 sm:px-3 py-1.5 bg-[#2D3436] hover:bg-black text-white rounded-xl text-[11px] sm:text-xs font-bold flex items-center gap-1 transition-all shadow-2xs whitespace-nowrap shrink-0"
+          title="上传照片智能识别服装"
+        >
+          <Plus className="w-3.5 h-3.5 stroke-[2]" />
+          <span className="inline sm:hidden">录入</span>
+          <span className="hidden sm:inline">智能录入</span>
+        </button>
               <button
                 type="button"
                 onClick={() => setIsWardrobeCollapsed(true)}
@@ -1348,142 +1532,36 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  </div>
  </div>
 
- {/* Row 1: 一级大类分类胶囊 */}
- <div className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-none">
- {[
- { key: 'ALL', label: '全部' },
- { key: 'TOPS', label: '上装' },
- { key: 'BOTTOMS', label: '下装' },
- { key: 'OUTERWEAR', label: '外套' },
- { key: 'FOOTWEAR', label: '鞋履' },
- { key: 'ACCESSORIES', label: '配饰' },
- ].map((cat) => (
- <button
- key={cat.key}
- onClick={() => setSelectedCategory(cat.key as any)}
- className={`px-3 py-1 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
- selectedCategory === cat.key
- ? 'bg-[#2D3436] text-white shadow-xs'
- : 'bg-white border border-[#EAE6DF] text-stone-600 hover:border-stone-400'
- }`}
- >
- {cat.label}
- </button>
- ))}
- </div>
+        {/* 全新通用服装多维筛选 Bar 与抽屉 */}
+        <div className="pt-1 border-t border-[#EAE6DF]/60">
+          <GarmentFilterBar
+            filters={filterState}
+            onUpdateFilters={(patch) => setFilterState((prev) => ({ ...prev, ...patch }))}
+            onResetFilters={() =>
+              setFilterState({
+                category: 'ALL',
+                colors: [],
+                subCategories: [],
+                patterns: [],
+                seasons: [],
+                occasions: [],
+                searchQuery: '',
+                wearState: 'ALL',
+              })
+            }
+            totalMatches={filteredGarments.length}
+            showWearStateFilter={true}
+            compactMode={true}
+            isAdvancedOpen={isAdvFilterOpen}
+            onToggleAdvanced={(open) => setIsAdvFilterOpen(open)}
+          />
+        </div>
+      </div>
 
- {/* Row 2: 常驻 12 色谱圆点多选条 */}
- <div className="flex items-center justify-between gap-2 pt-1 border-t border-[#EAE6DF]/60">
- <div className="flex items-center gap-1.5 overflow-x-auto py-1 scrollbar-none flex-1">
- <span className="text-[10px] font-bold text-stone-400 shrink-0">颜色:</span>
- {COLOR_PALETTE.map((pal) => {
- const isSelected = selectedColors.includes(pal.key);
- return (
- <button
- key={pal.key}
- type="button"
- title={pal.label}
- onClick={() => handleToggleColor(pal.key)}
- className={`w-5 h-5 rounded-full border transition-all flex items-center justify-center shrink-0 relative shadow-2xs ${
- isSelected
- ? 'ring-2 ring-[#D63031] ring-offset-1 scale-110 border-stone-800'
- : 'border-stone-400/80 ring-1 ring-black/10 hover:scale-105'
- }`}
- style={{ backgroundColor: pal.hex }}
- >
- {isSelected && (
- <Check className={`w-3 h-3 stroke-[3] ${pal.key === 'white' || pal.key === 'yellow' || pal.key === 'beige' ? 'text-stone-900' : 'text-white'}`} />
- )}
- </button>
- );
- })}
- </div>
-
- <button
- type="button"
- onClick={() => setIsAdvancedFilterOpen(!isAdvancedFilterOpen)}
- className={`px-2.5 py-1 rounded-xl text-[11px] font-bold border transition-colors flex items-center gap-1 shrink-0 ${
- isAdvancedFilterOpen || selectedSubCategories.length > 0 || selectedPatterns.length > 0
- ? 'bg-rose-50 border-[#D63031] text-[#D63031]'
- : 'bg-white border-[#EAE6DF] text-stone-600 hover:bg-stone-50'
- }`}
- >
- <Filter className="w-3 h-3" />
- <span>款式/花纹</span>
- {isAdvancedFilterOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
- </button>
- </div>
-
- {/* Row 3: 展开式高级细分面板 */}
- {isAdvancedFilterOpen && (
- <div className="bg-white p-3.5 rounded-2xl border border-[#EAE6DF] space-y-2.5 animate-in fade-in text-left shadow-sm">
- <div className="space-y-1">
- <span className="text-[10px] font-bold text-stone-400">细分款式 (多选):</span>
- <div className="flex flex-wrap gap-1.5">
- {SUB_CATEGORIES.map((sub) => {
- const isSelected = selectedSubCategories.includes(sub);
- return (
- <button
- key={sub}
- type="button"
- onClick={() => handleToggleSubCategory(sub)}
- className={`px-2.5 py-0.5 rounded-lg text-[11px] font-bold border transition-all ${
- isSelected
- ? 'bg-stone-900 text-white border-stone-900 shadow-2xs'
- : 'bg-[#FAF8F5] text-stone-600 border-[#EAE6DF] hover:border-stone-400'
- }`}
- >
- {sub}
- </button>
- );
- })}
- </div>
- </div>
-
- <div className="space-y-1 pt-1 border-t border-stone-100">
- <span className="text-[10px] font-bold text-stone-400">面料图案 (多选):</span>
- <div className="flex flex-wrap gap-1.5">
- {PATTERN_OPTIONS.map((pat) => {
- const isSelected = selectedPatterns.includes(pat.key);
- return (
- <button
- key={pat.key}
- type="button"
- onClick={() => handleTogglePattern(pat.key)}
- className={`px-2.5 py-0.5 rounded-lg text-[11px] font-bold border transition-all ${
- isSelected
- ? 'bg-stone-900 text-white border-stone-900 shadow-2xs'
- : 'bg-[#FAF8F5] text-stone-600 border-[#EAE6DF] hover:border-stone-400'
- }`}
- >
- {pat.label}
- </button>
- );
- })}
- </div>
- </div>
-
- <div className="flex justify-end pt-1">
- <button
- type="button"
- onClick={handleResetFilters}
- className="text-[10px] text-stone-400 hover:text-[#D63031] font-bold flex items-center gap-0.5"
- >
- <RotateCcw className="w-3 h-3" />
- <span>重置所有筛选</span>
- </button>
- </div>
- </div>
- )}
- </div>
-
-        {/* 移动端 PEEK 模式单排横滑流 (零遮挡模特，即点即穿，支持跟手拖拽) */}
+        {/* 移动端 PEEK 模式单排横滑流 (零遮挡模特，专职横向浏览单品，绝不干扰抽屉拖拽) */}
         {mobileSheetSnap === 'PEEK' && (
           <div
-            onTouchStart={handleSheetTouchStart}
-            onTouchMove={handleSheetTouchMove}
-            onTouchEnd={handleSheetTouchEnd}
-            className="md:hidden flex flex-col gap-1 px-3 pb-1 overflow-hidden shrink-0"
+            className="md:hidden flex flex-col gap-1 px-3 pb-2.5 overflow-hidden shrink-0"
           >
             {/* 极简分类胶囊条 */}
             <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-0.5 shrink-0">
@@ -1497,9 +1575,9 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
               ].map((cat) => (
                 <button
                   key={cat.key}
-                  onClick={() => setSelectedCategory(cat.key as any)}
+                  onClick={() => setFilterState((prev) => ({ ...prev, category: cat.key }))}
                   className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold shrink-0 transition-all whitespace-nowrap ${
-                    selectedCategory === cat.key ? 'bg-[#D63031] text-white shadow-2xs' : 'bg-stone-100 text-stone-600'
+                    filterState.category === cat.key ? 'bg-[#D63031] text-white shadow-2xs' : 'bg-stone-100 text-stone-600'
                   }`}
                 >
                   {cat.label}
@@ -1516,17 +1594,31 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
                     key={garment.id}
                     data-testid="garment-card"
                     onClick={() => handleWearWithPlacement(garment)}
-                    className={`w-14 h-14 shrink-0 bg-white rounded-xl border p-1 flex items-center justify-center relative cursor-pointer active:scale-95 transition-transform ${
+                    className={`w-16 h-16 shrink-0 bg-white rounded-xl border p-1 flex items-center justify-center relative cursor-pointer active:scale-95 transition-transform ${
                       isWorn ? 'border-[#D63031] ring-2 ring-[#D63031]/20' : 'border-[#EAE6DF]'
                     }`}
                   >
+                    {/* 360° 单品档案详情入口 (ⓘ) */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedItemId(null);
+                        setSelectedGarmentForDrawer(garment);
+                      }}
+                      className="absolute top-1 left-1 z-20 w-4 h-4 rounded-full bg-white/90 hover:bg-white text-stone-600 hover:text-stone-950 border border-stone-200/90 shadow-2xs flex items-center justify-center transition-transform active:scale-125 pointer-events-auto"
+                      title="查看单品 360° 档案"
+                    >
+                      <Info className="w-2.5 h-2.5 stroke-[2.5]" />
+                    </button>
+
                     <img
                       src={garment.assets?.[0]?.pngUrl}
                       alt={garment.title}
                       className="max-h-full max-w-full object-contain"
                     />
                     {isWorn && (
-                      <div className="absolute top-0.5 right-0.5 bg-[#D63031] text-white p-0.5 rounded-full shadow-xs">
+                      <div className="absolute top-1 right-1 bg-[#D63031] text-white p-0.5 rounded-full shadow-xs">
                         <Check className="w-2.5 h-2.5 stroke-[3]" />
                       </div>
                     )}
@@ -1537,18 +1629,18 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
           </div>
         )}
 
-        {/* 单品网格列表 (HALF / FULL 或桌面端展示) */}
-        <div className={`flex-1 overflow-y-auto p-4 scrollbar-thin ${mobileSheetSnap === 'PEEK' ? 'hidden md:block' : 'block'}`}>
+        {/* 单品网格列表 (FULL 展开或桌面端展示) */}
+        <div className={`flex-1 min-h-0 overflow-y-auto p-4 scrollbar-thin ${mobileSheetSnap === 'PEEK' ? 'hidden md:block' : 'block'}`}>
  {filteredGarments.length === 0 ? (
  <div className="h-full flex flex-col items-center justify-center text-stone-400 space-y-2 py-12">
  <Shirt className="w-8 h-8 stroke-[1.25] text-stone-300" />
  <p className="text-xs">未找到符合当前筛选条件的衣物</p>
- <button
- onClick={handleResetFilters}
- className="text-xs text-[#D63031] font-bold hover:underline"
- >
- 清空筛选条件
- </button>
+                  <button
+                    onClick={handleResetAllFilters}
+                    className="text-xs text-[#D63031] font-bold hover:underline"
+                  >
+                    清空筛选条件
+                  </button>
  </div>
  ) : (
  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -1611,6 +1703,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  )}
  </div>
  </div>
+ </div>
 
  {/* ------------------------------------------------------------- */}
  {/* 右侧 55%：自由大画布与模特舞台 */}
@@ -1625,9 +1718,9 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
           background: 'radial-gradient(circle at 50% 40%, #FFFFFF 0%, #FAF8F5 55%, #EDE7DD 100%)',
         }}
  >
-        {/* 移动端专属：画布顶端内嵌轻奢控制胶囊条 (抽屉展开时智能淡出避让) */}
+        {/* 移动端专属：画布顶端内嵌轻奢控制胶囊条 (抽屉大展开时智能淡出避让) */}
         <div className={`md:hidden absolute top-2.5 inset-x-3 z-20 flex items-center justify-between pointer-events-auto select-none transition-all duration-200 ${
-          (mobileSheetSnap === 'PEEK' && (sheetDragHeight === null || sheetDragHeight <= 140)) ? 'opacity-100' : 'opacity-0 pointer-events-none'
+          mobileSheetSnap !== 'FULL' ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}>
           {/* 2D / 3D 模式微型胶囊 */}
           <div className="flex items-center bg-white/95 backdrop-blur-md p-0.5 rounded-2xl border border-[#EAE6DF] shadow-md">
@@ -1686,30 +1779,63 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
               );
             })()}
 
-            <button
-              onClick={() => setIsLayerPanelOpen(!isLayerPanelOpen)}
-              className="px-2.5 py-1 bg-white/95 backdrop-blur-md text-stone-700 rounded-2xl border border-[#EAE6DF] text-[11px] font-bold shadow-md flex items-center gap-1 active:scale-95 transition-transform"
-            >
-              <Layers className="w-3 h-3 text-stone-500" />
-              <span>{wornItems.length}</span>
-            </button>
-
-            <button
-              disabled={wornItems.length === 0}
-              onClick={onClearCanvas}
-              className="p-1.5 bg-white/95 backdrop-blur-md text-stone-500 hover:text-rose-600 disabled:opacity-30 rounded-2xl border border-[#EAE6DF] shadow-md transition-all active:scale-95"
-              title="一键清空"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-            </button>
+            {/* 图层拓扑与一键清空一体化胶囊 (视觉平衡对称，消除置灰残缺感) */}
+            <div className="flex items-center bg-white/95 backdrop-blur-md p-0.5 rounded-2xl border border-[#EAE6DF] shadow-md">
+              <button
+                type="button"
+                onClick={() => setIsLayerPanelOpen(!isLayerPanelOpen)}
+                className="px-2 py-1 text-stone-700 hover:text-stone-900 text-[11px] font-bold flex items-center gap-1 active:scale-95 transition-transform"
+                title="查看穿戴图层拓扑"
+              >
+                <Layers className="w-3 h-3 text-stone-500" />
+                <span>{wornItems.length}</span>
+              </button>
+              <div className="w-[1px] h-3.5 bg-stone-200" />
+              <button
+                type="button"
+                disabled={wornItems.length === 0}
+                onClick={onClearCanvas}
+                className="p-1 text-stone-400 hover:text-rose-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-95"
+                title={wornItems.length === 0 ? "暂无穿戴单品" : "一键清空画布穿戴"}
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* 移动端专属：大拇指热区悬浮核心行动 FAB (视口固定安全避让，抽屉展开时平滑隐退) */}
-        <div className={`md:hidden fixed right-4 bottom-[calc(60px+130px+12px+env(safe-area-inset-bottom,0px))] z-30 flex flex-col items-end gap-2 pointer-events-auto transition-all duration-200 ${
-          (mobileSheetSnap === 'PEEK' && (sheetDragHeight === null || sheetDragHeight <= 140)) ? 'opacity-100 scale-100 translate-y-0 pointer-events-auto' : 'opacity-0 scale-90 translate-y-3 pointer-events-none'
-        }`}>
-          {/* 保存搭配按钮 */}
+        {/* 移动端专属：横向轻奢悬浮行动栏 (抽屉顶沿安全悬浮，自适应联动全收与常驻，彻底释放模特线条) */}
+        <div
+          className={`md:hidden fixed right-3 z-30 flex items-center gap-2 pointer-events-auto transition-all duration-300 ${
+            mobileSheetSnap === 'FULL'
+              ? 'opacity-0 scale-90 translate-y-3 pointer-events-none'
+              : 'opacity-100 scale-100 translate-y-0 pointer-events-auto'
+          }`}
+          style={{
+            bottom: mobileSheetSnap === 'COLLAPSED'
+              ? 'calc(60px + 28px + 10px + env(safe-area-inset-bottom,0px))'
+              : 'calc(60px + 142px + 12px + env(safe-area-inset-bottom,0px))',
+          }}
+        >
+          {/* 直出海报微钮 */}
+          <button
+            type="button"
+            onClick={() => {
+              if (wornItems.length === 0) {
+                showToast('请先穿戴单品后再直出 OOTD 海报！', 'info');
+                return;
+              }
+              setIsInstantPosterOpen(true);
+            }}
+            className={`w-8 h-8 bg-stone-900/90 hover:bg-black backdrop-blur-md text-white rounded-full border border-stone-700/80 shadow-md flex items-center justify-center active:scale-90 transition-all cursor-pointer ${
+              wornItems.length === 0 ? 'opacity-60' : 'opacity-100'
+            }`}
+            title="直出 OOTD 时尚海报"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-[#E17055]" />
+          </button>
+
+          {/* 保存搭配微钮 */}
           <button
             type="button"
             onClick={() => {
@@ -1719,25 +1845,25 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
               }
               setIsLookbookModalOpen(true);
             }}
-            className={`w-10 h-10 bg-white/95 backdrop-blur-md text-stone-700 rounded-full border border-[#EAE6DF] shadow-lg flex items-center justify-center active:scale-90 transition-all cursor-pointer ${
+            className={`w-8 h-8 bg-white/95 hover:bg-white backdrop-blur-md text-stone-700 rounded-full border border-[#EAE6DF] shadow-md flex items-center justify-center active:scale-90 transition-all cursor-pointer ${
               wornItems.length === 0 ? 'opacity-60' : 'opacity-100'
             }`}
             title="保存至搭配日历"
           >
-            <Heart className="w-4 h-4 text-[#D63031] stroke-[2]" />
+            <Heart className="w-3.5 h-3.5 text-[#D63031] stroke-[2]" />
           </button>
 
-          {/* AI 试穿大片高光 FAB */}
+          {/* AI 试穿大片高光主行动按钮 */}
           <button
             type="button"
             disabled={isRendering}
             onClick={handleMobileTriggerVton}
-            className={`relative overflow-hidden px-4 py-2.5 bg-gradient-to-tr from-[#9E1B1B] via-[#D63031] to-[#E17055] text-white rounded-full text-xs font-black shadow-xl flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer group ${
+            className={`relative overflow-hidden px-3.5 py-1.5 bg-gradient-to-tr from-[#9E1B1B] via-[#D63031] to-[#E17055] text-white rounded-full text-[11px] font-black shadow-lg flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer group ${
               isRendering ? 'opacity-70 cursor-wait' : wornItems.length === 0 ? 'opacity-65' : 'opacity-100'
             }`}
           >
             <div className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/20 to-transparent animate-luxury-shimmer pointer-events-none" />
-            <Sparkles className={`w-4 h-4 ${isRendering ? 'animate-spin' : ''} stroke-[2] relative z-10`} />
+            <Sparkles className={`w-3.5 h-3.5 ${isRendering ? 'animate-spin' : ''} stroke-[2] relative z-10`} />
             <span className="relative z-10">{isRendering ? 'AI 渲染中' : 'AI 试穿大片'}</span>
           </button>
         </div>
@@ -1757,8 +1883,8 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
           </div>
         )}
 
-        {/* 画布中央舞台与左右自适应居中侧翼坞 (手机端顶部靠齐消除死白，宽屏三栏物理对称) */}
-        <div className="absolute inset-0 flex flex-col md:flex-row items-center justify-start md:justify-between pt-13 pb-2 px-2 sm:p-3 pointer-events-none">
+        {/* 画布中央舞台与左右侧翼坞 (移动端自适应净工作区绝对物理垂直居中，杜绝上窄下宽；宽屏三栏物理对称) */}
+        <div className="absolute top-0 bottom-[calc(60px+142px+env(safe-area-inset-bottom,0px))] inset-x-0 md:inset-0 flex flex-col md:flex-row items-center justify-center md:justify-between pt-11 pb-2 px-3 md:p-3 pointer-events-none">
           {/* 左侧翼槽区：自然占据 (舞台左边缘 ~ 画布左边缘) 的全部空间，内部居中放置左翼悬浮坞 */}
           <div
             ref={leftWingSlotRef}
@@ -1813,9 +1939,6 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
           >
             <Sparkles className="w-4 h-4 shrink-0 stroke-[2]" />
             <span className={isCompactWing ? "hidden" : "hidden lg:inline text-xs"}>3D 大片</span>
-            {renderedImageUrl && (
-              <span className={`w-2 h-2 rounded-full bg-emerald-400 animate-pulse ${isCompactWing ? "absolute top-1.5 right-1.5" : "absolute top-1.5 right-1.5 lg:static lg:ml-auto"}`} />
-            )}
           </button>
         </div>
 
@@ -2047,13 +2170,16 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
             </div>
           </div>
 
-          {/* 中间 3:4 模特舞台：固有比例 shrink-0 居中 */}
-           <div
- onClick={() => setSelectedItemId(null)}
- className="relative shrink-0 w-full max-w-[calc(100vw-28px)] max-h-[calc(100dvh-250px)] h-[calc(100dvh-250px)] md:w-auto md:h-[88vh] md:max-h-[880px] aspect-[3/4] rounded-3xl border border-stone-200/80 bg-white/95 shadow-2xl shadow-stone-300/40 flex items-center justify-center overflow-visible pointer-events-auto transition-all"
- >
- {/* 模特景深光晕底座 */}
- <div className="absolute inset-x-8 bottom-0 h-16 bg-stone-300/30 blur-xl rounded-full pointer-events-none" />
+          {/* 中间 3:4 模特舞台：固有比例 shrink-0 居中 (选中鞋靴时移动端平滑上移防抽屉遮挡) */}
+          {(() => {
+            const isSelectedFootwear = selectedItemId && wornItems.some((w) => w.garment.id === selectedItemId && w.garment.primaryCategory === 'FOOTWEAR');
+            return (
+              <div
+                onClick={() => setSelectedItemId(null)}
+                className="relative shrink-0 max-w-[calc(100vw-24px)] max-h-[calc(100%-8px)] h-full md:w-auto md:h-[88vh] md:max-h-[880px] aspect-[3/4] rounded-3xl border border-stone-200/70 bg-white/95 shadow-xl shadow-stone-300/30 flex items-center justify-center overflow-visible pointer-events-auto transition-all"
+              >
+                {/* 模特景深光晕底座 */}
+                <div className="absolute inset-x-8 bottom-0 h-16 bg-stone-300/30 blur-xl rounded-full pointer-events-none" />
 
         {/* 选项 B：3D 影棚大片原位呈现模式 (100% 纯净呈现与交互式卷帘对比) */}
         {studioDisplayMode === '3D' && renderedImageUrl ? (
@@ -2097,10 +2223,11 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
                       worn.garment.subCategory,
                       worn.garment.title
                     );
-                    const offX = worn.offsetX !== undefined && worn.offsetX !== 0 ? worn.offsetX : defaultOffs.offsetX;
-                    const offY = worn.offsetY !== undefined && worn.offsetY !== 0 ? worn.offsetY : defaultOffs.offsetY;
-                    const scX = worn.scaleX !== undefined && worn.scaleX !== 1 ? worn.scaleX : (worn.scale !== 1 ? worn.scale : defaultOffs.scale);
-                    const scY = worn.scaleY !== undefined && worn.scaleY !== 1 ? worn.scaleY : (worn.scale !== 1 ? worn.scale : defaultOffs.scale);
+                    const offX = worn.offsetX !== undefined ? worn.offsetX : defaultOffs.offsetX;
+                    const offY = worn.offsetY !== undefined ? worn.offsetY : defaultOffs.offsetY;
+                    const sc = worn.scale !== undefined ? worn.scale : defaultOffs.scale;
+                    const scX = worn.scaleX !== undefined ? worn.scaleX : sc;
+                    const scY = worn.scaleY !== undefined ? worn.scaleY : sc;
                     const activeAsset = worn.garment.assets?.find((a) => a.stateType === worn.state) || worn.garment.assets?.[0];
                     const activePng = activeAsset?.pngUrl || (worn.garment as any).cutoutUrl || (worn.garment as any).previewUrl;
                     if (!activePng) return null;
@@ -2131,18 +2258,18 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
                   </div>
                 </div>
 
-                {/* 顶层/右侧：8K AI 试穿成片 (通过 clip-path 遮罩实现精准左右卷帘裁剪) */}
+                {/* 顶层/右侧：AI 试穿成片 (通过 clip-path 遮罩实现精准左右卷帘裁剪) */}
                 <div
                   className="absolute inset-0 w-full h-full pointer-events-none select-none"
                   style={{ clipPath: `inset(0 0 0 ${curtainSliderPos}%)` }}
                 >
                   <img
                     src={renderedImageUrl}
-                    alt="AI 8K 试穿成片"
+                    alt="AI 试穿成片"
                     className="w-full h-full object-cover pointer-events-none select-none"
                   />
                   <div className="absolute top-4 right-4 bg-[#D63031]/85 backdrop-blur-md px-2.5 py-1 rounded-xl text-white text-[10px] font-bold shadow-md border border-white/20">
-                    8K 试穿大片
+                    AI 试穿成片
                   </div>
                 </div>
 
@@ -2167,10 +2294,10 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
                 </div>
               </div>
             ) : (
-              /* 100% 纯净无遮挡 8K 试穿大片呈现 */
+              /* 100% 纯净无遮挡 AI 试穿大片呈现 */
               <img
                 src={renderedImageUrl}
-                alt="AI 8K 影棚试穿大片"
+                alt="AI 试穿大片"
                 className="w-full h-full object-cover select-none"
               />
             )}
@@ -2200,11 +2327,11 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  worn.garment.subCategory,
  worn.garment.title
  );
- const offX = worn.offsetX !== undefined && worn.offsetX !== 0 ? worn.offsetX : defaultOffs.offsetX;
- const offY = worn.offsetY !== undefined && worn.offsetY !== 0 ? worn.offsetY : defaultOffs.offsetY;
- const sc = worn.scale !== undefined && worn.scale !== 1 ? worn.scale : defaultOffs.scale;
- const scX = worn.scaleX !== undefined && worn.scaleX !== 1 ? worn.scaleX : (worn.scale !== 1 ? worn.scale : defaultOffs.scale);
- const scY = worn.scaleY !== undefined && worn.scaleY !== 1 ? worn.scaleY : (worn.scale !== 1 ? worn.scale : defaultOffs.scale);
+ const offX = worn.offsetX !== undefined ? worn.offsetX : defaultOffs.offsetX;
+ const offY = worn.offsetY !== undefined ? worn.offsetY : defaultOffs.offsetY;
+ const sc = worn.scale !== undefined ? worn.scale : defaultOffs.scale;
+ const scX = worn.scaleX !== undefined ? worn.scaleX : sc;
+ const scY = worn.scaleY !== undefined ? worn.scaleY : sc;
  const isSelected = selectedItemId === worn.garment.id;
  const activeAsset = worn.garment.assets?.find((a) => a.stateType === worn.state) || worn.garment.assets?.[0];
  const invScX = 1 / Math.max(0.01, scX);
@@ -2237,7 +2364,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  />
 
  {/* Figma Pro 级交互式微调与缩放选框 (视口解耦，绝对恒定尺寸与清晰度) */}
-                  {isSelected && studioDisplayMode === '2D' && !isRendering && !isLookbookModalOpen && !isSlotMachineOpen && !isVtonResultModalOpen && !selectedGarmentForDrawer && ((mobileSheetSnap === 'PEEK' && (sheetDragHeight === null || sheetDragHeight <= 140)) || (typeof window !== 'undefined' && window.innerWidth >= 768)) && (
+                  {isSelected && studioDisplayMode === '2D' && !isRendering && !isLookbookModalOpen && !isSlotMachineOpen && !isVtonResultModalOpen && !selectedGarmentForDrawer && (mobileSheetSnap === 'PEEK' || (typeof window !== 'undefined' && window.innerWidth >= 768)) && (
  <div
  onClick={(e) => e.stopPropagation()}
  style={{
@@ -2282,159 +2409,215 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  <Maximize2 className="w-3.5 h-3.5 stroke-[2.5]" />
  </div>
 
- {/* 四边拉伸控制点 (上下左右) */}
- <div
- onPointerDown={(e) => handleTransformPointerDown(e, worn.garment.id, 'STRETCH_T')}
- onClick={(e) => e.stopPropagation()}
- style={{
- top: `${-4 * invScY}px`,
- transform: `translate(-50%, -50%) scale(${invScX}, ${invScY})`,
- }}
- className="absolute left-1/2 w-6 h-2 bg-[#D63031] rounded-full cursor-ns-resize z-40 border border-white shadow-xs"
- title="上下拉伸"
- />
- <div
- onPointerDown={(e) => handleTransformPointerDown(e, worn.garment.id, 'STRETCH_B')}
- onClick={(e) => e.stopPropagation()}
- style={{
- bottom: `${-4 * invScY}px`,
- transform: `translate(-50%, 50%) scale(${invScX}, ${invScY})`,
- }}
- className="absolute left-1/2 w-6 h-2 bg-[#D63031] rounded-full cursor-ns-resize z-40 border border-white shadow-xs"
- title="上下拉伸"
- />
- <div
- onPointerDown={(e) => handleTransformPointerDown(e, worn.garment.id, 'STRETCH_L')}
- onClick={(e) => e.stopPropagation()}
- style={{
- left: `${-4 * invScX}px`,
- transform: `translate(-50%, -50%) scale(${invScX}, ${invScY})`,
- }}
- className="absolute top-1/2 w-2 h-6 bg-[#D63031] rounded-full cursor-ew-resize z-40 border border-white shadow-xs"
- title="左右拉伸"
- />
- <div
- onPointerDown={(e) => handleTransformPointerDown(e, worn.garment.id, 'STRETCH_R')}
- onClick={(e) => e.stopPropagation()}
- style={{
- right: `${-4 * invScX}px`,
- transform: `translate(50%, -50%) scale(${invScX}, ${invScY})`,
- }}
- className="absolute top-1/2 w-2 h-6 bg-[#D63031] rounded-full cursor-ew-resize z-40 border border-white shadow-xs"
- title="左右拉伸"
- />
+  {/* 四边拉伸控制点 (支持手机端上下自适应拉伸调节高度与衣长) */}
+  <div
+    onPointerDown={(e) => handleTransformPointerDown(e, worn.garment.id, 'STRETCH_T')}
+    onClick={(e) => e.stopPropagation()}
+    style={{
+      top: `${-4 * invScY}px`,
+      transform: `translate(-50%, -50%) scale(${invScX}, ${invScY})`,
+    }}
+    className="absolute left-1/2 w-7 md:w-6 h-2.5 md:h-2 bg-[#D63031] rounded-full cursor-ns-resize z-40 border border-white shadow-xs touch-none"
+    title="上下拉伸调节高度"
+  />
+  <div
+    onPointerDown={(e) => handleTransformPointerDown(e, worn.garment.id, 'STRETCH_B')}
+    onClick={(e) => e.stopPropagation()}
+    style={{
+      bottom: `${-4 * invScY}px`,
+      transform: `translate(-50%, 50%) scale(${invScX}, ${invScY})`,
+    }}
+    className="absolute left-1/2 w-7 md:w-6 h-2.5 md:h-2 bg-[#D63031] rounded-full cursor-ns-resize z-40 border border-white shadow-xs touch-none"
+    title="上下拉伸调节高度"
+  />
+  <div
+    onPointerDown={(e) => handleTransformPointerDown(e, worn.garment.id, 'STRETCH_L')}
+    onClick={(e) => e.stopPropagation()}
+    style={{
+      left: `${-4 * invScX}px`,
+      transform: `translate(-50%, -50%) scale(${invScX}, ${invScY})`,
+    }}
+    className="absolute top-1/2 w-2.5 md:w-2 h-7 md:h-6 bg-[#D63031] rounded-full cursor-ew-resize z-40 border border-white shadow-xs touch-none"
+    title="左右拉伸调节宽度"
+  />
+  <div
+    onPointerDown={(e) => handleTransformPointerDown(e, worn.garment.id, 'STRETCH_R')}
+    onClick={(e) => e.stopPropagation()}
+    style={{
+      right: `${-4 * invScX}px`,
+      transform: `translate(50%, -50%) scale(${invScX}, ${invScY})`,
+    }}
+    className="absolute top-1/2 w-2.5 md:w-2 h-7 md:h-6 bg-[#D63031] rounded-full cursor-ew-resize z-40 border border-white shadow-xs touch-none"
+    title="左右拉伸调节宽度"
+  />
 
- {/* 底部极简控制胶囊：纯图标紧凑布局(防穿模) + 靠下时智能翻转到上方(防遮挡) */}
- {(() => {
- const isFlippedToTop = (worn.offsetY ?? 0) > 15;
- return (
- <div
- onClick={(e) => e.stopPropagation()}
- style={{
- ...(isFlippedToTop
- ? {
- top: `${-24 * invScY}px`,
- transform: `translate(-50%, -100%) scale(${invScX}, ${invScY})`,
- transformOrigin: 'center bottom',
- }
- : {
- bottom: `${-24 * invScY}px`,
- transform: `translate(-50%, 100%) scale(${invScX}, ${invScY})`,
- transformOrigin: 'center top',
- }),
- }}
- className="absolute left-1/2 flex items-center gap-1 md:gap-1.5 pointer-events-auto z-50 bg-white/95 backdrop-blur-md px-1.5 py-1 md:px-2 md:py-1 rounded-full border border-[#EAE6DF] shadow-xl max-w-[calc(100vw-24px)] shrink-0 select-none"
- >
- {/* 放大 */}
- <button
- type="button"
- onPointerDown={(e) => e.stopPropagation()}
- onClick={(e) => {
- e.stopPropagation();
- handleScaleStep(worn.garment.id, 1.08);
- }}
- className="p-1.5 md:px-2.5 md:py-1 hover:bg-stone-100 text-stone-700 rounded-full text-xs font-bold flex items-center gap-0.5 whitespace-nowrap transition-colors cursor-pointer"
- title="放大"
- >
- <Plus className="w-3.5 h-3.5 text-emerald-600 stroke-[2.5]" />
- <span className="hidden md:inline">放大</span>
- </button>
+  {/* 底部极简控制胶囊：统一几何自适应翻转防出界防遮挡 */}
+  {(() => {
+    // 综合纵向绝对空间坐标 (默认基准偏移 + 用户手动微调位移)
+    const totalOffY = (worn.offsetY !== undefined ? worn.offsetY : defaultOffs.offsetY);
+    // 所有品类统一自适应：当单品综合绝对坐标偏下 (大于 110px，接近抽屉危险区) 时自动向上翻转，否则自然挂在单品下方，不设任何品类写死
+    const isFlippedToTop = totalOffY > 110;
 
- {/* 缩小 */}
- <button
- type="button"
- onPointerDown={(e) => e.stopPropagation()}
- onClick={(e) => {
- e.stopPropagation();
- handleScaleStep(worn.garment.id, 0.92);
- }}
- className="p-1.5 md:px-2.5 md:py-1 hover:bg-stone-100 text-stone-700 rounded-full text-xs font-bold flex items-center gap-0.5 whitespace-nowrap transition-colors cursor-pointer"
- title="缩小"
- >
- <Minus className="w-3.5 h-3.5 text-amber-600 stroke-[2.5]" />
- <span className="hidden md:inline">缩小</span>
- </button>
+    // 智能检测是否支持形态切换 (上衣塞入/外放、外套敞开/扣合、多态切片)
+    const canToggleState =
+      worn.garment.primaryCategory === 'TOPS' ||
+      worn.garment.primaryCategory === 'OUTERWEAR' ||
+      (worn.garment.assets && worn.garment.assets.length > 1);
 
- {/* 磁吸复位 */}
- <button
- type="button"
- onMouseDown={(e) => e.stopPropagation()}
- onClick={(e) => {
- e.stopPropagation();
- handleResetPlacement(worn.garment);
- }}
- className="p-1.5 md:px-2.5 md:py-1 hover:bg-stone-100 text-stone-700 rounded-full text-xs font-bold flex items-center gap-1 whitespace-nowrap transition-colors cursor-pointer"
- title="恢复至默认人体工学基准位"
- >
- <RotateCcw className="w-3.5 h-3.5 text-stone-600" />
- <span className="hidden md:inline">磁吸复位</span>
- </button>
+    let stateBtnLabel = '';
+    if (worn.garment.primaryCategory === 'TOPS') {
+      stateBtnLabel = worn.state === 'TUCKED' ? '已塞入' : '已外放';
+    } else if (worn.garment.primaryCategory === 'OUTERWEAR') {
+      stateBtnLabel = worn.state === 'CLOSED' ? '已扣合' : '已敞开';
+    } else if (worn.garment.assets && worn.garment.assets.length > 1) {
+      stateBtnLabel = '形态';
+    }
 
- {/* 图层上移 */}
- <button
- type="button"
- onMouseDown={(e) => e.stopPropagation()}
- onClick={(e) => {
- e.stopPropagation();
- handleAdjustZIndex(worn.garment.id, 'UP');
- }}
- className="p-1.5 md:px-2.5 md:py-1 hover:bg-stone-100 text-stone-700 rounded-full text-xs font-bold flex items-center gap-0.5 whitespace-nowrap transition-colors cursor-pointer"
- title="图层上移 (移向更外层)"
- >
- <ChevronUp className="w-3.5 h-3.5 text-[#D63031]" />
- <span className="hidden md:inline">上移</span>
- </button>
+    // 舒适防误触安全间距 (从 -14px 调整为 -24px，杜绝与拉伸手柄和缩放圆钮边缘粘连)
+    const marginGap = 24 * invScY;
 
- {/* 图层下移 */}
- <button
- type="button"
- onMouseDown={(e) => e.stopPropagation()}
- onClick={(e) => {
- e.stopPropagation();
- handleAdjustZIndex(worn.garment.id, 'DOWN');
- }}
- className="p-1.5 md:px-2.5 md:py-1 hover:bg-stone-100 text-stone-700 rounded-full text-xs font-bold flex items-center gap-0.5 whitespace-nowrap transition-colors cursor-pointer"
- title="图层下移 (移向更内层)"
- >
- <ChevronDown className="w-3.5 h-3.5 text-[#D63031]" />
- <span className="hidden md:inline">下移</span>
- </button>
+    return (
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          ...(isFlippedToTop
+            ? {
+                top: `${-marginGap}px`,
+                transform: `translate(-50%, -100%) scale(${invScX}, ${invScY})`,
+                transformOrigin: 'center bottom',
+              }
+            : {
+                bottom: `${-marginGap}px`,
+                transform: `translate(-50%, 100%) scale(${invScX}, ${invScY})`,
+                transformOrigin: 'center top',
+              }),
+        }}
+        className="absolute left-1/2 flex items-center gap-0.5 md:gap-1.5 pointer-events-auto z-50 bg-white/95 backdrop-blur-md px-1 py-0.5 md:px-2 md:py-1 rounded-full border border-[#EAE6DF] shadow-xl max-w-[calc(100vw-24px)] shrink-0 select-none"
+      >
+        {/* 放大 */}
+        <button
+          type="button"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleScaleStep(worn.garment.id, 1.08);
+          }}
+          className="p-1 md:px-2.5 md:py-1 hover:bg-stone-100 text-stone-700 rounded-full text-xs font-bold flex items-center gap-0.5 whitespace-nowrap transition-colors cursor-pointer"
+          title="放大"
+        >
+          <Plus className="w-3.5 h-3.5 text-emerald-600 stroke-[2.5]" />
+          <span className="hidden md:inline">放大</span>
+        </button>
 
- {/* 一键脱下 */}
- <button
- type="button"
- onMouseDown={(e) => e.stopPropagation()}
- onClick={(e) => {
- e.stopPropagation();
- onRemoveWornItem(worn.garment.id);
- setSelectedItemId(null);
- }}
- className="p-1.5 md:px-2.5 md:py-1 bg-rose-50 hover:bg-rose-100 text-[#D63031] rounded-full text-xs font-bold flex items-center gap-1 whitespace-nowrap transition-colors cursor-pointer"
- title="脱下此单品"
- >
- <Trash2 className="w-3.5 h-3.5" />
- <span className="hidden md:inline">脱下</span>
- </button>
+        {/* 缩小 */}
+        <button
+          type="button"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleScaleStep(worn.garment.id, 0.92);
+          }}
+          className="p-1 md:px-2.5 md:py-1 hover:bg-stone-100 text-stone-700 rounded-full text-xs font-bold flex items-center gap-0.5 whitespace-nowrap transition-colors cursor-pointer"
+          title="缩小"
+        >
+          <Minus className="w-3.5 h-3.5 text-amber-600 stroke-[2.5]" />
+          <span className="hidden md:inline">缩小</span>
+        </button>
+
+        {/* 磁吸复位 */}
+        <button
+          type="button"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleResetPlacement(worn.garment);
+          }}
+          className="p-1 md:px-2.5 md:py-1 hover:bg-stone-100 text-stone-700 rounded-full text-xs font-bold flex items-center gap-1 whitespace-nowrap transition-colors cursor-pointer"
+          title="恢复至默认人体工学基准位"
+        >
+          <RotateCcw className="w-3.5 h-3.5 text-stone-600" />
+          <span className="hidden md:inline">磁吸复位</span>
+        </button>
+
+        {/* 单品 360° 档案 */}
+        <button
+          type="button"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            setSelectedItemId(null);
+            setSelectedGarmentForDrawer(worn.garment);
+          }}
+          className="p-1 md:px-2.5 md:py-1 hover:bg-stone-100 text-stone-700 rounded-full text-xs font-bold flex items-center gap-1 whitespace-nowrap transition-colors cursor-pointer"
+          title="查看单品 360° 档案与管理"
+        >
+          <Info className="w-3.5 h-3.5 text-blue-600 stroke-[2.5]" />
+          <span className="hidden md:inline">档案</span>
+        </button>
+
+        {/* 形态切换自适应按键 (若单品支持塞腰/外放、扣合/敞开或多态切片) */}
+        {canToggleState && (
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleToggleGarmentState(worn.garment.id);
+            }}
+            className="p-1 md:px-2.5 md:py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200/80 rounded-full text-xs font-bold flex items-center gap-0.5 whitespace-nowrap transition-colors cursor-pointer"
+            title="切换单品形态"
+          >
+            <Shirt className="w-3.5 h-3.5 text-amber-700" />
+            <span className="text-[11px] md:text-xs">{stateBtnLabel}</span>
+          </button>
+        )}
+
+        {/* 图层上移 */}
+        <button
+          type="button"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleAdjustZIndex(worn.garment.id, 'UP');
+          }}
+          className="p-1 md:px-2.5 md:py-1 hover:bg-stone-100 text-stone-700 rounded-full text-xs font-bold flex items-center gap-0.5 whitespace-nowrap transition-colors cursor-pointer"
+          title="图层上移 (移向更外层)"
+        >
+          <ChevronUp className="w-3.5 h-3.5 text-[#D63031]" />
+          <span className="hidden md:inline">上移</span>
+        </button>
+
+        {/* 图层下移 */}
+        <button
+          type="button"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleAdjustZIndex(worn.garment.id, 'DOWN');
+          }}
+          className="p-1 md:px-2.5 md:py-1 hover:bg-stone-100 text-stone-700 rounded-full text-xs font-bold flex items-center gap-0.5 whitespace-nowrap transition-colors cursor-pointer"
+          title="图层下移 (移向更内层)"
+        >
+          <ChevronDown className="w-3.5 h-3.5 text-[#D63031]" />
+          <span className="hidden md:inline">下移</span>
+        </button>
+
+        {/* 一键脱下 (移动端已有右上角红圈X，在桌面端才显式展现文字按钮) */}
+        <button
+          type="button"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemoveWornItem(worn.garment.id);
+            setSelectedItemId(null);
+          }}
+          className="hidden md:inline-flex p-1.5 md:px-2.5 md:py-1 bg-rose-50 hover:bg-rose-100 text-[#D63031] rounded-full text-xs font-bold items-center gap-1 whitespace-nowrap transition-colors cursor-pointer"
+          title="脱下此单品"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+          <span>脱下</span>
+        </button>
  </div>
  );
  })()}
@@ -2444,9 +2627,11 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  </div>
  );
  })}
- </>
- )}
- </div>
+              </>
+            )}
+          </div>
+        );
+      })()}
 
           {/* 右侧翼槽区：自然占据 (画布右边缘 ~ 舞台右边缘) 的全部空间，内部居中放置右翼悬浮坞 */}
           <div
@@ -2475,7 +2660,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
             onRenderVton(snapshotBase64);
           }}
           disabled={isRendering || wornItems.length === 0}
-          title={wornItems.length === 0 ? '请先穿戴至少 1 件单品上身' : '消耗 5 积分生成 8K 影棚试穿大片'}
+          title={wornItems.length === 0 ? '请先穿戴至少 1 件单品上身' : '消耗 5 积分生成 AI 试穿大片'}
           className={`relative overflow-hidden w-full py-2.5 px-1 ${isCompactWing ? "justify-center" : "lg:px-2.5 justify-center"} bg-gradient-to-tr from-[#9E1B1B] via-[#D63031] to-[#E17055] hover:opacity-95 text-white rounded-2xl text-xs font-black shadow-md flex flex-col items-center gap-0.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed group active:scale-95`}
         >
           <div className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/20 to-transparent animate-luxury-shimmer pointer-events-none" />
@@ -2483,7 +2668,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
             <Sparkles className={`w-4 h-4 ${isRendering ? 'animate-spin' : 'group-hover:rotate-12'} transition-transform`} />
             <span className={isCompactWing ? "hidden" : "hidden lg:inline"}>{isRendering ? "AI 渲染中" : "AI 试穿大片"}</span>
           </div>
-          <span className={isCompactWing ? "hidden" : "hidden lg:inline text-[9px] text-white/80 font-mono font-medium relative z-10"}>8K 影棚 (5分)</span>
+          <span className={isCompactWing ? "hidden" : "hidden lg:inline text-[9px] text-white/80 font-mono font-medium relative z-10"}>AI 试穿 (5分)</span>
         </button>
 
         <div className="w-full h-[1px] bg-stone-200/70 my-0.5" />
@@ -2500,22 +2685,56 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
           <span className={isCompactWing ? "hidden" : "hidden lg:inline text-xs"}>保存搭配</span>
         </button>
 
-        {/* 3. 今日 OOTD 打卡 */}
+        {/* 3. 直出 OOTD 时尚海报 */}
         <button
           type="button"
           onClick={() => {
             if (wornItems.length === 0) {
-              showToast('请先穿戴衣物后再进行 OOTD 打卡！', 'info');
+              showToast('请先穿戴单品后再直出 OOTD 海报！', 'info');
               return;
             }
-            setIsLookbookModalOpen(true);
+            setIsInstantPosterOpen(true);
           }}
           disabled={wornItems.length === 0}
-          title="将当前穿搭保存并打卡至今日 OOTD 穿搭日历"
-          className={`w-full py-2 px-1 ${isCompactWing ? "justify-center" : "lg:px-2.5 justify-center lg:justify-start"} bg-stone-100 hover:bg-stone-200/80 text-stone-800 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 disabled:opacity-40`}
+          title="一键直出高定 OOTD 海报（支持画册混合/纯人物/纯单品版式自由切换与日历同步）"
+          className={`w-full py-2 px-1 ${isCompactWing ? "justify-center" : "lg:px-2.5 justify-center lg:justify-start"} bg-gradient-to-r from-stone-900 to-stone-800 hover:from-black hover:to-stone-900 text-white rounded-2xl text-xs font-bold transition-all flex items-center gap-2 disabled:opacity-40 shadow-xs cursor-pointer`}
         >
-          <Calendar className="w-4 h-4 shrink-0 text-stone-700 stroke-[1.75]" />
-          <span className={isCompactWing ? "hidden" : "hidden lg:inline text-xs"}>打卡 OOTD</span>
+          <Sparkles className="w-4 h-4 shrink-0 text-[#E17055]" />
+          <span className={isCompactWing ? "hidden" : "hidden lg:inline text-xs"}>直出海报</span>
+        </button>
+
+        {/* 4. 查看我的搭配方案库 (Lookbook Drawer) */}
+        <button
+          type="button"
+          onClick={() => setIsLookbookDrawerOpen(true)}
+          title={`查看我的搭配方案库 (${outfits.length} 套)`}
+          data-testid="studio-lookbook-btn"
+          className={`relative w-full py-2 px-1 ${
+            isCompactWing ? "justify-center" : "lg:px-2.5 justify-center lg:justify-start"
+          } bg-stone-100 hover:bg-stone-200/80 text-stone-800 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-xs`}
+        >
+          <BookmarkCheck className="w-4 h-4 shrink-0 text-amber-600 stroke-[2]" />
+          <span className={isCompactWing ? "hidden" : "hidden lg:inline text-xs"}>我的搭配</span>
+          {outfits.length > 0 && (
+            <>
+              {/* 紧凑图标模式下的右上角精致数字角标 (保持图标单体居中，消除挤压不协调) */}
+              <span
+                className={`${
+                  isCompactWing ? "flex" : "flex lg:hidden"
+                } absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 text-[9px] font-mono font-black bg-amber-500 text-white rounded-full items-center justify-center shadow-xs border border-white pointer-events-none`}
+              >
+                {outfits.length}
+              </span>
+              {/* 宽屏展开模式下的右侧胶囊数标 */}
+              <span
+                className={`${
+                  isCompactWing ? "hidden" : "hidden lg:flex"
+                } items-center justify-center ml-auto px-1.5 py-0.5 text-[9px] font-mono font-bold bg-amber-100 text-amber-800 rounded-full`}
+              >
+                {outfits.length}
+              </span>
+            </>
+          )}
         </button>
 
         {/* 4. 当 3D 渲染成片就绪时的功能 (卷帘对比 & 高清下载) */}
@@ -2533,30 +2752,23 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
                   ? 'bg-amber-400 text-stone-950 font-extrabold shadow-xs'
                   : 'bg-stone-100 hover:bg-stone-200 text-stone-800'
               }`}
-              title="左右拖拽对比 2D 原稿 与 8K 试穿成片"
+              title="左右拖拽对比 2D 原稿 与 AI 试穿成片"
             >
               <Sliders className="w-4 h-4 shrink-0" />
               <span className={isCompactWing ? "hidden" : "hidden lg:inline text-xs"}>卷帘对比</span>
             </button>
 
-            <a
-              href={renderedImageUrl}
-              download="SmartWardrobe_VTON_8K.jpg"
-              target="_blank"
-              rel="noreferrer"
-              className={`w-full py-2 px-1 ${isCompactWing ? "justify-center" : "lg:px-2.5 justify-center lg:justify-start"} bg-stone-900 hover:bg-black text-white rounded-2xl text-xs font-bold shadow-xs flex items-center gap-2 transition-colors`}
-              title="无损下载 8K 商业成片"
+            <button
+              type="button"
+              onClick={() => downloadOriginalImage(renderedImageUrl, 'vton')}
+              className={`w-full py-2 px-1 ${isCompactWing ? "justify-center" : "lg:px-2.5 justify-center lg:justify-start"} bg-stone-900 hover:bg-black text-white rounded-2xl text-xs font-bold shadow-xs flex items-center gap-2 transition-colors cursor-pointer`}
+              title="下载高清试穿大片"
             >
               <UploadCloud className="w-4 h-4 shrink-0 rotate-180" />
-              <span className={isCompactWing ? "hidden" : "hidden lg:inline text-xs"}>高清下载</span>
-            </a>
+              <span className={isCompactWing ? "hidden" : "hidden lg:inline text-xs"}>下载大片</span>
+            </button>
           </>
         )}
-
-        {/* 5. 3:4 黄金画幅指示标签 */}
-        <div className={`${isCompactWing ? "hidden" : "hidden lg:flex"} items-center justify-center gap-1 text-[10px] font-mono text-stone-400 font-bold bg-[#FAF8F5] py-1 px-2 rounded-xl border border-[#EAE6DF] w-full`}>
-          <span>3:4 画幅</span>
-        </div>
       </div>
           </div>
         </div>
@@ -2608,15 +2820,44 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  className="space-y-3"
  >
  <div>
- <label className="text-xs font-bold text-stone-700 block mb-1">搭配标题</label>
- <input
- type="text"
- value={lookbookTitle}
- onChange={(e) => setLookbookTitle(e.target.value)}
- placeholder="如: 早秋法式复古出行搭配"
- className="w-full bg-[#FAF8F5] border border-[#EAE6DF] rounded-xl px-3 py-2 text-xs text-stone-900 focus:outline-none"
- required
- />
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-bold text-stone-700">搭配标题</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsAiNaming(true);
+                        setTimeout(() => {
+                          const existingTitles = (outfits || []).map((o) => o.title);
+                          const wornGarments = wornItems.map((w) => w.garment);
+                          const res = generateSmartOutfitTitle(
+                            wornGarments,
+                            lookbookSceneTag,
+                            existingTitles,
+                            lookbookTitle
+                          );
+                          setLookbookTitle(res.title);
+                          setIsAiNaming(false);
+                          showToast(`✨ AI 已生成专属搭配名称：【${res.title}】（已核验排重）`, 'success');
+                        }, 150);
+                      }}
+                      disabled={isAiNaming}
+                      className="text-[11px] text-[#D63031] hover:text-[#b02526] font-bold flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-50 border border-rose-200/60 hover:bg-rose-100 transition-all cursor-pointer"
+                      title="结合单品款式与主色调，由 AI 自动生成高级感标题并核验排重"
+                    >
+                      <Sparkles className={`w-3 h-3 ${isAiNaming ? 'animate-spin' : ''}`} />
+                      <span>{isAiNaming ? '核验起名中...' : 'AI 帮我取名'}</span>
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={lookbookTitle}
+                    onChange={(e) => setLookbookTitle(e.target.value)}
+                    placeholder="如: 早秋法式复古出行搭配"
+                    className="w-full bg-[#FAF8F5] border border-[#EAE6DF] rounded-xl px-3 py-2 text-xs text-stone-900 focus:outline-none"
+                    required
+                  />
+                </div>
  </div>
 
  <div>
@@ -2675,6 +2916,18 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  </div>
  )}
 
+      {/* 直出 OOTD 时尚海报 Modal (支持画册混合/单人物/纯单品版式自由切换与日历同步) */}
+      <InstantOotdPosterModal
+        isOpen={isInstantPosterOpen}
+        onClose={() => setIsInstantPosterOpen(false)}
+        wornGarments={wornItems.map((w) => w.garment)}
+        renderedImageUrl={renderedImageUrl}
+        existingTitles={(outfits || []).map((o) => o.title)}
+        onSaveToLookbookAndOotd={async ({ title, sceneTag, syncToOotdToday }) => {
+          onSaveLookbook(title, syncToOotdToday, sceneTag);
+        }}
+      />
+
       {/* 7. 单品 360° 档案详情抽屉 (支持安全删除私人单品) */}
       <GarmentDetailDrawer
         garment={selectedGarmentForDrawer}
@@ -2685,6 +2938,109 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
         onCloneGarment={onClonePublicGarment}
         onDeleteGarment={onDeleteGarment}
       />
- </div>
- );
+
+      {/* 8. 试衣间内【我的搭配库】专属抽屉 */}
+      {isLookbookDrawerOpen && (
+        <div
+          className="fixed inset-0 z-[120] bg-black/50 backdrop-blur-xs flex justify-end animate-in fade-in"
+          onClick={() => setIsLookbookDrawerOpen(false)}
+        >
+          <div
+            className="w-full max-w-md bg-[#FAF8F5] h-full shadow-2xl border-l border-[#EAE6DF] flex flex-col p-5 overflow-hidden animate-in slide-in-from-right duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* 顶栏 */}
+            <div className="flex items-center justify-between pb-4 border-b border-[#EAE6DF]">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-amber-50 border border-amber-200/80 flex items-center justify-center text-amber-700">
+                  <BookmarkCheck className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-stone-900">我的搭配方案库</h3>
+                  <p className="text-xs text-stone-500">已保存 {outfits.length} 套定制搭配</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                data-testid="close-lookbook-drawer"
+                title="关闭搭配库抽屉"
+                onClick={() => setIsLookbookDrawerOpen(false)}
+                className="p-1.5 rounded-full text-stone-400 hover:text-stone-800 hover:bg-stone-200/60 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* 列表内容 */}
+            <div className="flex-1 overflow-y-auto py-4 space-y-4 scrollbar-thin text-left">
+              {outfits.length === 0 ? (
+                <div className="py-16 text-center text-stone-400 space-y-2">
+                  <BookmarkCheck className="w-10 h-10 stroke-[1.25] mx-auto text-stone-300" />
+                  <p className="text-xs font-bold text-stone-600">暂无保存的搭配方案</p>
+                  <p className="text-[11px] text-stone-400">穿戴心仪单品后，点击右侧【保存搭配】即可收录！</p>
+                </div>
+              ) : (
+                outfits.map((outfit) => {
+                  const outfitGarments = (outfit.items || [])
+                    .map((it) => allGarments.find((g) => g.id === it.garmentId))
+                    .filter(Boolean);
+
+                  return (
+                    <div
+                      key={outfit.id}
+                      className="bg-white rounded-2xl border border-[#EAE6DF] p-3.5 shadow-xs hover:shadow-md transition-all space-y-3"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="w-16 h-20 rounded-xl bg-stone-100 overflow-hidden shrink-0 border border-stone-200 flex items-center justify-center">
+                          {outfit.previewImageUrl ? (
+                            <img src={outfit.previewImageUrl} alt={outfit.title} className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="grid grid-cols-2 gap-0.5 p-1 w-full h-full bg-stone-50">
+                              {outfitGarments.slice(0, 4).map((g, idx) => (
+                                <img key={g?.id || idx} src={g?.assets?.[0]?.pngUrl} alt={g?.title} className="w-full h-full object-contain" />
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 bg-stone-100 text-stone-600 rounded">
+                              {outfit.sceneTag || '日常'}
+                            </span>
+                            <span className="text-[10px] text-stone-400 font-mono">
+                              {outfit.createdAt?.split('T')[0]}
+                            </span>
+                          </div>
+                          <h4 className="text-xs font-black text-stone-800 truncate" title={outfit.title}>
+                            {outfit.title}
+                          </h4>
+                          <p className="text-[11px] text-stone-500 mt-1">包含 {outfit.items?.length || 0} 件穿戴单品</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-1 border-t border-stone-100">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (onApplyOutfitToStudio) {
+                              onApplyOutfitToStudio(outfit);
+                            }
+                            setIsLookbookDrawerOpen(false);
+                          }}
+                          className="flex-1 py-1.5 bg-[#D63031] hover:bg-[#b02223] text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1 shadow-xs cursor-pointer active:scale-95"
+                        >
+                          <Shirt className="w-3 h-3" />
+                          <span>一键穿戴此套</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 };

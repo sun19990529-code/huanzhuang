@@ -15,6 +15,7 @@ import {
  fetchPublicGarments,
  clonePublicGarment,
  deleteGarment,
+ batchDeleteUserGarments,
  fetchProfileOutfits,
  fetchOotdLogs,
  fetchSuggestions,
@@ -23,7 +24,9 @@ import {
   fetchUserTasks,
   UserTaskItem,
  saveOutfit,
+ deleteOutfit,
  logOotdEntry,
+ deleteOotdEntry,
  suggestOutfitToFriend,
  acceptOutfitSuggestion,
  autoDetectUploadGarments,
@@ -259,38 +262,35 @@ export const App: React.FC = () => {
  }
  };
 
- // WebSocket 任务监听
- useEffect(() => {
- const disconnect = connectTaskWebSocket((event, data) => {
- if (event === 'TASK_PROGRESS_UPDATED') {
-          loadUserTasks();
- if (data.taskType === 'VTON_RENDER') {
- setRenderProgress(data.progress || 0);
- setRenderStage(data.currentStage || '正在渲染...');
- if (data.status === 'SUCCESS' && data.resultUrl) {
- setRenderedImageUrl(data.resultUrl);
- setIsRendering(false);
- } else if (data.status === 'FAILED') {
- setIsRendering(false);
- showToast(`渲染失败: ${data.error || '算力超时'}`, "info");
- }
- }
-          loadUserTasks();
- if (data.taskType === 'VTON_RENDER') {
- setRenderProgress(data.progress || 0);
- setRenderStage(data.currentStage || '正在渲染...');
- if (data.status === 'SUCCESS' && data.resultUrl) {
- setRenderedImageUrl(data.resultUrl);
- setIsRendering(false);
- } else if (data.status === 'FAILED') {
- setIsRendering(false);
- showToast(`渲染失败: ${data.error || '算力超时'}`, "info");
- }
- }
- }
- });
- return () => disconnect();
- }, []);
+  // WebSocket 任务监听
+  useEffect(() => {
+    const disconnect = connectTaskWebSocket((event, data) => {
+      if (event === 'TASK_PROGRESS_UPDATED') {
+        loadUserTasks();
+        if (data.taskType === 'VTON_RENDER') {
+          setRenderProgress(data.progress || 0);
+          setRenderStage(data.currentStage || '正在渲染...');
+          if (data.status === 'SUCCESS' && data.resultUrl) {
+            setRenderedImageUrl(data.resultUrl);
+            setIsRendering(false);
+          } else if (data.status === 'FAILED') {
+            setIsRendering(false);
+            showToast(`渲染失败: ${data.error || '算力超时'}`, 'error');
+          }
+        } else if (data.taskType === 'GARMENT_DETECTION') {
+          if (data.status === 'SUCCESS') {
+            if (currentProfile) {
+              loadProfileData(currentProfile);
+            }
+            showToast('✨ 智能衣物识别已完成，切片单品已自动归档入库！可在任务中心一键穿搭。', 'success');
+          } else if (data.status === 'FAILED') {
+            showToast(`衣物识别失败: ${data.error || '解析异常'}`, 'error');
+          }
+        }
+      }
+    });
+    return () => disconnect();
+  }, [currentProfile]);
 
   // 普通用户登录成功 (先彻底清空上一账号所有数据再装载新账号)
   const handleLoginSuccess = async (loggedInUser: CurrentUser) => {
@@ -338,7 +338,18 @@ export const App: React.FC = () => {
  };
 
  // 穿脱衣物 (基于解剖部位槽位矩阵：支持多件不同部位配饰共存，连衣裙/套装智能互斥)
-  const handleWearGarment = (garment: GarmentItem) => {
+  const handleWearGarment = (
+    garment: GarmentItem,
+    initialPlacement?: Partial<{
+      offsetX: number;
+      offsetY: number;
+      scale: number;
+      scaleX: number;
+      scaleY: number;
+      zIndex: number;
+      state: GarmentState;
+    }>
+  ) => {
     setWornItems((prev) => {
       const existingIndex = prev.findIndex((item) => item.garment.id === garment.id);
       if (existingIndex >= 0) {
@@ -355,7 +366,14 @@ export const App: React.FC = () => {
         return 'OTHER_ACCESSORY';
       };
 
-      const isDress = garment.primaryCategory === 'ONE_PIECE' || /裙|礼服|长裙|连衣裙|旗袍|gown|dress/i.test(garment.title);
+      // 确立分类最高准则：只要明确是下装(BOTTOMS)或上装(TOPS)，绝对不是连身长裙
+      const isOnePieceDress = (g: GarmentItem): boolean => {
+        if (g.primaryCategory === 'ONE_PIECE') return true;
+        if (g.primaryCategory === 'BOTTOMS' || g.primaryCategory === 'TOPS') return false;
+        return /连衣裙|连体裙|旗袍|gown|dress/i.test(g.title) && !/半身|短裙|包臀|百褶|A字|伞裙|皮裙|skirt/i.test(g.title);
+      };
+
+      const isDress = isOnePieceDress(garment);
       let defaultZIndex = 10;
       if (garment.primaryCategory === 'BOTTOMS') defaultZIndex = 20;
       if (isDress) defaultZIndex = 25;
@@ -380,13 +398,13 @@ export const App: React.FC = () => {
 
       const filtered = prev.filter((item) => {
         const itemCat = item.garment.primaryCategory;
-        const itemIsDress = itemCat === 'ONE_PIECE' || /裙|礼服|长裙|连衣裙|旗袍|gown|dress/i.test(item.garment.title);
+        const itemIsDress = isOnePieceDress(item.garment);
 
         if (isDress) {
-          // 穿连衣裙时，脱下已有连衣裙、上装、下装
+          // 穿真正连体裙(ONE_PIECE)时，脱下已有连身裙、以及与连身裙冲突的独立上装和独立下装
           if (itemIsDress || itemCat === 'TOPS' || itemCat === 'BOTTOMS') return false;
         } else if (garment.primaryCategory === 'TOPS' || garment.primaryCategory === 'BOTTOMS') {
-          // 穿上装或下装时，脱下连衣裙，并替换同类单品
+          // 穿上装或下装时，脱下身上的连身裙，并仅替换同分类单品 (穿短裙绝不脱上装！穿上装绝不脱短裙！)
           if (itemIsDress) return false;
           if (itemCat === garment.primaryCategory) return false;
         } else if (garment.primaryCategory === 'ACCESSORIES') {
@@ -402,17 +420,25 @@ export const App: React.FC = () => {
         return true;
       });
 
+      const finalOffsetX = initialPlacement?.offsetX !== undefined ? initialPlacement.offsetX : offsets.offsetX;
+      const finalOffsetY = initialPlacement?.offsetY !== undefined ? initialPlacement.offsetY : offsets.offsetY;
+      const finalScale = initialPlacement?.scale !== undefined ? initialPlacement.scale : offsets.scale;
+      const finalScaleX = initialPlacement?.scaleX !== undefined ? initialPlacement.scaleX : (initialPlacement?.scale !== undefined ? initialPlacement.scale : offsets.scale);
+      const finalScaleY = initialPlacement?.scaleY !== undefined ? initialPlacement.scaleY : (initialPlacement?.scale !== undefined ? initialPlacement.scale : offsets.scale);
+      const finalZIndex = initialPlacement?.zIndex !== undefined ? initialPlacement.zIndex : defaultZIndex;
+      const finalState = initialPlacement?.state || 'DEFAULT';
+
       return [
         ...filtered,
         {
           garment,
-          state: 'DEFAULT',
-          zIndex: defaultZIndex,
-          offsetX: offsets.offsetX,
-          offsetY: offsets.offsetY,
-          scale: offsets.scale,
-          scaleX: offsets.scale,
-          scaleY: offsets.scale,
+          state: finalState,
+          zIndex: finalZIndex,
+          offsetX: finalOffsetX,
+          offsetY: finalOffsetY,
+          scale: finalScale,
+          scaleX: finalScaleX,
+          scaleY: finalScaleY,
         },
       ];
     });
@@ -446,34 +472,53 @@ export const App: React.FC = () => {
  }
  };
 
- // 删除私有衣物
- const handleDeleteGarment = async (garmentId: string) => {
- if (!confirm('确定要从您的专属衣橱中彻底删除这件衣物吗？')) return;
- try {
- await deleteGarment(garmentId);
- setGarments(garments.filter((g) => g.id !== garmentId));
- setWornItems(wornItems.filter((i) => i.garment.id !== garmentId));
- showToast('单品已从您的衣橱删除', "info");
- } catch (err: any) {
- alert(err.message || '删除失败');
- }
- };
+  // 删除私有衣物
+  const handleDeleteGarment = async (garmentId: string) => {
+    if (!confirm('确定要从您的专属衣橱中彻底删除这件衣物吗？')) return;
+    try {
+      await deleteGarment(garmentId);
+      setGarments(garments.filter((g) => g.id !== garmentId));
+      setWornItems(wornItems.filter((i) => i.garment.id !== garmentId));
+      showToast('单品已从您的衣橱删除', "info");
+    } catch (err: any) {
+      alert(err.message || '删除失败');
+    }
+  };
 
- // 上传单品照片入库 (自动多模态识别)
- const handleUploadGarmentWithFile = async (file: File) => {
- if (!currentProfile) return;
- try {
- const compressed = await compressImageFile(file);
- const newGarments = await autoDetectUploadGarments(currentProfile.id, compressed);
- setGarments((prev) => [...newGarments, ...prev]);
- if (user) {
- setUser({ ...user, dailyCredits: Math.max(0, user.dailyCredits - (newGarments.length >= 2 ? 2 : 1)) });
- }
- showToast(` 识别成功！已将 ${newGarments.length} 件单品切片入库！`, "info");
- } catch (err: any) {
- alert(err.message || '识别入库失败');
- }
- };
+  // 批量删除私有衣物
+  const handleBatchDeleteGarments = async (garmentIds: string[]) => {
+    try {
+      const res = await batchDeleteUserGarments(garmentIds);
+      const idSet = new Set(garmentIds);
+      setGarments((prev) => prev.filter((g) => !idSet.has(g.id)));
+      setWornItems((prev) => prev.filter((i) => !idSet.has(i.garment.id)));
+      showToast(`✨ 已成功批量删除 ${res.deletedCount || garmentIds.length} 件单品！`, 'success');
+    } catch (err: any) {
+      alert(err.message || '批量删除失败');
+    }
+  };
+
+  // 上传单品照片入库 (自动多模态识别)
+  const handleUploadGarmentWithFile = async (file: File) => {
+    if (!currentProfile) return;
+    try {
+      const compressed = await compressImageFile(file);
+      const res = await autoDetectUploadGarments(currentProfile.id, compressed);
+      if (res && res.taskId) {
+        showToast('✨ 已成功提交「智能衣物识别」任务，正在任务中心实时切片解析！', 'info');
+        loadUserTasks();
+        return;
+      }
+      const newGarments = res.garments || [];
+      setGarments((prev) => [...newGarments, ...prev]);
+      if (user) {
+        setUser({ ...user, dailyCredits: Math.max(0, user.dailyCredits - (newGarments.length >= 2 ? 2 : 1)) });
+      }
+      showToast(`识别成功！已将 ${newGarments.length} 件单品切片入库！`, 'info');
+    } catch (err: any) {
+      alert(err.message || '识别入库失败');
+    }
+  };
 
  // 批量保存确认入库单品 (支持选择是否立即穿上模特)
  const handleBatchAddGarments = (newGarments: GarmentItem[], shouldWear: boolean) => {
@@ -509,7 +554,91 @@ export const App: React.FC = () => {
  }
  };
 
- // 保存搭配 (支持一键同步打卡至今日 OOTD 日历及场景分类)
+  // 历史大片与放置单品一键装载到试衣间画布舞台
+  const handleApplyToCanvas = (
+    imageUrl: string,
+    garmentsToWear?: any[],
+    rawItems?: any[]
+  ) => {
+    setRenderedImageUrl(imageUrl);
+    if (garmentsToWear && garmentsToWear.length > 0) {
+      const newWorn: WornItemData[] = garmentsToWear.map((g, idx) => {
+        const raw = rawItems?.find((ri: any) => ri.garmentId === g.id) || g;
+        const transform = raw.transformMatrix || {};
+        return {
+          garment: g,
+          state: g.appliedState || raw.appliedState || 'DEFAULT',
+          zIndex: raw.zIndex ?? (idx + 1) * 10,
+          offsetX: transform.offsetX ?? 0,
+          offsetY: transform.offsetY ?? 0,
+          scale: transform.scaleX ?? 1,
+          scaleX: transform.scaleX ?? 1,
+          scaleY: transform.scaleY ?? 1,
+        };
+      });
+      setWornItems(newWorn);
+    }
+    setActiveView('STUDIO');
+    showToast('✨ 已成功将成片与放置的穿戴单品完整装载至模特舞台！', 'success');
+  };
+
+  // 任务中心一键穿戴全套
+  const handleWearGarments = (garmentsToWear: ExtendedGarmentItem[]) => {
+    setActiveView('STUDIO');
+    garmentsToWear.forEach((g) => {
+      handleWearGarment(g);
+    });
+  };
+
+  // 搭配方案一键装载回试衣间模特舞台
+  const handleApplyOutfitToStudio = (outfit: OutfitData) => {
+    const allGarments = [...garments, ...publicGarments];
+    const newWorn: WornItemData[] = (outfit.items || []).map((item, idx) => {
+      const g = allGarments.find((garment) => garment.id === item.garmentId);
+      const transform = item.transformMatrix || {};
+      return {
+        garment: g || {
+          id: item.garmentId,
+          profileId: outfit.profileId,
+          title: '已保存单品',
+          primaryCategory: 'TOPS',
+          subCategory: 'Tops',
+          colors: ['#000000'],
+          patterns: ['SOLID'],
+          assets: [],
+          tags: [],
+          isPublic: false,
+          createdAt: outfit.createdAt,
+        },
+        state: item.appliedState || 'DEFAULT',
+        zIndex: item.zIndex ?? (idx + 1) * 10,
+        offsetX: transform.offsetX ?? 0,
+        offsetY: transform.offsetY ?? 0,
+        scale: transform.scaleX ?? 1,
+        scaleX: transform.scaleX ?? 1,
+        scaleY: transform.scaleY ?? 1,
+      };
+    });
+    setWornItems(newWorn);
+    if (outfit.previewImageUrl) {
+      setRenderedImageUrl(outfit.previewImageUrl);
+    }
+    setActiveView('STUDIO');
+    showToast(`✨ 已成功将搭配【${outfit.title}】装载至试衣间模特舞台！`, 'success');
+  };
+
+  // 删除已保存搭配方案
+  const handleDeleteOutfit = async (outfitId: string) => {
+    try {
+      await deleteOutfit(outfitId);
+      setOutfits((prev) => prev.filter((o) => o.id !== outfitId));
+      showToast('🗑️ 搭配方案已从灵感库中移除', 'info');
+    } catch (e: any) {
+      alert(e.message || '删除搭配失败');
+    }
+  };
+
+  // 保存搭配 (支持一键同步打卡至今日 OOTD 日历及场景分类)
  const handleSaveLookbook = async (title: string, syncToOotdToday?: boolean, sceneTag?: string) => {
  if (!currentProfile) return;
  try {
@@ -714,6 +843,15 @@ export const App: React.FC = () => {
  }
  };
 
+  const handleDeleteTask = (taskId: string) => {
+    setHistoryTasks((prev) => prev.filter((t) => t.taskId !== taskId));
+    setRunningTasks((prev) => prev.filter((t) => t.taskId !== taskId));
+  };
+
+  const handleClearHistory = () => {
+    setHistoryTasks([]);
+  };
+
  return (
  <div className="h-screen h-[100dvh] overflow-hidden flex flex-col font-sans bg-[#FAF8F5] text-stone-800 selection:bg-rose-200">
  
@@ -774,13 +912,17 @@ export const App: React.FC = () => {
               key={`wardrobe_${user.id}_${currentProfile?.id || "none"}`}
  garments={garments}
  publicGarments={publicGarments}
+ outfits={outfits}
  wornGarmentIds={wornItems.map((i) => i.garment.id)}
  onWearGarment={handleWearGarment}
  onClonePublicGarment={handleClonePublicGarment}
  onUploadGarmentWithFile={handleUploadGarmentWithFile}
  onUploadBatchWithFile={handleUploadBatchWithFile}
- onDeleteGarment={handleDeleteGarment}
- onNavigateToStudio={() => setActiveView('STUDIO')}
+              onDeleteGarment={handleDeleteGarment}
+              onBatchDeleteGarments={handleBatchDeleteGarments}
+              onNavigateToStudio={() => setActiveView('STUDIO')}
+ onApplyOutfitToStudio={handleApplyOutfitToStudio}
+ onDeleteOutfit={handleDeleteOutfit}
  />
  )}
 
@@ -816,6 +958,8 @@ export const App: React.FC = () => {
  renderProgress={renderProgress}
  renderStage={renderStage}
  renderedImageUrl={renderedImageUrl}
+ outfits={outfits}
+ onApplyOutfitToStudio={handleApplyOutfitToStudio}
  />
  )}
 
@@ -861,6 +1005,10 @@ export const App: React.FC = () => {
  notes,
  });
  setOotdLogs([entry, ...ootdLogs.filter((l) => l.logDate !== date)]);
+ }}
+ onDeleteOotd={async (id) => {
+ await deleteOotdEntry(id);
+ setOotdLogs(ootdLogs.filter((l) => l.id !== id));
  }}
  onNavigateToStudio={() => setActiveView('STUDIO')}
  />
@@ -920,8 +1068,13 @@ export const App: React.FC = () => {
         onClose={() => setIsTaskCenterOpen(false)}
         runningTasks={runningTasks}
         historyTasks={historyTasks}
+        garments={[...garments, ...publicGarments]}
         isLoading={isTasksLoading}
         onRefresh={loadUserTasks}
+        onApplyToCanvas={handleApplyToCanvas}
+        onWearGarments={handleWearGarments}
+        onDeleteTask={handleDeleteTask}
+        onClearHistory={handleClearHistory}
       />
 
       {/* 全局高质感 Toast 提示与确认模态框 */}

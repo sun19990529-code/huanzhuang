@@ -703,6 +703,8 @@ app.post('/v1/ai/match-garment-placement', async (req: Request, res: Response) =
   }
 });
 
+
+
 // --------------------------------------------------------------------
 // 3. 衣橱与单品资产管理 (Garments)
 // --------------------------------------------------------------------
@@ -719,6 +721,39 @@ app.post('/v1/garments/auto-detect-upload', requireAuth, async (req: Request, re
     const profile = db.profiles.get(profileId);
     if (!profile || profile.userId !== req.user!.id) {
       return res.status(403).json({ code: 403, message: '无权向该档案添加衣物' });
+    }
+
+    // 若未显式指定 sync 模式，默认全量接入异步任务系统 (GARMENT_DETECTION)，防卡死并支持多衣物聚合追踪
+    if (req.body.sync !== true && req.query.sync !== 'true') {
+      const cost = 1;
+      const deduction = db.deductCredits(
+        req.user!.id,
+        cost,
+        'AI 衣物智能识别入库任务'
+      );
+
+      if (!deduction.success) {
+        return res.status(402).json({ code: 402, message: deduction.error });
+      }
+
+      const { taskId, estimatedSeconds } = pipeline.submitTask(
+        req.user!.id,
+        'GARMENT_DETECTION',
+        cost,
+        { profileId, imageBase64 }
+      );
+
+      return res.status(202).json({
+        code: 200,
+        message: 'AI 衣服智能识别任务已成功提交至任务中心！',
+        data: {
+          taskId,
+          estimatedSeconds,
+          costCredits: cost,
+          remainingDailyCredits: deduction.remainingDaily,
+          remainingPermanentCredits: deduction.remainingPermanent,
+        },
+      });
     }
 
     const detectedItems = await AIService.analyzeGarmentsFromImageVision(
@@ -914,6 +949,107 @@ app.delete('/v1/garments/:id', requireAuth, (req: Request, res: Response) => {
 
   db.deleteGarment(garmentId);
   res.json({ code: 200, message: '单品已成功从您的衣橱删除' });
+});
+
+// 用户批量删除私有衣物 (严格防水平越权 IDOR 校验)
+app.post('/v1/garments/batch-delete', requireAuth, (req: Request, res: Response) => {
+  const { garmentIds } = req.body;
+  if (!Array.isArray(garmentIds) || garmentIds.length === 0) {
+    return res.status(400).json({ code: 400, message: '请提供要删除的单品ID列表' });
+  }
+
+  let deletedCount = 0;
+  for (const gid of garmentIds) {
+    if (typeof gid === 'string' && db.isGarmentOwner(req.user!.id, gid)) {
+      db.deleteGarment(gid);
+      deletedCount++;
+    }
+  }
+
+  res.json({
+    code: 200,
+    message: `成功删除 ${deletedCount} 件私有单品`,
+    data: { deletedCount },
+  });
+});
+
+// 为单品按需生成指定形态资产 (如敞开 OPEN / 合拢 CLOSED / 塞入 TUCKED)
+app.post('/v1/garments/:id/generate-fission-state', requireAuth, async (req: Request, res: Response) => {
+  const garmentId = req.params.id;
+  const { stateType } = req.body; // 'OPEN' | 'CLOSED' | 'TUCKED'
+
+  if (!stateType) {
+    return res.status(400).json({ code: 400, message: '请指定需要生成的形态 (stateType)' });
+  }
+
+  const garment = db.garments.get(garmentId);
+  if (!garment) {
+    return res.status(404).json({ code: 404, message: '未找到单品' });
+  }
+
+  const isOwner = db.isGarmentOwner(req.user!.id, garmentId) || garment.isPublic;
+  if (!isOwner) {
+    return res.status(403).json({ code: 403, message: '无权操作此单品' });
+  }
+
+  try {
+    console.log(`[State Gen] 正在为单品 "${garment.title}" (${garment.primaryCategory}) 生成形态: ${stateType}...`);
+    
+    // 获取基础图片作为参考
+    const baseAsset = garment.assets?.find((a: any) => a.pngUrl) || garment.assets?.[0];
+    const refImage = baseAsset ? baseAsset.pngUrl : '';
+
+    const newPng = await AIService.generateGhostMannequinAsset(
+      garment.title,
+      garment.primaryCategory,
+      garment.subCategory,
+      garment.colors,
+      garment.material,
+      garment.patterns,
+      refImage,
+      stateType
+    );
+
+    if (!newPng) {
+      return res.status(500).json({ code: 500, message: 'AI 生成形态资产失败，请重试' });
+    }
+
+    // 更新或新增对应形态 asset
+    if (!garment.assets) garment.assets = [];
+    let targetAsset = garment.assets.find((a: any) => a.stateType === stateType);
+    if (targetAsset) {
+      targetAsset.pngUrl = newPng;
+    } else {
+      const newAsset = {
+        id: `${garment.id}-asset-${stateType.toLowerCase()}`,
+        garmentId: garment.id,
+        stateType,
+        pngUrl: newPng,
+        boundingBox: { x: 0.3, y: 0.27, w: 0.4, h: 0.38 },
+        defaultAnchor: { x: 0.5, y: 0.28 },
+        baseLayerWeight: stateType === 'CLOSED' ? 45 : 40,
+      };
+      garment.assets.push(newAsset as any);
+      targetAsset = newAsset;
+    }
+
+    // 异步同步到数据库 (内存 + PostgreSQL 实时落盘)
+    db.saveGarment(garment);
+
+    res.json({
+      code: 200,
+      message: `✨ 已成功生成【${stateType === 'OPEN' ? '敞开' : stateType === 'CLOSED' ? '合拢' : '塞入'}】形态高定平铺图！`,
+      data: {
+        garmentId: garment.id,
+        stateType,
+        pngUrl: newPng,
+        asset: targetAsset,
+      },
+    });
+  } catch (err: any) {
+    console.error('[State Gen Error]:', err);
+    res.status(500).json({ code: 500, message: `生成形态异常: ${err.message}` });
+  }
 });
 
 // --------------------------------------------------------------------
@@ -1452,10 +1588,10 @@ app.post('/v1/outfits/render-vton', requireAuth, (req: Request, res: Response) =
   });
 });
 
-// 获取当前登录用户的任务列表 (进行中任务 + 最近 5 条历史任务，严格账号隔离)
+// 获取当前登录用户的任务列表 (进行中任务 + 最近 20 条历史任务，严格账号隔离)
 app.get('/v1/tasks', requireAuth, (req: Request, res: Response) => {
   const userId = req.user!.id;
-  const { runningTasks, historyTasks } = db.getUserTasks(userId, 5);
+  const { runningTasks, historyTasks } = db.getUserTasks(userId, 20);
 
   const formatTask = (task: any) => ({
     taskId: task.id,
@@ -1469,6 +1605,7 @@ app.get('/v1/tasks', requireAuth, (req: Request, res: Response) => {
       task.outputResult?.renderedImageUrl ||
       task.outputResult?.normalizedImageUrl ||
       task.outputResult?.resultUrl ||
+      task.outputResult?.garments?.[0]?.assets?.[0]?.pngUrl ||
       null,
     outputResult: task.outputResult || null,
     errorMessage: task.errorMessage || (task as any).error || null,
@@ -1482,6 +1619,35 @@ app.get('/v1/tasks', requireAuth, (req: Request, res: Response) => {
       runningTasks: runningTasks.map(formatTask),
       historyTasks: historyTasks.map(formatTask),
     },
+  });
+});
+
+// 一键清空当前登录用户的已完成/失败历史任务 (保留进行中任务)
+app.delete('/v1/tasks/history/clear', requireAuth, async (req: Request, res: Response) => {
+  const userId = req.user!.id;
+  const deletedCount = await db.clearHistoryTasks(userId);
+  res.json({
+    code: 200,
+    message: `成功清空 ${deletedCount} 条历史任务记录`,
+    data: { deletedCount },
+  });
+});
+
+// 删除单个任务记录 (支持严格鉴权与账号隔离)
+app.delete('/v1/tasks/:id', requireAuth, async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const userId = req.user!.id;
+  const success = await db.deleteTask(id, userId);
+  if (!success) {
+    return res.status(404).json({
+      code: 404,
+      message: '任务不存在或无权删除该任务记录',
+    });
+  }
+  res.json({
+    code: 200,
+    message: '任务记录已成功删除',
+    data: { taskId: id },
   });
 });
 

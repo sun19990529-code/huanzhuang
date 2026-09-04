@@ -1558,13 +1558,43 @@ export class Database {
           task.updatedAt,
         ]
       );
+
+      // 容量控制：若该用户历史已终态任务超过 30 条，执行先进先出 (FIFO) 自动淘汰清理
+      if (task.status === 'SUCCESS' || task.status === 'FAILED' || task.status === 'TIMEOUT') {
+        const userHistories = Array.from(this.asyncTasks.values())
+          .filter(
+            (t) =>
+              t.userId === task.userId &&
+              (t.status === 'SUCCESS' || t.status === 'FAILED' || t.status === 'TIMEOUT')
+          )
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+        if (userHistories.length > 30) {
+          const evicted = userHistories.slice(30);
+          for (const ev of evicted) {
+            this.asyncTasks.delete(ev.id);
+          }
+          const evictedIds = evicted.map((e) => e.id);
+          pgPool
+            .query('DELETE FROM async_tasks WHERE id = ANY($1::text[]) AND user_id = $2', [
+              evictedIds,
+              task.userId,
+            ])
+            .catch((err: any) =>
+              console.warn('[Database] 自动 FIFO 淘汰历史任务失败:', err.message)
+            );
+        }
+      }
     } catch (err: any) {
       console.error('[Database] 保存异步任务至 PostgreSQL 失败:', err.message);
     }
   }
 
-  // 获取特定账号的进行中任务与最近历史任务 (严格账号独立隔离)
-  public getUserTasks(userId: string, historyLimit = 5): { runningTasks: DBAsyncTask[]; historyTasks: DBAsyncTask[] } {
+  // 获取特定账号的进行中任务与最近历史任务 (严格账号独立隔离，默认展示最近 20 条)
+  public getUserTasks(
+    userId: string,
+    historyLimit = 20
+  ): { runningTasks: DBAsyncTask[]; historyTasks: DBAsyncTask[] } {
     const userTasks = Array.from(this.asyncTasks.values())
       .filter((t) => t.userId === userId)
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -1575,6 +1605,47 @@ export class Database {
       .slice(0, historyLimit);
 
     return { runningTasks, historyTasks };
+  }
+
+  // 删除特定用户的单条任务记录
+  public async deleteTask(taskId: string, userId: string): Promise<boolean> {
+    const task = this.asyncTasks.get(taskId);
+    if (!task || task.userId !== userId) {
+      return false;
+    }
+    this.asyncTasks.delete(taskId);
+    try {
+      await pgPool.query('DELETE FROM async_tasks WHERE id = $1 AND user_id = $2', [taskId, userId]);
+      return true;
+    } catch (err: any) {
+      console.error('[Database] 从 PostgreSQL 删除异步任务失败:', err.message);
+      return false;
+    }
+  }
+
+  // 清空特定用户的所有历史已完成/失败任务 (保留进行中的任务)
+  public async clearHistoryTasks(userId: string): Promise<number> {
+    const toDelete: string[] = [];
+    for (const [id, task] of this.asyncTasks.entries()) {
+      if (
+        task.userId === userId &&
+        (task.status === 'SUCCESS' || task.status === 'FAILED' || task.status === 'TIMEOUT')
+      ) {
+        toDelete.push(id);
+        this.asyncTasks.delete(id);
+      }
+    }
+    if (toDelete.length > 0) {
+      try {
+        await pgPool.query(
+          `DELETE FROM async_tasks WHERE user_id = $1 AND status IN ('SUCCESS', 'FAILED', 'TIMEOUT')`,
+          [userId]
+        );
+      } catch (err: any) {
+        console.error('[Database] 从 PostgreSQL 清空历史任务失败:', err.message);
+      }
+    }
+    return toDelete.length;
   }
 
   // 每日零点重置补齐至 100 积分

@@ -89,16 +89,46 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <>
-      <header className="sticky top-0 z-40 bg-[#FAF8F5]/90 backdrop-blur-xl border-b border-[#EAE6DF] px-2.5 sm:px-4 md:px-8 py-2 md:py-3 flex items-center justify-between gap-2 md:gap-4">
-        {/* 左侧：全新定制高定矢量 Logo */}
-        <BrandLogo
-          variant="horizontal"
-          size="md"
-          onClick={() => onSelectView('STUDIO')}
-        />
+      <header className="sticky top-0 z-40 bg-[#FAF8F5]/90 backdrop-blur-xl border-b border-[#EAE6DF] px-2 sm:px-4 md:px-8 py-2 md:py-3 flex items-center justify-between gap-1.5 sm:gap-2 md:gap-4">
+        {/* 左侧：全新定制高定矢量 Logo + 角色形象选择器 (移至左侧) */}
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0 z-10">
+          <BrandLogo
+            variant="horizontal"
+            size="md"
+            onClick={() => onSelectView('STUDIO')}
+          />
 
-        {/* 中部：桌面端导航胶囊 */}
-        <nav className="hidden md:flex items-center gap-1 bg-[#EFECE6] p-1 rounded-2xl border border-[#EAE6DF]/60">
+          {currentProfile && (
+            <div
+              className="flex items-center gap-1 sm:gap-1.5 bg-[#EFECE6] px-2 py-1 sm:px-2.5 sm:py-1 rounded-xl sm:rounded-2xl border border-[#EAE6DF] hover:border-stone-400 transition-colors shadow-2xs shrink-0"
+              title="切换模特角色形象"
+            >
+              <User className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-stone-500 stroke-[2] shrink-0" />
+              <select
+                value={currentProfile.id}
+                onChange={(e) => {
+                  if (e.target.value === '__NEW_PROFILE__') {
+                    onOpenProfileModal();
+                    return;
+                  }
+                  const found = profiles.find((p) => p.id === e.target.value);
+                  if (found) onSelectProfile(found);
+                }}
+                className="bg-transparent text-[11px] sm:text-xs font-bold text-stone-800 pr-0.5 focus:outline-none cursor-pointer max-w-[65px] xs:max-w-[85px] sm:max-w-none truncate"
+              >
+                {profiles.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+                <option value="__NEW_PROFILE__">➕ 新建模特形象...</option>
+              </select>
+            </div>
+          )}
+        </div>
+
+        {/* 中部：桌面端导航胶囊 (绝对居中，视口数学中心) */}
+        <nav className="hidden md:flex absolute left-1/2 -translate-x-1/2 items-center gap-1 bg-[#EFECE6] p-1 rounded-2xl border border-[#EAE6DF]/60 shadow-xs pointer-events-auto z-10">
           {navTabs.map((tab) => (
             <button
               key={tab.key}
@@ -115,21 +145,21 @@ export const Header: React.FC<HeaderProps> = ({
           ))}
         </nav>
 
-        {/* 右侧：100 积分胶囊 + 多 Profile 角色切换 + 用户身份与设置 */}
-        <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+        {/* 右侧：100 积分胶囊 + 任务中心 + 用户身份与设置 */}
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0 z-10">
           {/* 每日 100 积分胶囊 */}
           <div
             title="每日零点自动补齐至 100 积分"
-            className="relative flex items-center gap-1 sm:gap-2 bg-gradient-to-r from-amber-50/90 via-amber-100/60 to-amber-50/90 border border-amber-300/80 px-2 sm:px-3 py-1 sm:py-1.5 rounded-2xl shadow-xs hover:border-amber-400 transition-all group shrink-0"
+            className="relative flex items-center gap-1 bg-gradient-to-r from-amber-50/90 via-amber-100/60 to-amber-50/90 border border-amber-300/80 px-1.5 sm:px-3 py-1 sm:py-1.5 rounded-xl sm:rounded-2xl shadow-xs hover:border-amber-400 transition-all group shrink-0"
           >
             {/* 香槟金呼吸微光光环 */}
-            <span className="absolute inset-0 rounded-2xl bg-amber-400/10 animate-pulse pointer-events-none" />
+            <span className="absolute inset-0 rounded-xl sm:rounded-2xl bg-amber-400/10 animate-pulse pointer-events-none" />
             
-            <Sparkles className="w-3.5 h-3.5 text-amber-700 stroke-[2] group-hover:rotate-12 transition-transform shrink-0" />
+            <Sparkles className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-700 stroke-[2] group-hover:rotate-12 transition-transform shrink-0" />
             <div className="text-left leading-tight">
-              <div className="text-xs font-black font-mono text-amber-950 flex items-center gap-0.5 sm:gap-1 whitespace-nowrap">
+              <div className="text-[11px] sm:text-xs font-black font-mono text-amber-950 flex items-center gap-0.5 sm:gap-1 whitespace-nowrap">
                 <span>{user?.dailyCredits ?? 100}</span>
-                <span className="text-[9px] text-amber-800 font-semibold">/ 100分</span>
+                <span className="text-[9px] text-amber-800 font-semibold hidden sm:inline">/ 100分</span>
               </div>
             </div>
 
@@ -160,53 +190,44 @@ export const Header: React.FC<HeaderProps> = ({
             )}
           </button>
 
-          {/* 多 Profile 角色切换 */}
-          {currentProfile && (
-            <div className="flex items-center gap-1 bg-[#EFECE6] p-1 rounded-2xl border border-[#EAE6DF]">
-              <select
-                value={currentProfile.id}
-                onChange={(e) => {
-                  const found = profiles.find((p) => p.id === e.target.value);
-                  if (found) onSelectProfile(found);
-                }}
-                className="bg-transparent text-xs font-bold text-stone-700 px-1.5 py-0.5 focus:outline-none cursor-pointer"
-              >
-                {profiles.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
           {/* 当前登录用户身份胶囊与下拉菜单 */}
           {user && (
-            <div ref={userMenuRef} className="relative">
+            <div ref={userMenuRef} className="relative shrink-0 mr-1 sm:mr-0">
               <div
                 onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                className="flex items-center gap-2 pl-2 pr-1.5 py-1 bg-white hover:bg-stone-50 rounded-2xl border border-[#EAE6DF] cursor-pointer select-none transition-colors shadow-xs"
+                className="flex items-center gap-1 sm:gap-2 p-1 sm:pl-2 sm:pr-1.5 sm:py-1 bg-white hover:bg-stone-50 rounded-2xl border border-[#EAE6DF] cursor-pointer select-none transition-colors shadow-xs shrink-0"
               >
                 {user.avatarUrl ? (
                   <img
                     src={user.avatarUrl}
                     alt={user.nickname}
-                    className="w-7 h-7 rounded-full object-cover border border-[#EAE6DF] shadow-xs"
+                    className="w-7 h-7 rounded-full object-cover border border-[#EAE6DF] shadow-xs shrink-0"
                   />
                 ) : (
-                  <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-[#D63031] to-[#E17055] text-white font-bold text-xs flex items-center justify-center shadow-xs">
+                  <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-[#D63031] to-[#E17055] text-white font-bold text-xs flex items-center justify-center shadow-xs shrink-0">
                     {user.nickname[0]}
                   </div>
                 )}
                 <div className="hidden lg:block text-left text-xs font-bold text-stone-800 truncate max-w-[90px]">
                   {user.nickname}
                 </div>
-                <ChevronDown className="w-3 h-3 text-stone-400 stroke-[1.75]" />
+                <ChevronDown className="w-3 h-3 text-stone-400 stroke-[1.75] shrink-0" />
               </div>
 
               {/* 下拉悬浮菜单 (带 Click-Outside 自动关闭) */}
               {isUserMenuOpen && (
-                <div className="absolute right-0 mt-2 w-40 bg-white rounded-2xl shadow-xl border border-[#EAE6DF] p-1.5 space-y-1 z-50 text-left animate-in fade-in">
+                <div className="absolute right-0 mt-2 w-44 bg-white rounded-2xl shadow-xl border border-[#EAE6DF] p-1.5 space-y-1 z-50 text-left animate-in fade-in">
+                  <button
+                    onClick={() => {
+                      setIsUserMenuOpen(false);
+                      onOpenProfileModal();
+                    }}
+                    className="w-full px-3 py-2 text-xs font-bold text-stone-700 hover:text-[#D63031] hover:bg-rose-50/50 rounded-xl flex items-center gap-2 transition-colors"
+                  >
+                    <User className="w-3.5 h-3.5 stroke-[1.75]" />
+                    <span>模特身材管理</span>
+                  </button>
+
                   <button
                     onClick={() => {
                       setIsUserMenuOpen(false);
@@ -237,8 +258,8 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </header>
 
-      {/* 移动端底部悬浮导航栏 (Defect 2: 解决移动端无导航断层) */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#FAF8F5]/95 backdrop-blur-xl border-t border-[#EAE6DF] px-2 pt-1 pb-[max(env(safe-area-inset-bottom),0.5rem)] flex items-center justify-around shadow-lg">
+      {/* 移动端底部悬浮导航栏 (层级z-[60]绝对置顶，高奢反向漫反射微阴影确立物理边界) */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-[60] bg-[#FAF8F5]/98 backdrop-blur-md border-t border-stone-200/90 shadow-[0_-4px_24px_rgba(0,0,0,0.08)] px-2 pt-1.5 pb-[max(env(safe-area-inset-bottom),0.5rem)] flex items-center justify-around">
         {navTabs.map((tab) => (
           <button
             key={tab.key}

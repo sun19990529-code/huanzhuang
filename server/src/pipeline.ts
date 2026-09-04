@@ -4,10 +4,11 @@
 // ====================================================================
 
 import { WebSocket } from 'ws';
-import { db, DBAsyncTask } from './db';
-import { TaskType, TaskStatus } from '@smart-wardrobe/shared';
+import { db, DBAsyncTask, ExtendedGarmentItem } from './db';
+import { TaskType, TaskStatus, generateFissionAssets } from '@smart-wardrobe/shared';
 import { AIService } from './aiService';
 import { GENERATED_ASSETS } from './generatedAssets';
+import { ImageProcessor } from './imageProcessor';
 
 export interface TaskProgressMessage {
   event: 'TASK_PROGRESS_UPDATED';
@@ -113,7 +114,7 @@ class TaskPipelineService {
 
     return {
       taskId,
-      estimatedSeconds: taskType === 'VTON_RENDER' ? 6 : 3,
+      estimatedSeconds: taskType === 'VTON_RENDER' ? 6 : taskType === 'GARMENT_DETECTION' ? 8 : 3,
     };
   }
 
@@ -367,6 +368,146 @@ class TaskPipelineService {
             progress: 100,
             currentStage: task.currentStage,
             resultUrl: normalizedAvatarUrl,
+            error: null,
+          },
+        });
+      } else if (taskType === 'GARMENT_DETECTION') {
+        // GARMENT_DETECTION: 多模态多单品检测、幽灵模特白底图生成、透明化、入库
+        task.progressPercent = 15;
+        task.currentStage = 'Vision 视觉多模态正在深度扫描与定位图中的穿搭单品...';
+        task.updatedAt = new Date().toISOString();
+        db.saveAsyncTask(task);
+        this.broadcastProgress({
+          event: 'TASK_PROGRESS_UPDATED',
+          data: {
+            taskId: task.id,
+            userId: task.userId,
+            taskType: task.taskType,
+            status: task.status,
+            progress: 15,
+            currentStage: task.currentStage,
+            resultUrl: null,
+            error: null,
+          },
+        });
+
+        const imageBase64 = inputPayload.imageBase64 || '时尚休闲单品';
+        const profileId = inputPayload.profileId;
+        const detectedItems = await AIService.analyzeGarmentsFromImageVision(imageBase64);
+
+        task.progressPercent = 40;
+        task.currentStage = `成功识别出 ${detectedItems.length} 件穿搭单品，正在调用 AI 生成平铺白底切片...`;
+        task.updatedAt = new Date().toISOString();
+        db.saveAsyncTask(task);
+        this.broadcastProgress({
+          event: 'TASK_PROGRESS_UPDATED',
+          data: {
+            taskId: task.id,
+            userId: task.userId,
+            taskType: task.taskType,
+            status: task.status,
+            progress: 40,
+            currentStage: task.currentStage,
+            resultUrl: null,
+            error: null,
+          },
+        });
+
+        const createdGarments: ExtendedGarmentItem[] = [];
+        for (let index = 0; index < detectedItems.length; index++) {
+          const item = detectedItems[index];
+          const garmentId = `garment-${Date.now()}-${index}`;
+
+          let flatLayUrl = '';
+          try {
+            console.log(`[Pipeline] 正在为识别出的单品 "${item.title}" 生成 AI 幽灵模特平铺素图...`);
+            flatLayUrl = await AIService.generateGhostMannequinAsset(
+              item.title,
+              item.primaryCategory,
+              item.subCategory,
+              item.colors,
+              item.material,
+              imageBase64
+            );
+          } catch (err: any) {
+            console.warn(`[Pipeline] 单品 ${item.title} 平铺素图生成异常:`, err.message);
+          }
+
+          let baseImage = flatLayUrl || item.previewUrl || imageBase64 || GENERATED_ASSETS.dressCutoutUrl;
+          if (baseImage && (baseImage.startsWith('data:image') || baseImage.length > 100)) {
+            try {
+              baseImage = await ImageProcessor.removeBackground(baseImage);
+            } catch (err: any) {
+              console.warn(`[Pipeline] 单品 ${item.title} 主素图透明化异常:`, err.message);
+            }
+          }
+
+          const assets = generateFissionAssets(garmentId, item.primaryCategory, baseImage);
+          for (const a of assets) {
+            if (a.pngUrl && (a.pngUrl.startsWith('data:image') || a.pngUrl.length > 100)) {
+              try {
+                a.pngUrl = await ImageProcessor.removeBackground(a.pngUrl);
+              } catch (e: any) {
+                console.warn(`[Pipeline] 单品 ${item.title} 切片 ${a.stateType} 透明化异常:`, e.message);
+              }
+            }
+          }
+
+          const newGarment: ExtendedGarmentItem = {
+            id: garmentId,
+            profileId,
+            isPublic: false,
+            title: item.title,
+            primaryCategory: item.primaryCategory,
+            subCategory: item.subCategory,
+            colors: item.colors,
+            patterns: item.patterns,
+            material: item.material,
+            box_2d: item.box_2d,
+            assets,
+          };
+
+          db.saveGarment(newGarment);
+          createdGarments.push(newGarment);
+
+          const stepProgress = Math.min(95, 40 + Math.round(((index + 1) / detectedItems.length) * 55));
+          task.progressPercent = stepProgress;
+          task.currentStage = `已完成 (${index + 1}/${detectedItems.length}) 件切片: ${item.title}`;
+          task.updatedAt = new Date().toISOString();
+          db.saveAsyncTask(task);
+          this.broadcastProgress({
+            event: 'TASK_PROGRESS_UPDATED',
+            data: {
+              taskId: task.id,
+              userId: task.userId,
+              taskType: task.taskType,
+              status: task.status,
+              progress: stepProgress,
+              currentStage: task.currentStage,
+              resultUrl: null,
+              error: null,
+            },
+          });
+        }
+
+        task.progressPercent = 100;
+        task.status = 'SUCCESS';
+        task.currentStage = `成功识别出 ${createdGarments.length} 件单品并入库！`;
+        task.outputResult = { garments: createdGarments, count: createdGarments.length };
+        task.updatedAt = new Date().toISOString();
+        db.saveAsyncTask(task);
+
+        const finalResultUrl = createdGarments[0]?.assets?.[0]?.pngUrl || null;
+        this.broadcastProgress({
+          event: 'TASK_PROGRESS_UPDATED',
+          data: {
+            taskId: task.id,
+            userId: task.userId,
+            taskType: task.taskType,
+            status: task.status,
+            progress: 100,
+            currentStage: task.currentStage,
+            resultUrl: finalResultUrl,
             error: null,
           },
         });

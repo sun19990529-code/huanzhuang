@@ -94,12 +94,14 @@ export function setActiveUserId(userId: string | null) {
 
 function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
   const headers: Record<string, string> = { ...extra };
-  if (activeToken) {
-    headers['Authorization'] = `Bearer ${activeToken}`;
-    headers['x-auth-token'] = activeToken;
+  const tok = activeToken || (typeof window !== 'undefined' ? localStorage.getItem('SW_AUTH_TOKEN') : null);
+  const uid = activeUserId || (typeof window !== 'undefined' ? localStorage.getItem('SW_USER_ID') : null);
+  if (tok) {
+    headers['Authorization'] = `Bearer ${tok}`;
+    headers['x-auth-token'] = tok;
   }
-  if (activeUserId) {
-    headers['x-user-id'] = activeUserId;
+  if (uid) {
+    headers['x-user-id'] = uid;
   }
   return headers;
 }
@@ -330,7 +332,35 @@ export async function deleteGarment(garmentId: string): Promise<void> {
   if (!res.ok) throw new Error(data.message || '删除衣物失败');
 }
 
-export async function autoDetectUploadGarments(profileId: string, imageBase64: string): Promise<ExtendedGarmentItem[]> {
+export async function batchDeleteUserGarments(garmentIds: string[]): Promise<{ deletedCount: number }> {
+  const res = await fetch(`${API_BASE}/garments/batch-delete`, {
+    method: 'POST',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ garmentIds }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || '批量删除衣物失败');
+  return data.data;
+}
+
+export async function generateFissionStateAsset(
+  garmentId: string,
+  stateType: 'OPEN' | 'CLOSED' | 'TUCKED'
+): Promise<{ garmentId: string; stateType: string; pngUrl: string; asset: any }> {
+  const res = await fetch(`${API_BASE}/garments/${garmentId}/generate-fission-state`, {
+    method: 'POST',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ stateType }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || '生成形态切片失败');
+  return data.data;
+}
+
+export async function autoDetectUploadGarments(
+  profileId: string,
+  imageBase64: string
+): Promise<{ taskId?: string; garments?: ExtendedGarmentItem[] }> {
   const res = await fetch(`${API_BASE}/garments/auto-detect-upload`, {
     method: 'POST',
     headers: authHeaders({ 'Content-Type': 'application/json' }),
@@ -338,7 +368,7 @@ export async function autoDetectUploadGarments(profileId: string, imageBase64: s
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.message || '识别入库失败');
-  return data.data.garments;
+  return data.data;
 }
 
 export async function updateGarmentAsset(garmentId: string, pngUrl: string): Promise<ExtendedGarmentItem> {
@@ -478,6 +508,25 @@ export async function fetchTaskStatus(taskId: string): Promise<{
   return data.data;
 }
 
+export async function deleteTaskApi(taskId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/tasks/${taskId}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || '删除任务记录失败');
+}
+
+export async function clearHistoryTasksApi(): Promise<{ deletedCount: number }> {
+  const res = await fetch(`${API_BASE}/tasks/history/clear`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || '清空历史任务记录失败');
+  return data.data || { deletedCount: 0 };
+}
+
 export async function saveOutfit(payload: {
   profileId: string;
   title: string;
@@ -500,6 +549,18 @@ export async function fetchProfileOutfits(profileId?: string): Promise<OutfitDat
   const res = await fetch(url, { headers: authHeaders() });
   const data = await res.json();
   return data.data || [];
+}
+
+export async function deleteOutfit(outfitId: string): Promise<boolean> {
+  const res = await fetch(`${API_BASE}/outfits/${outfitId}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    const data = await res.json();
+    throw new Error(data.message || '删除搭配失败');
+  }
+  return true;
 }
 
 export async function fetchSuggestions(profileId: string, temperatureC = 22, lockedIds: string[] = []): Promise<any> {
@@ -583,6 +644,14 @@ export async function logOotdEntry(payload: {
   });
   const data = await res.json();
   return data.data;
+}
+
+export async function deleteOotdEntry(id: string): Promise<boolean> {
+  const res = await fetch(`${API_BASE}/ootd/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  return res.ok;
 }
 
 export async function fetchMyFriendCode(): Promise<string> {

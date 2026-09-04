@@ -51,7 +51,7 @@ async function testGeneration() {
         Authorization: 'Bearer sk-62702cd208dc42b09fddaf43b3731d23',
       },
       body: JSON.stringify({
-        model: 'gemini-3-pro-image',
+        model: 'gemini-3.1-flash-image',
         messages: [
           {
             role: 'user',

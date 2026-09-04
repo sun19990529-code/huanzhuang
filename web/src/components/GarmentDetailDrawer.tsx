@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { GarmentItem, GarmentState } from '@smart-wardrobe/shared';
 import {
   X,
@@ -55,10 +56,10 @@ export const GarmentDetailDrawer: React.FC<GarmentDetailDrawerProps> = ({
     garment.assets.some((a) => a.stateType === s.key)
   );
 
-  return (
+  const drawerContent = (
     <div className="fixed inset-0 z-[100] overflow-hidden bg-black/40 backdrop-blur-xs flex justify-end transition-opacity duration-300 animate-in fade-in">
       <div
-        className="w-full max-w-md bg-white h-full shadow-2xl flex flex-col justify-between border-l border-[#EAE6DF] text-left p-6 overflow-y-auto scrollbar-thin animate-in slide-in-from-right duration-300"
+        className="w-full md:max-w-md bg-white h-full shadow-2xl flex flex-col justify-between md:border-l border-[#EAE6DF] text-left p-5 sm:p-6 overflow-y-auto scrollbar-thin animate-in slide-in-from-right duration-300"
       >
         {/* 顶部标题栏 */}
         <div className="space-y-4">
@@ -178,7 +179,7 @@ export const GarmentDetailDrawer: React.FC<GarmentDetailDrawerProps> = ({
         </div>
 
         {/* 底部操作栏 */}
-        <div className="pt-4 border-t border-stone-100 space-y-2">
+        <div className="pt-4 pb-[max(env(safe-area-inset-bottom),0.75rem)] border-t border-stone-100 space-y-2">
           {garment.isPublic ? (
             <button
               onClick={() => {
@@ -228,4 +229,9 @@ export const GarmentDetailDrawer: React.FC<GarmentDetailDrawerProps> = ({
       </div>
     </div>
   );
+
+  if (typeof document !== 'undefined') {
+    return createPortal(drawerContent, document.body);
+  }
+  return drawerContent;
 };

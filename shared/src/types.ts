@@ -24,6 +24,7 @@ export type GarmentState =
 export type TaskType = 
   | 'AVATAR_NORMALIZE' 
   | 'GARMENT_NORMALIZE' 
+  | 'GARMENT_DETECTION'
   | 'VTON_RENDER';
 
 export type TaskStatus = 

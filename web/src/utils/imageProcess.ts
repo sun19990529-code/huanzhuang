@@ -303,13 +303,22 @@ export function getCategoryDefaultOffsets(
   subCategory = '',
   title = ''
 ) {
-  const isDress = /裙|礼服|长裙|连衣裙|旗袍|gown|dress/i.test(title) || /dress|gown/i.test(subCategory);
+  // 严格区隔连体长裙(ONE_PIECE)与下装半身短裙(BOTTOMS)
+  const isOnePieceDress =
+    category === 'ONE_PIECE' ||
+    (category !== 'BOTTOMS' &&
+      category !== 'TOPS' &&
+      (/连衣裙|连体裙|旗袍|gown|dress/i.test(title) || /dress|gown/i.test(subCategory)) &&
+      !/半身|短裙|包臀|百褶|A字|伞裙|皮裙|skirt/i.test(title));
+
   const isCrown = /冠|发饰|头饰|发带|皇冠|crown/i.test(title) || /crown/i.test(subCategory);
   const isHat = /帽|贝雷|hat|beret|cap/i.test(title) || /hat|beret/i.test(subCategory);
   const isNecklace = /链|项圈|项链|necklace|choker|jewelry/i.test(title) || /necklace|jewelry/i.test(subCategory);
   const isBelt = /带|腰带|皮带|waistband|belt/i.test(title) || /belt/i.test(subCategory);
   const isBag = /包|手提|单肩|斜挎|托特|bag|tote|handbag|crossbody|clutch/i.test(title) || /bag|tote|handbag/i.test(subCategory);
   const isShorts = /短裤|热裤|shorts/i.test(title) || /shorts/i.test(subCategory);
+  const isPants = /裤|jeans|pants|trousers|牛仔/i.test(title) || /jeans|pants|trousers/i.test(subCategory);
+  const isSkirt = /裙|skirt/i.test(title) || /skirt/i.test(subCategory);
 
   if (isCrown) return { offsetY: -325, offsetX: 0, scale: 0.22, scaleX: 0.22, scaleY: 0.22 };
   if (isHat) return { offsetY: -310, offsetX: 0, scale: 0.32, scaleX: 0.32, scaleY: 0.32 };
@@ -318,12 +327,16 @@ export function getCategoryDefaultOffsets(
   if (isBag) return { offsetY: 75, offsetX: 105, scale: 0.38, scaleX: 0.38, scaleY: 0.38 };
   if (category === 'ACCESSORIES') return { offsetY: -195, offsetX: 0, scale: 0.32, scaleX: 0.32, scaleY: 0.32 };
   
-  if (isDress) return { offsetY: 40, offsetX: 0, scale: 0.94, scaleX: 0.88, scaleY: 0.96 };
+  if (isOnePieceDress) return { offsetY: 40, offsetX: 0, scale: 0.94, scaleX: 0.88, scaleY: 0.96 };
   if (category === 'TOPS') return { offsetY: -105, offsetX: 0, scale: 0.48, scaleX: 0.48, scaleY: 0.48 };
   if (category === 'OUTERWEAR') return { offsetY: -90, offsetX: 0, scale: 0.56, scaleX: 0.56, scaleY: 0.56 };
   if (isShorts) return { offsetY: 35, offsetX: 0, scale: 0.45, scaleX: 0.45, scaleY: 0.45 };
-  if (category === 'BOTTOMS') return { offsetY: 105, offsetX: 0, scale: 0.50, scaleX: 0.50, scaleY: 0.50 };
-  if (category === 'FOOTWEAR') return { offsetY: 295, offsetX: 0, scale: 0.36, scaleX: 0.36, scaleY: 0.36 };
+  if (category === 'BOTTOMS') {
+    if (isSkirt) return { offsetY: 88, offsetX: 0, scale: 0.52, scaleX: 0.52, scaleY: 0.50 };
+    if (isPants) return { offsetY: 96, offsetX: 0, scale: 0.53, scaleX: 0.53, scaleY: 0.52 };
+    return { offsetY: 100, offsetX: 0, scale: 0.51, scaleX: 0.51, scaleY: 0.51 };
+  }
+  if (category === 'FOOTWEAR') return { offsetY: 278, offsetX: 0, scale: 0.38, scaleX: 0.38, scaleY: 0.38 };
 
   return { offsetY: 0, offsetX: 0, scale: 0.5, scaleX: 0.5, scaleY: 0.5 };
 }

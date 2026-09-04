@@ -130,14 +130,14 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
   return (
     <div
       onClick={onClick}
-      className={`flex items-center gap-3 cursor-pointer select-none text-left ${className}`}
+      className={`flex items-center gap-2 sm:gap-3 cursor-pointer select-none text-left shrink-0 ${className}`}
     >
       {LogoIcon}
-      <div className="flex flex-col justify-center">
-        <span className={`font-black text-stone-900 text-xs sm:${titleSizeMap[size]} leading-none whitespace-nowrap`}>
+      <div className="hidden sm:flex flex-col justify-center">
+        <span className={`font-black text-stone-900 ${titleSizeMap[size]} leading-none whitespace-nowrap`}>
           SMARTWARDROBE
         </span>
-        <span className={`hidden sm:block font-mono uppercase font-semibold text-stone-500 ${subSizeMap[size]} mt-1 leading-none whitespace-nowrap`}>
+        <span className={`font-mono uppercase font-semibold text-stone-500 ${subSizeMap[size]} mt-1 leading-none whitespace-nowrap`}>
           HAUTE ATELIER · 数字化衣橱
         </span>
       </div>

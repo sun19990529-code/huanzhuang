@@ -2,14 +2,14 @@ import { ImageProcessor } from './imageProcessor';
 // ====================================================================
 // SmartWardrobe 真实 AI 接口服务适配器
 // 🚀 [nanonanana2 专属优化高密度生图提示词架构 V3.2]
-// - 文字/Vision/对齐模型: gemini-3.7-flash-high (独占)
+// - 文字/Vision/对齐模型: gemini-3.8-flash-high (独占)
 // - 生图/VTON/素体模型: gemini-3.1-flash-image (独占，专属针对 nanonanana2 权重特征适配)
 // ====================================================================
 
 import { GarmentCategory, GarmentState } from '@smart-wardrobe/shared';
 import { ImageUtils } from './imageUtils';
 
-export const TEXT_VISION_MODEL = 'gemini-3.7-flash-high';
+export const TEXT_VISION_MODEL = 'gemini-3.8-flash-high';
 export const IMAGE_GENERATION_MODEL = 'gemini-3.1-flash-image';
 
 const AI_BASE_URL = process.env.AI_BASE_URL || 'http://127.0.0.1:48045/v1';
@@ -129,13 +129,23 @@ export function buildGhostMannequinRectificationPrompt(
   colors?: string[],
   material?: string,
   patterns?: string[] | string,
-  aspectRatio: '3:4' | '1:1' = '1:1'
+  aspectRatio: '3:4' | '1:1' = '1:1',
+  stateType?: string
 ): string {
   const safeColors = colors || ['#1A1A1A'];
   const isLightColor = ImageUtils.isLightOrWhiteColor(safeColors, title);
   const backgroundSpec = isLightColor
     ? 'isolated on high-contrast neutral studio cool grey backdrop #7F7F7F to preserve crisp white textile boundaries'
     : 'isolated on seamless pure solid white backdrop #FFFFFF';
+
+  let stateClause = '';
+  if (stateType === 'OPEN') {
+    stateClause = 'Styling State: Casual open-front silhouette, unbuttoned front placket loosely parted open toward both sides to reveal inner clearance, natural relaxed lapel drape along left and right contours (unbuttoned open cardigan/jacket style).';
+  } else if (stateType === 'CLOSED') {
+    stateClause = 'Styling State: Formally fastened closed silhouette, front placket neatly aligned along the vertical midline with all buttons or zippers securely fastened and closed.';
+  } else if (stateType === 'TUCKED') {
+    stateClause = 'Styling State: Neatly tucked-in styling, smooth flat bottom hem cleanly cropped at waist level.';
+  }
 
   let geometryClause = '';
   switch (primaryCategory) {
@@ -152,6 +162,9 @@ export function buildGhostMannequinRectificationPrompt(
     case 'ACCESSORIES':
       geometryClause = 'Centered balanced studio product display with crisp geometric edges and symmetrical presentation.';
       break;
+    case 'ONE_PIECE':
+      geometryClause = 'Full-length orthographic elevation, bilateral symmetry along vertical Y-axis, smooth waist contour, balanced hemline.';
+      break;
   }
 
   const colorStr = safeColors.join(', ');
@@ -164,7 +177,7 @@ export function buildGhostMannequinRectificationPrompt(
   return `Commercial e-commerce luxury product catalog shot, invisible ghost mannequin orthographic flat-lay: "${title}" (${primaryCategory} - ${subCategory || ''}).
 
 Geometry & Form: ${geometryClause}
-Fabric & Material: Authentic ${material || 'premium textile'} micro-texture weave, natural surface sheen, colors (${colorStr}), pattern (${patternStr}), precise collar/stitching/button construction.
+${stateClause ? stateClause + '\n' : ''}Fabric & Material: Authentic ${material || 'premium textile'} micro-texture weave, natural surface sheen, colors (${colorStr}), pattern (${patternStr}), precise collar/stitching/button construction.
 Presentation: ${backgroundSpec}, crisp razor-sharp silhouette alpha edge, ${aspectRatio} aspect ratio, studio macro lighting, zero human body, zero hangers.`;
 }
 
@@ -324,7 +337,7 @@ function extractImageFromResponseContent(rawContent: any): string {
 
 export class AIService {
   /**
-   * 多模态双图对齐：传入模特素体底图与服装切片图，调用 gemini-3.7-flash-high 计算像素级解剖学吸附位置与宽高比例
+   * 多模态双图对齐：传入模特素体底图与服装切片图，调用 gemini-3.8-flash-high 计算像素级解剖学吸附位置与宽高比例
    */
   public static async matchGarmentPlacementWithVision(
     avatarImageUrl: string,
@@ -541,7 +554,7 @@ export class AIService {
               content: [
                 {
                   type: 'text',
-                  text: '请深度分析识别图像中的所有服装与配饰单品。必须返回严格的 JSON 数组，所有属性值全为中文：[ { "title": "中文单品标题(如: 宽松黑色仿皮飞行员夹克 / 麻灰拉链连帽卫衣)", "primaryCategory": "TOPS" | "BOTTOMS" | "OUTERWEAR" | "FOOTWEAR" | "ACCESSORIES", "subCategory": "子类目中文(如: 夹克外套 / 连帽卫衣 / 阔腿西裤 / 棒球帽 / 单肩包 / 运动鞋)", "colors": ["#1A1A1A"], "colorNames": ["纯黑"], "patterns": ["纯色"], "material": "材质中文(如: 仿皮 / 纯棉混纺 / 羊毛)" } ]',
+                  text: '请深度分析识别图像中的所有服装与配饰单品。必须返回严格的 JSON 数组，所有属性值全为中文：[ { "title": "中文单品标题(如: 宽松黑色仿皮飞行员夹克 / 麻灰拉链连帽卫衣 / 纯白法式短袖衬衫)", "primaryCategory": "TOPS" | "BOTTOMS" | "OUTERWEAR" | "FOOTWEAR" | "ACCESSORIES" | "ONE_PIECE", "subCategory": "子类目中文(如: 针织开衫 / 夹克外套 / 连体裙 / 阔腿西裤 / 棒球帽 / 单肩包 / 运动鞋)", "colors": ["#1A1A1A"], "colorNames": ["纯黑"], "patterns": ["纯色"], "material": "材质中文(如: 仿皮 / 纯棉混纺 / 羊毛)" } ]。\n分类判定权威准则：\n1. 针织开衫(Cardigan)、西装外套、夹克、大衣、风衣、拉链开衫卫衣等所有带前门襟(纽扣/拉链/系带)的外套，无论内搭单穿还是外穿叠搭，必须严格归类为 OUTERWEAR，严禁归为 TOPS！\n2. T恤、吊带、抹胸、背心、套头毛衣/套头针织衫、套头卫衣、基础贴身衬衫标记为 TOPS；\n3. 连身裙、旗袍、连体晚礼服标记为 ONE_PIECE；\n4. 长裤、牛仔裤、短裤、半身裙、短裙必须标记为 BOTTOMS。',
                 },
                 ...(imageBase64.startsWith('data:image') || imageBase64.startsWith('http')
                   ? [{ type: 'image_url', image_url: { url: imageBase64 } }]
@@ -701,6 +714,8 @@ export class AIService {
       generatedImage = await sendGenerateRequest(prompt, validImages);
     }
 
+
+
     return generatedImage || '';
   }
 
@@ -786,7 +801,8 @@ export class AIService {
     colors?: string[],
     material?: string,
     patternsOrRefImage?: string[] | string,
-    referenceImage?: string
+    referenceImage?: string,
+    stateType?: string
   ): Promise<string> {
     let safePatterns: string[] = ['纯色'];
     let safeRefImage = '';
@@ -808,7 +824,7 @@ export class AIService {
     // 1. 自适应画幅决策：长裙/大衣/长裤 -> 3:4，短款/配件 -> 1:1
     const targetAspectRatio = getAdaptiveAspectRatio(primaryCategory, subCategory, title);
 
-    // 2. 正交平铺规范化模块 Prompt (nanonanana2 专属优化)
+    // 2. 正交平铺规范化模块 Prompt (nanonanana2 专属优化，支持形态注入)
     const prompt = buildGhostMannequinRectificationPrompt(
       title,
       primaryCategory,
@@ -816,7 +832,8 @@ export class AIService {
       colors,
       material,
       safePatterns,
-      targetAspectRatio
+      targetAspectRatio,
+      stateType
     );
 
     console.log(`[Ghost Mannequin: nanonanana2] 单品 "${title}" (${primaryCategory}) 触发正交平铺重构 (画幅: ${targetAspectRatio}, 包含参考图: ${!!safeRefImage})...`);
@@ -830,7 +847,7 @@ export class AIService {
   }
 
   /**
-   * 5. 调用 Diffusion VTON 生成 3:4 8K 影棚试穿大片 (多图参考 + 真实织物重力垂坠 + 模特真人五官 100% 锁定)
+   * 5. 调用 Diffusion VTON 生成 3:4 影棚试穿大片 (多图参考 + 真实织物重力垂坠 + 模特真人五官 100% 锁定)
    */
   public static async renderVtonWithAI(
     profileName: string,
