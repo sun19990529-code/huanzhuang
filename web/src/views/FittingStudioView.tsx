@@ -2390,7 +2390,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  />
 
  {/* Figma Pro 级交互式微调与缩放选框 (视口解耦，绝对恒定尺寸与清晰度) */}
-                  {isSelected && studioDisplayMode === '2D' && !isRendering && !isLookbookModalOpen && !isSlotMachineOpen && !isVtonResultModalOpen && !selectedGarmentForDrawer && (mobileSheetSnap === 'PEEK' || (typeof window !== 'undefined' && window.innerWidth >= 768)) && (
+                  {isSelected && studioDisplayMode === '2D' && !isRendering && !isLookbookModalOpen && !isSlotMachineOpen && !isVtonResultModalOpen && !selectedGarmentForDrawer && (mobileSheetSnap !== 'FULL' || (typeof window !== 'undefined' && window.innerWidth >= 768)) && (
  <div
  onClick={(e) => e.stopPropagation()}
  style={{
