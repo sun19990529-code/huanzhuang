@@ -12,6 +12,7 @@ import { downloadOriginalImage } from '../utils/imageUpscaler';
 import { InstantOotdPosterModal } from '../components/InstantOotdPosterModal';
 import { generateSmartOutfitTitle } from '../utils/outfitAiNamer';
 import { OutfitData, generateFissionStateAsset } from '../api';
+import { Studio360LabModal } from '../components/Studio360LabModal';
 import React, { useState, useRef, useEffect } from 'react';
 import {
   UserProfile,
@@ -161,6 +162,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
   // 海报直出弹窗与 AI 起名状态
   const [isInstantPosterOpen, setIsInstantPosterOpen] = useState(false);
   const [isLookbookDrawerOpen, setIsLookbookDrawerOpen] = useState(false);
+  const [is360LabModalOpen, setIs360LabModalOpen] = useState(false);
   const [isAiNaming, setIsAiNaming] = useState(false);
 
   // 衣橱 Tab 与综合多维筛选状态
@@ -1855,6 +1857,25 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
             <Sparkles className="w-3.5 h-3.5 text-[#E17055]" />
           </button>
 
+          {/* 360° 空间实验室微钮 */}
+          <button
+            type="button"
+            onClick={() => {
+              if (wornItems.length === 0) {
+                showToast('请先穿戴单品后再体验 360° 空间环视！', 'info');
+                return;
+              }
+              setSelectedItemId(null);
+              setIs360LabModalOpen(true);
+            }}
+            className={`w-8 h-8 bg-amber-500/10 hover:bg-amber-500/20 backdrop-blur-md text-amber-600 rounded-full border border-amber-500/30 shadow-md flex items-center justify-center active:scale-90 transition-all cursor-pointer ${
+              wornItems.length === 0 ? 'opacity-60' : 'opacity-100'
+            }`}
+            title="360° AI 空间多视角环视实验室 (Beta)"
+          >
+            <RotateCcw className="w-3.5 h-3.5 text-amber-600" />
+          </button>
+
           {/* 保存搭配微钮 */}
           <button
             type="button"
@@ -2763,6 +2784,27 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
           )}
         </button>
 
+        {/* 5. 360° 空间多视角实验室 (Beta) */}
+        <button
+          type="button"
+          onClick={() => {
+            setSelectedItemId(null);
+            setIs360LabModalOpen(true);
+          }}
+          disabled={wornItems.length === 0}
+          title={wornItems.length === 0 ? '请先穿戴衣物后再体验 360° 空间环视' : '进入 360° AI 空间多视角环视摄影实验沙盒'}
+          data-testid="studio-360-lab-btn"
+          className={`w-full py-2 px-1 ${
+            isCompactWing ? "justify-center" : "lg:px-2.5 justify-center lg:justify-start"
+          } bg-amber-500/10 hover:bg-amber-500/20 text-stone-900 border border-amber-500/30 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-xs disabled:opacity-40`}
+        >
+          <RotateCcw className="w-4 h-4 shrink-0 text-amber-600" />
+          <span className={isCompactWing ? "hidden" : "hidden lg:inline text-xs flex items-center gap-1"}>
+            360°空间
+            <span className="text-[9px] bg-amber-500 text-white font-mono px-1 rounded-sm leading-tight">Beta</span>
+          </span>
+        </button>
+
         {/* 4. 当 3D 渲染成片就绪时的功能 (卷帘对比 & 高清下载) */}
         {renderedImageUrl && (
           <>
@@ -3071,6 +3113,16 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* 9. 360° AI 空间多视角环视实验室沙盒 (Beta) */}
+      <Studio360LabModal
+        isOpen={is360LabModalOpen}
+        onClose={() => setIs360LabModalOpen(false)}
+        profile={profile}
+        avatar={avatar}
+        wornItems={wornItems}
+        initialFrontImageUrl={renderedImageUrl}
+      />
     </div>
   );
 };

@@ -342,6 +342,58 @@ Studio Environment: Minimalist luxury neutral studio backdrop, commercial 35mm w
 Zero-Text & Clean Image Mandate: Absolutely zero magazine titles, zero headers, zero typography, zero letters, zero words, zero numbers, zero brand watermarks, zero logos, zero graphic design overlays, zero borders, zero date stamps, zero text captions. Pure clean full-length commercial studio photograph with completely blank neutral studio background.`;
 }
 
+/**
+ * 模块 E: [360° 空间实验室专属] 多视角空间定向大片提示词生成器
+ * 严格锁定面容/发型/身材与单品，定向推演正面、右侧、背面、左侧空间体态
+ */
+export function buildVtonMultiAnglePrompt(
+  profileName: string,
+  gender: string,
+  garmentsDetailedText: string,
+  angle: 'FRONT' | 'SIDE_RIGHT' | 'BACK' | 'SIDE_LEFT' = 'FRONT',
+  bodyMeasurements?: { heightCm: number; bustCm: number; waistCm: number; hipsCm: number; weightKg?: number; bodyType?: string }
+): string {
+  let bodyStr = 'Natural authentic proportions matching Image 1';
+  if (bodyMeasurements) {
+    const weight = bodyMeasurements.weightKg || (gender === 'MALE' ? 70 : 50);
+    const volume = buildBodyVolumeAndProportionsClause(bodyMeasurements.heightCm, weight);
+    const morph = (bodyMeasurements.bodyType && BODY_MORPHOLOGY_PROMPTS[bodyMeasurements.bodyType])
+      ? BODY_MORPHOLOGY_PROMPTS[bodyMeasurements.bodyType]
+      : '';
+    bodyStr = `Height ${bodyMeasurements.heightCm}cm, Bust ${bodyMeasurements.bustCm}cm, Waist ${bodyMeasurements.waistCm}cm, Hips ${bodyMeasurements.hipsCm}cm${morph ? `, ${morph}` : ''}, ${volume}`;
+  }
+
+  let angleGuidance = '';
+  switch (angle) {
+    case 'FRONT':
+      angleGuidance = 'Viewing Angle & Spatial Orientation: Direct front-facing eye-level elevation view (0 degrees orientation). The model faces directly toward the camera, standing in neutral relaxed upright posture, clearly displaying front garment details, chest, front waistline, and front footwear uppers.';
+      break;
+    case 'SIDE_RIGHT':
+      angleGuidance = 'Viewing Angle & Spatial Orientation: Full profile right side elevation view (90 degrees orientation). The model is turned 90 degrees facing to the right, showing clean side profile silhouette of the outfit, sleeve drape, side seam, waistband thickness, and lateral footwear outsole profile.';
+      break;
+    case 'BACK':
+      angleGuidance = 'Viewing Angle & Spatial Orientation: Direct rear back elevation view (180 degrees orientation). The model has her/his back completely turned to the camera, facing directly away, showcasing the rear back collar, rear fabric drape, back waistline, rear pockets, and rear footwear heels.';
+      break;
+    case 'SIDE_LEFT':
+      angleGuidance = 'Viewing Angle & Spatial Orientation: Full profile left side elevation view (270 degrees orientation). The model is turned 90 degrees facing to the left, displaying the complete left lateral silhouette of the body and coordinated garments with level posture.';
+      break;
+  }
+
+  return `Full-body head-to-toe wide-angle commercial studio fashion photography: 20-year-old Chinese ${gender.toLowerCase()} model in Image 1 (${profileName}, ${bodyStr}), captured in a complete full-length standing pose on the studio floor.
+
+${angleGuidance}
+
+Exact Coordinated Garment Items to Replicate from Reference Images:
+${garmentsDetailedText}
+
+Framing & Shot Composition: Complete full-length vertical 3:4 wide shot, full-body head-to-toe standing view, visible floor plane with soft contact shadows beneath feet, generous headroom and foot clearance, entire figure fully in frame without cropping head or feet, zero close-up, zero waist-up cropping, zero knee-up cropping.
+Pose, Anatomy & Limb Clearance: Natural relaxed upright standing posture, arms resting loosely beside thighs with visible fingers, hands strictly outside of pockets, hands not obscuring the waistline, hips, or garment silhouette. Pant hems drape naturally and gracefully right above footwear uppers without clipping into or merging with shoe soles. True anatomical proportions preserved authentically without reverting to an exaggerated ultra-skinny runway model standard.
+Physics & Textile Fidelity: Authentic gravitational fabric drape conforming to 3D body contours, natural cloth folds and wrinkles, realistic tension, soft ambient occlusion. 100% preserve every garment's exact pattern, color, weave texture, and neckline/waistband construction.
+Studio Environment: Minimalist luxury neutral studio backdrop, commercial 35mm wide lens, f/4, crisp tack-sharp textile focus, balanced commercial studio lighting, zero hands hidden in pockets, zero deformed extra fingers, zero obscured waistband.
+
+Zero-Text & Clean Image Mandate: Absolutely zero magazine titles, zero headers, zero typography, zero letters, zero words, zero numbers, zero brand watermarks, zero logos, zero graphic design overlays, zero borders, zero date stamps, zero text captions. Pure clean full-length commercial studio photograph with completely blank neutral studio background.`;
+}
+
 
 // 自动中文对齐字典 (防止模型偶然漏翻英文)
 const CATEGORY_TRANSLATIONS: Record<string, string> = {

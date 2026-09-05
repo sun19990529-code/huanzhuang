@@ -9,7 +9,7 @@ import cors from 'cors';
 import { WebSocket, WebSocketServer } from 'ws';
 import { db, DBUser, OutfitSuggestion, ExtendedGarmentItem } from './db';
 import { pipeline } from './pipeline';
-import { AIService } from './aiService';
+import { AIService, buildVtonMultiAnglePrompt } from './aiService';
 import {
   UserProfile,
   UserAvatar,
@@ -2027,6 +2027,95 @@ app.get('/v1/proxy/image', async (req: Request, res: Response) => {
     res.send(buffer);
   } catch (err: any) {
     res.status(500).send('Image proxy error: ' + err.message);
+  }
+});
+
+// ====================================================================
+// 360° 空间实验室专属独立端点 (零侵入实验沙盒)
+// ====================================================================
+app.post('/v1/experiments/vton-360-preview', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { profileId, garmentIds, targetAngle } = req.body;
+    const profile = db.profiles.get(profileId);
+    if (!profile) {
+      return res.status(404).json({ code: 404, message: '未找到指定模特角色档案' });
+    }
+
+    // 查找激活的模特素体
+    let avatar: UserAvatar | undefined;
+    for (const av of db.avatars.values()) {
+      if (av.profileId === profileId && av.isActive) {
+        avatar = av;
+        break;
+      }
+    }
+    const avatarUrl = avatar?.normalizedImageUrl || avatar?.originalImageUrl || '';
+
+    // 获取单品列表
+    const garmentsList = (garmentIds || [])
+      .map((id: string) => db.garments.get(id))
+      .filter(Boolean) as ExtendedGarmentItem[];
+
+    const garmentsDetailedText = garmentsList
+      .map((g) => `- ${g.primaryCategory} (${g.subCategory || ''}): ${g.title}, colors: ${(g.colors || []).join('/')}, pattern: ${Array.isArray(g.patterns) ? g.patterns.join('/') : g.patterns || 'solid'}`)
+      .join('\n');
+
+    const anglesToGenerate: ('FRONT' | 'SIDE_RIGHT' | 'BACK' | 'SIDE_LEFT')[] = targetAngle
+      ? [targetAngle]
+      : ['FRONT', 'SIDE_RIGHT', 'BACK'];
+
+    const results: { angle: string; degrees: number; imageUrl: string }[] = [];
+
+    for (const ang of anglesToGenerate) {
+      const prompt = buildVtonMultiAnglePrompt(
+        profile.name,
+        profile.gender,
+        garmentsDetailedText,
+        ang,
+        {
+          heightCm: profile.heightCm,
+          bustCm: profile.bustCm,
+          waistCm: profile.waistCm,
+          hipsCm: profile.hipsCm,
+          weightKg: profile.weightKg,
+          bodyType: (profile as any).bodyType
+        }
+      );
+
+      const refImages: string[] = [];
+      if (avatarUrl) refImages.push(avatarUrl);
+      garmentsList.forEach((g) => {
+        const pUrl = g.assets?.[0]?.pngUrl;
+        if (pUrl) refImages.push(pUrl);
+      });
+
+      console.log(`[360 Lab] 正在为视角 ${ang} 生成空间大片...`);
+      const imageUrl = await AIService.callImageGeneration(prompt, '3:4', refImages);
+      
+      const degreesMap: Record<string, number> = {
+        'FRONT': 0,
+        'SIDE_RIGHT': 90,
+        'BACK': 180,
+        'SIDE_LEFT': 270
+      };
+
+      results.push({
+        angle: ang,
+        degrees: degreesMap[ang] ?? 0,
+        imageUrl
+      });
+    }
+
+    res.json({
+      code: 200,
+      message: '360° 空间多视角大片推演成功',
+      data: {
+        views: results
+      }
+    });
+  } catch (err: any) {
+    console.error('[/v1/experiments/vton-360-preview] 实验大片生成异常:', err);
+    res.status(500).json({ code: 500, message: err.message || '360°大片生成失败' });
   }
 });
 

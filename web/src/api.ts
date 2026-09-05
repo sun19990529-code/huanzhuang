@@ -1114,3 +1114,29 @@ export function connectTaskWebSocket(onMessage: (event: string, data: any) => vo
     if (ws) ws.close();
   };
 }
+
+// ====================================================================
+// 360° 空间实验室专属独立 API (零侵入实验沙盒)
+// ====================================================================
+export interface Studio360AngleView {
+  angle: 'FRONT' | 'SIDE_RIGHT' | 'BACK' | 'SIDE_LEFT' | string;
+  degrees: number;
+  imageUrl: string;
+}
+
+export async function generate360LabPreview(params: {
+  profileId: string;
+  garmentIds: string[];
+  targetAngle?: 'FRONT' | 'SIDE_RIGHT' | 'BACK' | 'SIDE_LEFT';
+}): Promise<{ views: Studio360AngleView[] }> {
+  const res = await fetch(`${API_BASE}/experiments/vton-360-preview`, {
+    method: 'POST',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(params),
+  });
+  const data = await res.json();
+  if (!res.ok || data.code !== 200) {
+    throw new Error(data.message || '生成 360° 空间大片失败');
+  }
+  return data.data;
+}
