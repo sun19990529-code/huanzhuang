@@ -211,13 +211,14 @@ export function buildMannequinPrompt(
   const heightM = Math.max(1, heightCm) / 100;
   const bmiStr = (weightKg / (heightM * heightM)).toFixed(1);
 
-  return `Commercial fashion studio full-body catalog photograph of a 20-year-old East Asian model in neutral upright A-pose: complete head-to-toe standing shot, arms relaxed at 30 degrees, bare feet firmly on the studio floor, centered front elevation view.
+  return `Commercial fashion studio full-body photograph of a 20-year-old East Asian model in neutral upright A-pose: complete head-to-toe standing shot, arms relaxed at 30 degrees, bare feet firmly on the studio floor, centered front elevation view.
 
 ${appearanceClause}
 
 Anatomical Body Proportions & Measurements: Height ${heightCm}cm, Weight ${weightKg}kg (BMI ~${bmiStr}), Bust/Chest ${bustCm}cm, Waist ${waistCm}cm, Hips ${hipsCm}cm. Physical morphology: ${morphologyDesc}. Body volume: ${proportionsClause}. Authentically embody these exact anatomical measurements without reverting to an exaggerated slim high-fashion runway model standard.
 Attire: Minimal neutral skin-tone tight seamless sports crop tank and compression shorts.
-Framing & Composition: Full-length vertical 3:4 framing, complete full body from head to feet fully in frame, floor plane visible with subtle contact shadow, zero cropping of feet or hair, wide 35mm studio lens, seamless pure solid white background #FFFFFF, shadowless high-key fashion lighting.`;
+Framing & Composition: Full-length vertical 3:4 framing, complete full body from head to feet fully in frame, floor plane visible with subtle contact shadow, zero cropping of feet or hair, wide 35mm studio lens, seamless pure solid white background #FFFFFF, shadowless high-key fashion lighting.
+Zero-Text & Clean Image Mandate: Absolutely zero text, zero typography, zero letters, zero words, zero numbers, zero magazine titles, zero headers, zero brand names, zero logos, zero watermarks, zero signatures, zero labels, zero Chinese characters, zero English text. 100% clean photographic visual output on pure solid white background.`;
 }
 
 /**
@@ -261,7 +262,7 @@ export function buildGhostMannequinRectificationPrompt(
       geometryClause = 'Bilateral symmetry along vertical Y-axis, level horizontal waistband with volumetric 3D hollow waist opening showing subtle interior waistband lining, vertically aligned straight legs/skirt drape, balanced hem flare. Perfectly flat rectified orthographic elevation.';
       break;
     case 'FOOTWEAR':
-      geometryClause = 'Anatomically matched pair of shoes designed for human avatar wearability: a complete matching left shoe and right shoe displayed side-by-side in strict bilateral mirror symmetry along the vertical Y-axis. The left shoe is positioned on the left facing slightly left-forward (outward 15-20 degrees), and the right shoe is positioned on the right facing slightly right-forward (outward 15-20 degrees), matching natural human A-pose standing feet orientation. Both soles resting perfectly flat on an invisible level horizontal ground plane with natural physiological standing spacing between feet. Simultaneously and clearly reveals the front toe box, lacing/tongue construction, side profile curvature, and sole/midsole thickness. Perfectly balanced, zero tilt, zero overlapping, zero floating, zero asymmetric angles.';
+      geometryClause = 'Anatomically aligned pair of shoes designed for human avatar wearability: a complete matching left shoe and right shoe displayed side-by-side in balanced bilateral symmetry, resting naturally on a level horizontal studio ground plane in front-facing eye-level elevation view. Both heels are cleanly grounded on the floor, and the front toe boxes (front uppers) naturally angle outward symmetrically by approximately 12-15 degrees (subtle natural V-angle splay/anatomical opening), providing an authentic standing human feet stance that perfectly aligns with a 2D standing avatar. Simultaneously and clearly reveals the front toe box, lacing system, tongue construction, clean side profile curvature, and sole/midsole thickness from this front-facing perspective. Perfectly grounded, zero tilt, zero overlapping, zero floating, zero asymmetric distortion.';
       break;
     case 'ACCESSORIES':
       geometryClause = 'Centered upright luxury product catalog display. Handbags, shoulder bags, and backpacks must be placed fully upright in front-facing elevation, shoulder straps neatly draped and gracefully curving symmetrically along the sides, polished metal hardware and zippers facing directly forward. Hats and headwear upright front-facing. Necklaces and belts laid out in smooth elegant symmetrical loops. Perfectly balanced, zero tangled straps, zero asymmetric tilt.';
@@ -287,11 +288,18 @@ export function buildGhostMannequinRectificationPrompt(
     negativeExclusions = 'zero human body, zero floating mannequins, zero messy tangled straps, zero cropped buckles';
   }
 
-  return `Commercial e-commerce luxury product catalog shot, invisible ghost mannequin orthographic flat-lay: "${title}" (${primaryCategory} - ${subCategory || ''}).
+  const zeroTextMandate = `CRITICAL ZERO-TEXT SAFETY MANDATE:
+- ABSOLUTELY ZERO TEXT, zero typography, zero letters, zero words, zero numbers, zero magazine titles, zero headers, zero brand names, zero logos, zero watermarks, zero signatures, zero labels, zero Chinese characters, zero English text.
+- 100% clean photographic visual on seamless pure solid backdrop, crisp shadowless commercial studio lighting.
+- Any artificial letters, words, brand names, or typographical elements anywhere on the canvas are strictly prohibited.`;
+
+  return `Commercial luxury product shot, invisible ghost mannequin orthographic flat-lay: "${title}" (${primaryCategory} - ${subCategory || ''}).
 
 Geometry & Form: ${geometryClause}
 ${stateClause ? stateClause + '\n' : ''}Fabric & Material: Authentic ${material || 'premium textile'} micro-texture weave, natural surface sheen, colors (${colorStr}), pattern (${patternStr}), precise collar/stitching/button construction.
-Presentation: ${backgroundSpec}, crisp razor-sharp silhouette alpha edge, ${aspectRatio} aspect ratio, studio macro lighting, ${negativeExclusions}.`;
+Presentation: ${backgroundSpec}, crisp razor-sharp silhouette alpha edge, ${aspectRatio} aspect ratio, studio macro lighting, ${negativeExclusions}.
+
+${zeroTextMandate}`;
 }
 
 /**
@@ -320,7 +328,7 @@ export function buildVtonEditorialPrompt(
     ? '\nSpatial Guidance & Assembly: Image 2 is the exact 2D outfit layout reference. Follow the exact spatial coordinates, garment dimensions, layer tucking (tucked/untucked), and 3:4 full-length standing alignment from Image 2. Do NOT copy flat 2D sticker edges—render natural 3D volumetric draping, gravitational folds, and realistic fabric physics.'
     : '';
 
-  return `Full-body head-to-toe wide-angle commercial fashion editorial photography: 20-year-old Chinese ${gender.toLowerCase()} model in Image 1 (${profileName}, ${bodyStr}), captured in a complete full-length standing pose with the entire body fully visible from top of head to footwear on the studio floor.
+  return `Full-body head-to-toe wide-angle commercial studio fashion photography: 20-year-old Chinese ${gender.toLowerCase()} model in Image 1 (${profileName}, ${bodyStr}), captured in a complete full-length standing pose with the entire body fully visible from top of head to footwear on the studio floor.
 ${spatialGuidanceClause}
 
 Exact Coordinated Garment Items to Replicate from Reference Images:
@@ -329,7 +337,9 @@ ${garmentsDetailedText}
 Framing & Shot Composition: Complete full-length vertical 3:4 wide shot, full-body head-to-toe standing view, visible floor plane with soft contact shadows beneath feet, generous headroom and foot clearance, entire figure fully in frame without cropping head or feet, zero close-up, zero waist-up cropping, zero knee-up cropping.
 Pose, Anatomy & Limb Clearance: Natural relaxed upright standing A-pose posture, arms resting loosely beside thighs with visible clearly-separated fingers, hands strictly outside of pockets, hands not obscuring the waistline, hips, or garment silhouette. Pant hems drape naturally and gracefully right above footwear uppers without clipping into or merging with shoe soles. True anatomical proportions preserved authentically without reverting to an exaggerated ultra-skinny runway model.
 Physics & Textile Fidelity: Authentic gravitational fabric drape conforming to 3D body contours, natural cloth folds and wrinkles, realistic tension, soft ambient occlusion. 100% preserve every garment's exact pattern, color, weave texture, and neckline/waistband construction.
-Studio Environment: Minimalist luxury neutral studio backdrop, commercial 35mm wide lens, f/4, crisp tack-sharp textile focus, balanced commercial editorial color grade, zero hands hidden in pockets, zero deformed extra fingers, zero obscured waistband.`;
+Studio Environment: Minimalist luxury neutral studio backdrop, commercial 35mm wide lens, f/4, crisp tack-sharp textile focus, balanced commercial studio lighting, zero hands hidden in pockets, zero deformed extra fingers, zero obscured waistband.
+
+Zero-Text & Clean Image Mandate: Absolutely zero magazine titles, zero headers, zero typography, zero letters, zero words, zero numbers, zero brand watermarks, zero logos, zero graphic design overlays, zero borders, zero date stamps, zero text captions. Pure clean full-length commercial studio photograph with completely blank neutral studio background.`;
 }
 
 
@@ -768,16 +778,22 @@ Return strict JSON: { top: number, left: number, width: number, height: number, 
       try {
         console.log(`[AI Gen] 正在向 ${IMAGE_GENERATION_MODEL} 发起生图请求 (比例: ${aspectRatio}, 尺寸: ${size}, 参考图: ${images.length}张, max_tokens: 16384)...`);
         
+        // 全系统纯净零文字底层双重兜底守卫
+        let finalizedPrompt = userPrompt;
+        if (!/zero text/i.test(finalizedPrompt)) {
+          finalizedPrompt += `\n\nCRITICAL PURITY MANDATE: Strictly zero text, zero typography, zero letters, zero words, zero numbers, zero watermarks, zero brand logos anywhere in the image. Pure clean visual output.`;
+        }
+
         const userContent: any =
           images.length > 0
             ? [
-                { type: 'text', text: userPrompt },
+                { type: 'text', text: finalizedPrompt },
                 ...images.map((img) => ({
                   type: 'image_url',
                   image_url: { url: img },
                 })),
               ]
-            : userPrompt;
+            : finalizedPrompt;
 
         const response = await fetch(`${AI_BASE_URL}/chat/completions`, {
           method: 'POST',
