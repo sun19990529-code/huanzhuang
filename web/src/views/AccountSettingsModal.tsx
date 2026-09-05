@@ -1,9 +1,17 @@
 import { showToast } from '../components/Toast';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
  UserProfile,
  UserAvatar,
  calculateGoldenRatioBody,
+ deriveBodyTypeFromMeasurements,
+ getBodyTypePresetMeasurements,
+ calculateBmi,
+ calculateWhr,
+ FEMALE_BODY_TYPE_CONFIGS,
+ MALE_BODY_TYPE_CONFIGS,
+ SKIN_TONE_CONFIGS,
+ HAIRSTYLE_CONFIGS,
 } from '@smart-wardrobe/shared';
 import {
  X,
@@ -25,6 +33,9 @@ import {
  Globe,
  Trash2,
  Crown,
+ Upload,
+ UserCheck,
+ Activity,
 } from 'lucide-react';
 import {
  CurrentUser,
@@ -33,7 +44,8 @@ import {
  updateProfileInfo,
  updateProfile,
  createProfile,
- uploadAvatarAsset,
+ uploadAvatarPhoto,
+ compressImageFile,
  regenerateAvatarByBodyParams,
  fetchMyCreditsLedger,
 } from '../api';
@@ -51,45 +63,6 @@ interface AccountSettingsModalProps {
  onUserUpdated: (user: CurrentUser) => void;
 }
 
-// 女性与男性体型形态
-const FEMALE_BODY_TYPES = [
- { key: 'HOURGLASS', label: '沙漏型', desc: '胸臀丰满，细腰明显' },
- { key: 'PEAR', label: '梨型', desc: '肩窄腰细，臀部丰满' },
- { key: 'RECTANGLE', label: 'H 矩形', desc: '胸腰臀线条平缓匀称' },
- { key: 'INVERTED_TRIANGLE', label: '倒三角', desc: '肩部较宽，下身纤细' },
- { key: 'APPLE', label: '苹果型', desc: '上身圆润，腰腹饱满' },
-];
-
-const MALE_BODY_TYPES = [
- { key: 'ATHLETIC', label: '倒三角健美型', desc: '宽肩阔背，紧实细腰' },
- { key: 'AVERAGE', label: '匀称标准型', desc: '比例协调，线条自然' },
- { key: 'SLIM', label: '修长消瘦型', desc: '骨架细长，清瘦轻盈' },
- { key: 'ROBUST', label: '微胖丰满型', desc: '骨架厚实，体态饱满' },
-];
-
-// 肤色基调
-const SKIN_TONES = [
- { key: 'FAIR', label: '冷白皮', hex: '#FDF1E7' },
- { key: 'WARM_NATURAL', label: '自然暖杏', hex: '#F3DEC9' },
- { key: 'WHEAT_TAN', label: '健康小麦', hex: '#DDB68F' },
- { key: 'BRONZE_DEEP', label: '古铜深色', hex: '#9C7A5B' },
-];
-
-// 发型偏好
-const FEMALE_HAIRSTYLES = [
- { key: 'FRENCH_WAVY_LONG', label: '法式微卷长发' },
- { key: 'SHOULDER_BOB', label: '及肩波波头' },
- { key: 'CHIC_SHORT', label: '干练短发' },
- { key: 'HIGH_PONYTAIL', label: '法式高马尾' },
-];
-
-const MALE_HAIRSTYLES = [
- { key: 'CLEAN_SHORT', label: '清爽短发' },
- { key: 'KOREAN_SIDE_PART', label: '韩系侧分' },
- { key: 'BUSINESS_POMPADOUR', label: '商务油头' },
- { key: 'BUZZ_CUT', label: '清爽寸头' },
-];
-
 export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
  isOpen,
  user,
@@ -102,237 +75,320 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
  onAvatarUpdated,
  onUserUpdated,
 }) => {
- const [activeTab, setActiveTab] = useState<'BODY' | 'AVATAR' | 'SECURITY' | 'PROFILES' | 'CREDITS' | 'PRIVACY'>('BODY');
+  // 一体化 Tab：将身材与模特彻底合并为一个顶层工坊
+  const [activeTab, setActiveTab] = useState<'WORKSHOP' | 'PROFILES' | 'CREDITS' | 'SECURITY'>('WORKSHOP');
 
- // 身材参数状态
- const [gender, setGender] = useState<'FEMALE' | 'MALE'>(currentProfile?.gender === 'MALE' ? 'MALE' : 'FEMALE');
- const [heightCm, setHeightCm] = useState(currentProfile?.heightCm || 168);
- const [weightKg, setWeightKg] = useState(currentProfile?.weightKg || 50);
- const [bustCm, setBustCm] = useState(currentProfile?.bustCm || 84);
- const [waistCm, setWaistCm] = useState(currentProfile?.waistCm || 62);
- const [hipsCm, setHipsCm] = useState(currentProfile?.hipsCm || 89);
- const [bodyType, setBodyType] = useState<string>((currentProfile as any)?.bodyType || 'HOURGLASS');
- const [skinTone, setSkinTone] = useState<string>((currentProfile as any)?.skinTone || 'WARM_NATURAL');
- const [hairstyle, setHairstyle] = useState<string>((currentProfile as any)?.hairstyle || 'FRENCH_WAVY_LONG');
+  // 身材五维状态
+  const [gender, setGender] = useState<'FEMALE' | 'MALE'>(currentProfile?.gender === 'MALE' ? 'MALE' : 'FEMALE');
+  const [heightCm, setHeightCm] = useState(currentProfile?.heightCm || 168);
+  const [weightKg, setWeightKg] = useState(currentProfile?.weightKg || 50);
+  const [bustCm, setBustCm] = useState(currentProfile?.bustCm || 84);
+  const [waistCm, setWaistCm] = useState(currentProfile?.waistCm || 62);
+  const [hipsCm, setHipsCm] = useState(currentProfile?.hipsCm || 89);
+  const [bodyType, setBodyType] = useState<string>((currentProfile as any)?.bodyType || 'HOURGLASS');
+  const [skinTone, setSkinTone] = useState<string>((currentProfile as any)?.skinTone || 'WARM_NATURAL');
 
- const [bodySaveMsg, setBodySaveMsg] = useState('');
- const [isAiRegenerating, setIsAiRegenerating] = useState(false);
+  // 发型与发型模式 (支持保持照片原生发型 KEEP_PHOTO)
+  const [hairstyleMode, setHairstyleMode] = useState<'KEEP_PHOTO' | 'CUSTOM'>(
+    (currentProfile as any)?.hairstyleMode || (avatar?.originalImageUrl ? 'KEEP_PHOTO' : 'CUSTOM')
+  );
+  const [hairstyle, setHairstyle] = useState<string>(
+    (currentProfile as any)?.hairstyle || (currentProfile?.gender === 'MALE' ? 'CLEAN_SHORT' : 'FRENCH_WAVY_LONG')
+  );
 
- // 账号安全状态
- const [nickname, setNickname] = useState(user?.nickname || '');
- const [oldPass, setOldPass] = useState('');
- const [newPass, setNewPass] = useState('');
- const [confirmPass, setConfirmPass] = useState('');
- const [securityMsg, setSecurityMsg] = useState('');
- const [securityErr, setSecurityErr] = useState('');
+  // 本地新选中的照片 Preview (Base64)
+  const [selectedPhotoBase64, setSelectedPhotoBase64] = useState<string>('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
- // 积分流水状态
- const [ledgerData, setLedgerData] = useState<{ dailyCredits: number; permanentCredits: number; totalCredits: number; ledger: CreditLedgerItem[] } | null>(null);
- const [isLedgerLoading, setIsLedgerLoading] = useState(false);
+  // 双向联动控制守卫：防止点击体型反向赋三围时触发循环推导
+  const [isManualSelectingBodyType, setIsManualSelectingBodyType] = useState(false);
 
- // 模特工坊重新上传
- const [isAvatarGenerating, setIsAvatarGenerating] = useState(false);
- const [avatarUploadProgress, setAvatarUploadProgress] = useState<number | null>(null);
- const [avatarUploadStageText, setAvatarUploadStageText] = useState('');
- const [avatarUploadMsg, setAvatarUploadMsg] = useState('');
- const [avatarUploadErr, setAvatarUploadErr] = useState('');
+  // 重构进度条与反馈
+  const [isReconstructing, setIsReconstructing] = useState(false);
+  const [reconstructProgress, setReconstructProgress] = useState<number | null>(null);
+  const [reconstructStageText, setReconstructStageText] = useState('');
+  const [reconstructMsg, setReconstructMsg] = useState('');
+  const [reconstructErr, setReconstructErr] = useState('');
 
- // 新建家庭成员状态
- const [isCreatingProfile, setIsCreatingProfile] = useState(false);
- const [newProfileName, setNewProfileName] = useState('');
- const [newProfileGender, setNewProfileGender] = useState<'FEMALE' | 'MALE'>('FEMALE');
+  // 身材纯保存反馈
+  const [bodySaveMsg, setBodySaveMsg] = useState('');
+  const [isBodySaving, setIsBodySaving] = useState(false);
 
- useEffect(() => {
- if (currentProfile) {
- setGender(currentProfile.gender === 'MALE' ? 'MALE' : 'FEMALE');
- setHeightCm(currentProfile.heightCm);
- setWeightKg(currentProfile.weightKg);
- setBustCm(currentProfile.bustCm);
- setWaistCm(currentProfile.waistCm);
- setHipsCm(currentProfile.hipsCm);
- setBodyType((currentProfile as any).bodyType || (currentProfile.gender === 'MALE' ? 'ATHLETIC' : 'HOURGLASS'));
- setSkinTone((currentProfile as any).skinTone || 'WARM_NATURAL');
- setHairstyle((currentProfile as any).hairstyle || (currentProfile.gender === 'MALE' ? 'CLEAN_SHORT' : 'FRENCH_WAVY_LONG'));
- }
- }, [currentProfile]);
+  // 账号安全状态
+  const [nickname, setNickname] = useState(user?.nickname || '');
+  const [oldPass, setOldPass] = useState('');
+  const [newPass, setNewPass] = useState('');
+  const [confirmPass, setConfirmPass] = useState('');
+  const [securityMsg, setSecurityMsg] = useState('');
+  const [securityErr, setSecurityErr] = useState('');
 
- useEffect(() => {
- if (user) {
- setNickname(user.nickname);
- }
- }, [user]);
+  // 积分流水状态
+  const [ledgerData, setLedgerData] = useState<{ dailyCredits: number; permanentCredits: number; totalCredits: number; ledger: CreditLedgerItem[] } | null>(null);
+  const [isLedgerLoading, setIsLedgerLoading] = useState(false);
 
- useEffect(() => {
- if (activeTab === 'CREDITS') {
- loadLedger();
- }
- }, [activeTab]);
+  // 新建家庭成员状态
+  const [isCreatingProfile, setIsCreatingProfile] = useState(false);
+  const [newProfileName, setNewProfileName] = useState('');
+  const [newProfileGender, setNewProfileGender] = useState<'FEMALE' | 'MALE'>('FEMALE');
 
- useEffect(() => {
- const handleKeyDown = (e: KeyboardEvent) => {
- if (e.key === 'Escape' && isOpen) onClose();
- };
- window.addEventListener('keydown', handleKeyDown);
- return () => window.removeEventListener('keydown', handleKeyDown);
- }, [isOpen, onClose]);
+  // 1. 同步当前 Profile 数据
+  useEffect(() => {
+    if (currentProfile) {
+      setGender(currentProfile.gender === 'MALE' ? 'MALE' : 'FEMALE');
+      setHeightCm(currentProfile.heightCm);
+      setWeightKg(currentProfile.weightKg);
+      setBustCm(currentProfile.bustCm);
+      setWaistCm(currentProfile.waistCm);
+      setHipsCm(currentProfile.hipsCm);
+      setBodyType((currentProfile as any).bodyType || (currentProfile.gender === 'MALE' ? 'ATHLETIC' : 'HOURGLASS'));
+      setSkinTone((currentProfile as any).skinTone || 'WARM_NATURAL');
+      setHairstyle((currentProfile as any).hairstyle || (currentProfile.gender === 'MALE' ? 'CLEAN_SHORT' : 'FRENCH_WAVY_LONG'));
+      if ((currentProfile as any).hairstyleMode) {
+        setHairstyleMode((currentProfile as any).hairstyleMode);
+      } else if (avatar?.originalImageUrl) {
+        setHairstyleMode('KEEP_PHOTO');
+      }
+    }
+  }, [currentProfile, avatar]);
 
- const loadLedger = async () => {
- setIsLedgerLoading(true);
- try {
- const data = await fetchMyCreditsLedger();
- setLedgerData(data);
- } catch (e: any) {
- console.warn('获取账单流水失败', e);
- } finally {
- setIsLedgerLoading(false);
- }
- };
+  useEffect(() => {
+    if (user) setNickname(user.nickname);
+  }, [user]);
 
- if (!isOpen || !user) return null;
+  useEffect(() => {
+    if (activeTab === 'CREDITS') loadLedger();
+  }, [activeTab]);
 
- // 切换性别
- const handleToggleGender = (newGender: 'FEMALE' | 'MALE') => {
- setGender(newGender);
- const golden = calculateGoldenRatioBody(newGender, heightCm);
- setWeightKg(golden.weightKg);
- setBustCm(golden.bustCm);
- setWaistCm(golden.waistCm);
- setHipsCm(golden.hipsCm);
- setBodyType(newGender === 'MALE' ? 'ATHLETIC' : 'HOURGLASS');
- setHairstyle(newGender === 'MALE' ? 'CLEAN_SHORT' : 'FRENCH_WAVY_LONG');
- };
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
- // 一键黄金比例
- const handleApplyGolden = () => {
- const golden = calculateGoldenRatioBody(gender, heightCm);
- setWeightKg(golden.weightKg);
- setBustCm(golden.bustCm);
- setWaistCm(golden.waistCm);
- setHipsCm(golden.hipsCm);
- };
+  // 2. 双向智能联动：根据当前三围防抖推导体型 (向 A)
+  const currentDerivedBodyType = deriveBodyTypeFromMeasurements(gender, bustCm, waistCm, hipsCm, heightCm, weightKg);
+  useEffect(() => {
+    if (isManualSelectingBodyType) {
+      setIsManualSelectingBodyType(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setBodyType(currentDerivedBodyType);
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [gender, bustCm, waistCm, hipsCm, heightCm, weightKg]);
 
- // 保存身材参数
- const handleSaveBody = async () => {
- if (!currentProfile) return;
- setBodySaveMsg('');
- try {
- const updated = await updateProfile(currentProfile.id, {
- gender,
- heightCm,
- weightKg,
- bustCm,
- waistCm,
- hipsCm,
- isCustomBodyParams: true,
- bodyType,
- skinTone,
- hairstyle,
- } as any);
- onProfileUpdated(updated);
- setBodySaveMsg('身材参数已成功保存并同步至试衣间');
- setTimeout(() => setBodySaveMsg(''), 3000);
- } catch (err: any) {
- alert(err.message || '保存失败');
- }
- };
+  // 3. 反向联动：点击体型反向赋予基准三围 (向 B)
+  const handleSelectBodyType = (targetType: string) => {
+    setIsManualSelectingBodyType(true);
+    setBodyType(targetType);
+    const preset = getBodyTypePresetMeasurements(gender, targetType as any, heightCm);
+    setBustCm(preset.bustCm);
+    setWaistCm(preset.waistCm);
+    setHipsCm(preset.hipsCm);
+    setWeightKg(preset.weightKg);
+    showToast(`已为您按【${targetType}】设定基准三围与体态`, 'info');
+  };
 
- // 基于五维身材一键 AI 高清重构模特
- const handleAiRegenerateAvatar = async () => {
- if (!currentProfile) return;
- setIsAiRegenerating(true);
- setBodySaveMsg('');
- try {
- const res = await regenerateAvatarByBodyParams(currentProfile.id, {
- gender,
- heightCm,
- weightKg,
- bustCm,
- waistCm,
- hipsCm,
- bodyType,
- skinTone,
- hairstyle,
- });
- onProfileUpdated(res.profile);
- onAvatarUpdated(res.avatar);
- if (user) {
- onUserUpdated({ ...user, dailyCredits: res.remainingDailyCredits });
- }
- setBodySaveMsg(' 已成功根据您的五维参数与体型生成专属 A-Pose 模特！');
- setTimeout(() => setBodySaveMsg(''), 4000);
- } catch (err: any) {
- alert(err.message || 'AI 模特重塑失败');
- } finally {
- setIsAiRegenerating(false);
- }
- };
+  // 4. 计算健康体态胶囊 (BMI & WHR)
+  const bmiInfo = calculateBmi(weightKg, heightCm);
+  const whrInfo = calculateWhr(waistCm, hipsCm);
 
- // 拍照上传全身照更新素体
- const handleAvatarFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
- const file = e.target.files?.[0];
- if (!file || !currentProfile) return;
+  // 5. 切换性别
+  const handleToggleGender = (newGender: 'FEMALE' | 'MALE') => {
+    setGender(newGender);
+    const golden = calculateGoldenRatioBody(newGender, heightCm);
+    setWeightKg(golden.weightKg);
+    setBustCm(golden.bustCm);
+    setWaistCm(golden.waistCm);
+    setHipsCm(golden.hipsCm);
+    setBodyType(newGender === 'MALE' ? 'ATHLETIC' : 'HOURGLASS');
+    setHairstyle(newGender === 'MALE' ? 'CLEAN_SHORT' : 'FRENCH_WAVY_LONG');
+  };
 
- setIsAvatarGenerating(true);
- setAvatarUploadProgress(15);
- setAvatarUploadStageText('正在提取面部五官与发型廓形...');
- setAvatarUploadErr('');
- setAvatarUploadMsg('');
+  // 6. 一键黄金比例
+  const handleApplyGolden = () => {
+    const golden = calculateGoldenRatioBody(gender, heightCm);
+    setIsManualSelectingBodyType(true);
+    setWeightKg(golden.weightKg);
+    setBustCm(golden.bustCm);
+    setWaistCm(golden.waistCm);
+    setHipsCm(golden.hipsCm);
+    setBodyType(gender === 'MALE' ? 'ATHLETIC' : 'HOURGLASS');
+    showToast('已匹配黄金比例三围身材', 'success');
+  };
 
- const timer1 = setTimeout(() => {
- setAvatarUploadProgress(45);
- setAvatarUploadStageText('正在结合五维身材参数进行 3:4 解剖重构...');
- }, 4000);
+  // 7. 处理本地照片选择
+  const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const base64 = await compressImageFile(file);
+      setSelectedPhotoBase64(base64);
+      setHairstyleMode('KEEP_PHOTO');
+      showToast('真人全身照已载入，默认开启【保持照片原生发型】', 'success');
+    } catch (err: any) {
+      showToast(err.message || '照片读取压缩失败', 'error');
+    }
+  };
 
- const timer2 = setTimeout(() => {
- setAvatarUploadProgress(75);
- setAvatarUploadStageText('gemini-3.1-flash-image 正在渲染 3:4 标准 A-Pose 素体...');
- }, 12000);
+  // 7.1 加载积分账单流水
+  const loadLedger = async () => {
+    setIsLedgerLoading(true);
+    try {
+      const data = await fetchMyCreditsLedger();
+      setLedgerData(data);
+    } catch (e: any) {
+      console.warn('获取账单流水失败', e);
+    } finally {
+      setIsLedgerLoading(false);
+    }
+  };
 
- try {
- const newAvatar = await uploadAvatarAsset(currentProfile.id, file);
- clearTimeout(timer1);
- clearTimeout(timer2);
- setAvatarUploadProgress(100);
- setAvatarUploadStageText('A-Pose 素体模特重构完成！');
- onAvatarUpdated(newAvatar);
- setAvatarUploadMsg('模特素体已重新生成并装载');
- setTimeout(() => {
- setAvatarUploadProgress(null);
- }, 1200);
- } catch (err: any) {
- clearTimeout(timer1);
- clearTimeout(timer2);
- setAvatarUploadProgress(null);
- setAvatarUploadErr(err.message || '模特素体生成失败');
- } finally {
- setIsAvatarGenerating(false);
- }
- };
+  // 7.2 一键 AI 重构专属模特 (结合真人面容照片或纯身材参数)
+  const handleReconstructAvatar = async () => {
+    if (!currentProfile) return;
+    setIsReconstructing(true);
+    setReconstructErr('');
+    setReconstructMsg('');
+    setReconstructProgress(15);
+    setReconstructStageText('正在解析身体形态与解剖结构...');
 
- // 修改昵称
- const handleUpdateNickname = async () => {
- if (!nickname.trim()) return;
- try {
- const res = await updateProfileInfo(nickname.trim());
- onUserUpdated({ ...user, nickname: res.nickname });
- setSecurityMsg('昵称修改成功');
- setTimeout(() => setSecurityMsg(''), 3000);
- } catch (err: any) {
- setSecurityErr(err.message || '修改昵称失败');
- }
- };
+    const t1 = setTimeout(() => {
+      setReconstructProgress(45);
+      setReconstructStageText('正在生成 3:4 黄金比例专属模特素体...');
+    }, 1200);
 
- // 修改密码
- const handleChangePassword = async (e: React.FormEvent) => {
- e.preventDefault();
- setSecurityErr('');
- setSecurityMsg('');
+    const t2 = setTimeout(() => {
+      setReconstructProgress(80);
+      setReconstructStageText('正在进行发型与光影高精度对齐...');
+    }, 3200);
 
- if (newPass !== confirmPass) {
- setSecurityErr('两次输入的新密码不一致');
- return;
- }
- if (newPass.length < 6) {
+    try {
+      let resAvatar: UserAvatar;
+      let resProfile: UserProfile | undefined;
+      let resCredits: number | undefined;
+
+      if (selectedPhotoBase64) {
+        const res = await uploadAvatarPhoto(currentProfile.id, {
+          imageBase64: selectedPhotoBase64,
+          gender,
+          heightCm,
+          weightKg,
+          bustCm,
+          waistCm,
+          hipsCm,
+          bodyType,
+          skinTone,
+          hairstyle,
+          hairstyleMode,
+        });
+        resAvatar = res.avatar;
+        resProfile = res.profile;
+        resCredits = res.remainingDailyCredits;
+      } else {
+        const res = await regenerateAvatarByBodyParams(currentProfile.id, {
+          gender,
+          heightCm,
+          weightKg,
+          bustCm,
+          waistCm,
+          hipsCm,
+          bodyType,
+          skinTone,
+          hairstyle,
+          hairstyleMode,
+        });
+        resAvatar = res.avatar;
+        resProfile = res.profile;
+        resCredits = res.remainingDailyCredits;
+      }
+
+      clearTimeout(t1);
+      clearTimeout(t2);
+      setReconstructProgress(100);
+      setReconstructStageText('模特素体重构完成！');
+
+      if (resProfile) onProfileUpdated(resProfile);
+      if (resAvatar) onAvatarUpdated(resAvatar);
+      if (user && resCredits !== undefined) {
+        onUserUpdated({ ...user, dailyCredits: resCredits });
+      }
+
+      setReconstructMsg('🎉 专属 3:4 模特素体已重构成功并同步至试衣间！');
+      showToast('专属 3:4 模特素体已重构成功', 'success');
+      setTimeout(() => {
+        setReconstructMsg('');
+        setReconstructProgress(null);
+        setReconstructStageText('');
+      }, 4000);
+    } catch (err: any) {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      setReconstructErr(err.message || '重构模特失败');
+      showToast(err.message || '重构模特失败', 'error');
+    } finally {
+      setIsReconstructing(false);
+    }
+  };
+
+  // 8. 仅保存身材参数 (0 算力)
+  const handleSaveOnlyBody = async () => {
+    if (!currentProfile) return;
+    setIsBodySaving(true);
+    setBodySaveMsg('');
+    try {
+      const updated = await updateProfile(currentProfile.id, {
+        gender,
+        heightCm,
+        weightKg,
+        bustCm,
+        waistCm,
+        hipsCm,
+        isCustomBodyParams: true,
+        bodyType,
+        skinTone,
+        hairstyle,
+        hairstyleMode,
+      } as any);
+      onProfileUpdated(updated);
+      setBodySaveMsg('身材参数已成功保存并同步至试衣间');
+      showToast('身材参数已成功保存', 'success');
+      setTimeout(() => setBodySaveMsg(''), 3000);
+    } catch (err: any) {
+      showToast(err.message || '保存身材参数失败', 'error');
+    } finally {
+      setIsBodySaving(false);
+    }
+  };
+
+
+  // 修改昵称
+  const handleUpdateNickname = async () => {
+    if (!nickname.trim() || !user) return;
+    try {
+      const res = await updateProfileInfo(nickname.trim());
+      onUserUpdated({ ...user, nickname: res.nickname });
+      setSecurityMsg("昵称修改成功");
+      setTimeout(() => setSecurityMsg(""), 3000);
+    } catch (err: any) {
+      setSecurityErr(err.message || "修改昵称失败");
+    }
+  };
+
+  // 修改密码
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSecurityErr("");
+    setSecurityMsg("");
+
+    if (newPass !== confirmPass) {
+      setSecurityErr("两次输入的新密码不一致");
+      return;
+    }
+    if (newPass.length < 6) {
  setSecurityErr('新密码长度不能少于 6 位');
  return;
  }
@@ -343,433 +399,634 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
  setOldPass('');
  setNewPass('');
  setConfirmPass('');
- } catch (err: any) {
- setSecurityErr(err.message || '修改密码失败');
- }
- };
+} catch (err: any) {
+      showToast(err.message || '修改密码失败', 'error');
+    }
+  };
 
- // 新增家庭子角色
- const handleCreateProfile = async (e: React.FormEvent) => {
- e.preventDefault();
- if (!newProfileName.trim()) return;
- try {
- const p = await createProfile({
- name: newProfileName.trim(),
- gender: newProfileGender,
- useGoldenRatio: true,
- });
- onSelectProfile(p);
- setIsCreatingProfile(false);
- setNewProfileName('');
- } catch (err: any) {
- alert(err.message || '创建角色失败');
- }
- };
+  // 新增家庭子角色
+  const handleCreateProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newProfileName.trim()) return;
+    try {
+      const p = await createProfile({
+        name: newProfileName.trim(),
+        gender: newProfileGender,
+        useGoldenRatio: true,
+      });
+      onSelectProfile(p);
+      setIsCreatingProfile(false);
+      setNewProfileName('');
+    } catch (err: any) {
+      showToast(err.message || '创建角色失败', 'error');
+    }
+  };
 
- // 是否上传过真人全身照
- const hasRealPhoto = Boolean(avatar?.originalImageUrl && avatar.originalImageUrl.startsWith('data:image'));
+  // 是否具备有效真人照片（新选的照片或历史原图）
+  const hasRealPhoto = Boolean(
+    (selectedPhotoBase64 && selectedPhotoBase64.startsWith('data:image')) ||
+    (avatar?.originalImageUrl && avatar.originalImageUrl.startsWith('data:image'))
+  );
 
- return (
- <div
- onClick={(e) => {
- if (e.target === e.currentTarget) onClose();
- }}
- className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 pb-8 md:pb-4 animate-in fade-in"
- >
- <div className="bg-white rounded-3xl border border-[#EAE6DF] shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden text-left">
- 
- {/* Header */}
- <div className="px-6 py-4 border-b border-[#EAE6DF] flex items-center justify-between bg-[#FAF8F5]/80">
- <div className="flex items-center gap-2.5">
- <div className="w-8 h-8 rounded-xl bg-stone-900 text-white flex items-center justify-center">
- <Sliders className="w-4 h-4 stroke-[1.75]" />
- </div>
- <div>
- <h3 className="text-sm font-extrabold text-stone-900">个性化设置与身材工坊</h3>
- <p className="text-[10px] text-stone-400">精确三围解剖 · 性别与体型偏好 · 账户安全</p>
- </div>
- </div>
- <button
- onClick={onClose}
- className="p-1.5 rounded-xl hover:bg-stone-100 text-stone-400 hover:text-stone-700 transition-colors"
- >
- <X className="w-4 h-4 stroke-[2]" />
- </button>
- </div>
+  const activeOriginalPhoto = selectedPhotoBase64 || avatar?.originalImageUrl || '';
 
- {/* Tab 导航 */}
- <div className="flex items-center gap-1 px-6 pt-3 border-b border-[#EAE6DF] bg-white overflow-x-auto scrollbar-none">
- {[
- { key: 'BODY', label: '身材与模特', icon: Ruler },
- { key: 'AVATAR', label: '真人照片重构', icon: Camera },
- { key: 'PROFILES', label: '多角色档案', icon: Users },
- { key: 'CREDITS', label: '积分与流水', icon: CreditCard },
- { key: 'SECURITY', label: '账号安全', icon: Shield },
- ].map((tab) => {
- const Icon = tab.icon;
- const isActive = activeTab === tab.key;
- return (
- <button
- key={tab.key}
- onClick={() => setActiveTab(tab.key as any)}
- className={`flex items-center gap-1.5 px-3.5 py-2 border-b-2 text-xs font-bold transition-all whitespace-nowrap ${
- isActive
- ? 'border-[#D63031] text-[#D63031]'
- : 'border-transparent text-stone-500 hover:text-stone-800'
- }`}
- >
- <Icon className="w-3.5 h-3.5 stroke-[1.75]" />
- <span>{tab.label}</span>
- </button>
- );
- })}
- </div>
+  if (!isOpen || !user) return null;
 
- {/* 主内容区 */}
- <div className="p-6 overflow-y-auto space-y-6 flex-1 scrollbar-thin">
- 
- {/* TAB 1: 身材与模特 (Gender + 5D Sliders + Morphology + Skin Tone + Hairstyle) */}
- {activeTab === 'BODY' && (
- <div className="space-y-5 animate-in fade-in">
- 
- {/* 顶部性别切换与黄金比例重算 */}
- <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#FAF8F5] p-3.5 rounded-2xl border border-[#EAE6DF]">
- <div>
- <div className="flex items-center gap-2">
- <span className="text-xs font-extrabold text-stone-900">当前档案: {currentProfile?.name}</span>
- <span className="text-[10px] px-2 py-0.5 rounded-md font-mono bg-white border border-[#EAE6DF] text-stone-600 font-bold">
- {gender === 'FEMALE' ? '女性' : '男性'}
- </span>
- </div>
- <p className="text-[10px] text-stone-400 mt-0.5">切换性别自动联动专属黄金身材比例与 A-Pose 模特</p>
- </div>
+  return (
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 pb-8 md:pb-4 animate-in fade-in"
+    >
+      <div
+        className={`bg-white rounded-3xl border border-[#EAE6DF] shadow-2xl w-full ${
+          activeTab === 'WORKSHOP' ? 'max-w-5xl xl:max-w-6xl' : 'max-w-2xl'
+        } max-h-[92vh] flex flex-col overflow-hidden text-left transition-all duration-300`}
+      >
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-[#EAE6DF] flex items-center justify-between bg-[#FAF8F5]/90">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-stone-900 text-white flex items-center justify-center shadow-xs">
+              <Sliders className="w-4 h-4 stroke-[1.75]" />
+            </div>
+            <div>
+              <h3 className="text-sm font-extrabold text-stone-900 flex items-center gap-2">
+                <span>个性化身材与模特重构工坊</span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-50 text-[#D63031] border border-rose-200">
+                  一体化工作台
+                </span>
+              </h3>
+              <p className="text-[10px] text-stone-400">
+                双向体型三围智能联动 · 真人面容发型解耦 · 3:4 黄金素体一键重构
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-xl hover:bg-stone-200/60 text-stone-400 hover:text-stone-700 transition-colors cursor-pointer"
+          >
+            <X className="w-4 h-4 stroke-[2]" />
+          </button>
+        </div>
 
- <div className="flex items-center gap-2 shrink-0">
- {/* 性别选择胶囊 */}
- <div className="flex items-center bg-white p-0.5 rounded-xl border border-[#EAE6DF]">
- <button
- type="button"
- onClick={() => handleToggleGender('FEMALE')}
- className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
- gender === 'FEMALE'
- ? 'bg-[#D63031] text-white shadow-2xs'
- : 'text-stone-600 hover:text-stone-900'
- }`}
- >
- 女性
- </button>
- <button
- type="button"
- onClick={() => handleToggleGender('MALE')}
- className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
- gender === 'MALE'
- ? 'bg-[#2D3436] text-white shadow-2xs'
- : 'text-stone-600 hover:text-stone-900'
- }`}
- >
- 男性
- </button>
- </div>
+        {/* Tab 导航 */}
+        <div className="flex items-center gap-2 px-6 pt-2.5 border-b border-[#EAE6DF] bg-white overflow-x-auto scrollbar-none">
+          {[
+            { key: 'WORKSHOP', label: '🎨 专属模特与身材工坊', icon: Sparkles },
+            { key: 'PROFILES', label: '👥 多角色档案', icon: Users },
+            { key: 'CREDITS', label: '💎 积分与算力账单', icon: CreditCard },
+            { key: 'SECURITY', label: '🔒 账号安全', icon: Shield },
+          ].map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key as any)}
+                className={`flex items-center gap-1.5 px-4 py-2 border-b-2 text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                  isActive
+                    ? 'border-[#D63031] text-[#D63031]'
+                    : 'border-transparent text-stone-500 hover:text-stone-800'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5 stroke-[1.75]" />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
 
- <button
- type="button"
- onClick={handleApplyGolden}
- className="px-3 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold transition-colors flex items-center gap-1"
- title="根据身高一键计算黄金三围"
- >
- <Sparkles className="w-3.5 h-3.5 text-amber-600 stroke-[1.75]" />
- <span>黄金比例</span>
- </button>
- </div>
- </div>
+        {/* 主内容区 */}
+        <div className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1 scrollbar-thin">
+          
+          {/* TAB 1: 一体化【身材与模特重构工坊】 (双栏宽屏布局) */}
+          {activeTab === 'WORKSHOP' && (
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in fade-in">
+              
+              {/* ======================================================== */}
+              {/* 左栏 (42%): 模特视觉区 + 照片仓 + 发型选择 + 一键重构 CTA */}
+              {/* ======================================================== */}
+              <div className="lg:col-span-5 space-y-4 flex flex-col justify-between border-b lg:border-b-0 lg:border-r border-[#EAE6DF] pb-6 lg:pb-0 lg:pr-6">
+                
+                <div className="space-y-4">
+                  {/* 1. 模特素体画幅展示 */}
+                  <div className="bg-[#FAF8F5] rounded-2xl border border-[#EAE6DF] p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-extrabold text-stone-800">
+                          {currentProfile?.name || '当前模特'}
+                        </span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-md font-mono bg-white border border-[#EAE6DF] text-stone-600 font-bold">
+                          {gender === 'FEMALE' ? '女性' : '男性'}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-stone-400 font-mono">3:4 黄金画幅</span>
+                    </div>
 
- {/* 五维身材参数滑动器 */}
- <div className="space-y-2">
- <h5 className="text-xs font-extrabold text-stone-800">精确五维身材尺寸</h5>
- <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
- <div className="bg-[#FAF8F5] p-3 rounded-2xl border border-[#EAE6DF] space-y-1">
- <div className="flex justify-between text-xs font-bold">
- <span className="text-stone-600">身高</span>
- <span className="font-mono text-[#D63031]">{heightCm} cm</span>
- </div>
- <input
- type="range"
- min="140"
- max="210"
- value={heightCm}
- onChange={(e) => setHeightCm(Number(e.target.value))}
- className="w-full accent-[#D63031]"
- />
- </div>
+                    <div className="w-full aspect-[3/4] max-h-[300px] bg-white rounded-xl border border-stone-200/80 flex items-center justify-center overflow-hidden relative shadow-inner">
+                      {avatar?.normalizedImageUrl ? (
+                        <img
+                          src={avatar.normalizedImageUrl}
+                          alt="当前试衣模特"
+                          className="max-h-full max-w-full object-contain"
+                        />
+                      ) : (
+                        <div className="text-xs text-stone-400 flex flex-col items-center gap-1">
+                          <Sliders className="w-6 h-6 text-stone-300 animate-pulse" />
+                          <span>正在等待生成素体</span>
+                        </div>
+                      )}
 
- <div className="bg-[#FAF8F5] p-3 rounded-2xl border border-[#EAE6DF] space-y-1">
- <div className="flex justify-between text-xs font-bold">
- <span className="text-stone-600">体重</span>
- <span className="font-mono text-[#D63031]">{weightKg} kg</span>
- </div>
- <input
- type="range"
- min="35"
- max="130"
- value={weightKg}
- onChange={(e) => setWeightKg(Number(e.target.value))}
- className="w-full accent-[#D63031]"
- />
- </div>
+                      {/* 悬浮微标 */}
+                      <div className="absolute bottom-2 left-2 right-2 bg-black/60 backdrop-blur-xs text-white text-[9px] px-2 py-1 rounded-lg flex items-center justify-between">
+                        <span>当前试衣间标准素体</span>
+                        <span className="font-mono text-stone-300">
+                          {heightCm}cm · {weightKg}kg
+                        </span>
+                      </div>
+                    </div>
+                  </div>
 
- <div className="bg-[#FAF8F5] p-3 rounded-2xl border border-[#EAE6DF] space-y-1">
- <div className="flex justify-between text-xs font-bold">
- <span className="text-stone-600">{gender === 'MALE' ? '胸围 (胸肌)' : '胸围'}</span>
- <span className="font-mono text-[#D63031]">{bustCm} cm</span>
- </div>
- <input
- type="range"
- min="60"
- max="140"
- value={bustCm}
- onChange={(e) => setBustCm(Number(e.target.value))}
- className="w-full accent-[#D63031]"
- />
- </div>
+                  {/* 2. 真人面容照片仓 (上传 / 更换 / 移除) */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-extrabold text-stone-800 flex items-center gap-1.5">
+                        <Camera className="w-3.5 h-3.5 text-[#D63031]" />
+                        <span>真人面容与生活照 (可选)</span>
+                      </label>
+                      {hasRealPhoto && (
+                        <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5">
+                          <UserCheck className="w-3 h-3" />
+                          <span>已载入真人五官特征</span>
+                        </span>
+                      )}
+                    </div>
 
- <div className="bg-[#FAF8F5] p-3 rounded-2xl border border-[#EAE6DF] space-y-1">
- <div className="flex justify-between text-xs font-bold">
- <span className="text-stone-600">腰围</span>
- <span className="font-mono text-[#D63031]">{waistCm} cm</span>
- </div>
- <input
- type="range"
- min="45"
- max="130"
- value={waistCm}
- onChange={(e) => setWaistCm(Number(e.target.value))}
- className="w-full accent-[#D63031]"
- />
- </div>
+                    {hasRealPhoto ? (
+                      <div className="p-2.5 bg-white rounded-xl border border-[#EAE6DF] flex items-center gap-3">
+                        <img
+                          src={activeOriginalPhoto}
+                          alt="真人参考图"
+                          className="w-12 h-16 object-cover rounded-lg border border-stone-300 shrink-0"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-bold text-stone-800 truncate">真人参考照片已就绪</div>
+                          <div className="text-[10px] text-stone-400 mt-0.5">
+                            AI 重构时将锁定面容五官并注入形体比例
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => fileInputRef.current?.click()}
+                            className="px-2 py-1 bg-stone-100 hover:bg-stone-200 text-stone-700 text-[10px] font-bold rounded-lg transition-colors cursor-pointer"
+                          >
+                            替换照片
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedPhotoBase64('');
+                              if (avatar) avatar.originalImageUrl = '';
+                              setHairstyleMode('CUSTOM');
+                              showToast('已移除真人照片，重构将使用东方青年自然面容', 'info');
+                            }}
+                            className="px-2 py-1 text-[#D63031] hover:bg-rose-50 text-[10px] font-bold rounded-lg transition-colors cursor-pointer text-center"
+                          >
+                            移除照片
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div
+                        onClick={() => fileInputRef.current?.click()}
+                        className="p-3 border-2 border-dashed border-[#EAE6DF] hover:border-stone-400 rounded-xl text-center cursor-pointer transition-colors bg-[#FAF8F5]/60 hover:bg-white"
+                      >
+                        <Upload className="w-4 h-4 text-stone-400 mx-auto mb-1" />
+                        <span className="text-xs font-bold text-stone-700 block">点击上传正面生活照 (全身或半身)</span>
+                        <span className="text-[9px] text-stone-400 block mt-0.5">
+                          AI 将 100% 提取并保留您的真实面容五官与发型
+                        </span>
+                      </div>
+                    )}
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handlePhotoSelect}
+                    />
+                  </div>
 
- <div className="bg-[#FAF8F5] p-3 rounded-2xl border border-[#EAE6DF] space-y-1 md:col-span-2">
- <div className="flex justify-between text-xs font-bold">
- <span className="text-stone-600">臀围</span>
- <span className="font-mono text-[#D63031]">{hipsCm} cm</span>
- </div>
- <input
- type="range"
- min="65"
- max="140"
- value={hipsCm}
- onChange={(e) => setHipsCm(Number(e.target.value))}
- className="w-full accent-[#D63031]"
- />
- </div>
- </div>
- </div>
+                  {/* 3. 发型解耦与自由切换 */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-extrabold text-stone-800 block">发型偏好与面貌设定</span>
+                      <span className="text-[9px] text-stone-400">
+                        {hairstyleMode === 'KEEP_PHOTO' ? '1:1 保留原图发型' : '换发不换脸 (面容锁定)'}
+                      </span>
+                    </div>
 
- {/* 体型形态特征选择 (未上传真人照片时自由调整) */}
- <div className="space-y-2">
- <div className="flex items-center justify-between">
- <h5 className="text-xs font-extrabold text-stone-800">体型形态特征</h5>
- {hasRealPhoto && (
- <span className="text-[10px] text-emerald-600 font-bold">
- 已从真人全身照继承原生体态
- </span>
- )}
- </div>
+                    {/* 首项置顶：保持照片原生发型 (当有照片时优先展示) */}
+                    {hasRealPhoto && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHairstyleMode('KEEP_PHOTO');
+                          showToast('已锁定【保持照片原生发型】', 'info');
+                        }}
+                        className={`w-full p-2.5 rounded-xl border text-left flex items-center justify-between transition-all cursor-pointer ${
+                          hairstyleMode === 'KEEP_PHOTO'
+                            ? 'bg-rose-50 border-[#D63031] shadow-2xs ring-1 ring-[#D63031]'
+                            : 'bg-white border-[#EAE6DF] hover:border-stone-300'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-base">📸</span>
+                          <div>
+                            <div className="text-xs font-extrabold text-stone-800">保持照片原生发型 (推荐)</div>
+                            <div className="text-[9px] text-stone-400 mt-0.5">
+                              原汁原味继承生活照发型、长短与个人辨识度
+                            </div>
+                          </div>
+                        </div>
+                        {hairstyleMode === 'KEEP_PHOTO' && (
+                          <Check className="w-4 h-4 text-[#D63031] stroke-[2.5]" />
+                        )}
+                      </button>
+                    )}
 
- <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
- {(gender === 'FEMALE' ? FEMALE_BODY_TYPES : MALE_BODY_TYPES).map((bt) => {
- const isSelected = bodyType === bt.key;
- return (
- <button
- key={bt.key}
- type="button"
- onClick={() => setBodyType(bt.key)}
- className={`p-2.5 rounded-2xl border text-left transition-all ${
- isSelected
- ? 'bg-rose-50/80 border-[#D63031] shadow-2xs'
- : 'bg-white border-[#EAE6DF] hover:border-stone-400'
- }`}
- >
- <div className="text-xs font-extrabold text-stone-800">{bt.label}</div>
- <div className="text-[9px] text-stone-400 leading-tight mt-0.5 line-clamp-1">
- {bt.desc}
- </div>
- </button>
- );
- })}
- </div>
- </div>
+                    {/* 潮流发型库 (2列紧凑排布) */}
+                    <div className="grid grid-cols-2 gap-2">
+                      {(gender === 'FEMALE'
+                        ? [
+                            { key: 'FRENCH_WAVY_LONG', label: '法式微卷长发' },
+                            { key: 'SHOULDER_BOB', label: '及肩波波头' },
+                            { key: 'CHIC_SHORT', label: '干练短发' },
+                            { key: 'HIGH_PONYTAIL', label: '法式高马尾' },
+                          ]
+                        : [
+                            { key: 'CLEAN_SHORT', label: '清爽短发' },
+                            { key: 'KOREAN_SIDE_PART', label: '韩系侧分' },
+                            { key: 'BUSINESS_POMPADOUR', label: '商务油头' },
+                            { key: 'BUZZ_CUT', label: '清爽寸头' },
+                          ]
+                      ).map((hs) => {
+                        const isSelected = hairstyleMode === 'CUSTOM' && hairstyle === hs.key;
+                        return (
+                          <button
+                            key={hs.key}
+                            type="button"
+                            onClick={() => {
+                              setHairstyleMode('CUSTOM');
+                              setHairstyle(hs.key);
+                              showToast(`已选择发型【${hs.label}】`, 'info');
+                            }}
+                            className={`p-2 rounded-xl border text-left transition-all cursor-pointer ${
+                              isSelected
+                                ? 'bg-rose-50/80 border-[#D63031] ring-1 ring-[#D63031] text-[#D63031]'
+                                : 'bg-white border-[#EAE6DF] hover:border-stone-300 text-stone-700'
+                            }`}
+                          >
+                            <div className="text-[11px] font-bold truncate">{hs.label}</div>
+                            <div className="text-[9px] text-stone-400 mt-0.5">
+                              {isSelected ? '✓ 换发不换脸' : '选择该发型'}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
 
- {/* 肤色基调偏好 (未上传照片时自由调节) 与发型偏好 (自由选择) */}
- <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
- {/* 肤色基调 */}
- <div className="space-y-1.5">
- <span className="text-xs font-extrabold text-stone-800 block">肤色基调偏好</span>
- <div className="flex items-center gap-2">
- {SKIN_TONES.map((st) => {
- const isSelected = skinTone === st.key;
- return (
- <button
- key={st.key}
- type="button"
- onClick={() => setSkinTone(st.key)}
- title={st.label}
- className={`flex-1 py-1.5 px-2 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all ${
- isSelected
- ? 'ring-2 ring-[#D63031] border-stone-800 shadow-2xs'
- : 'border-[#EAE6DF] hover:border-stone-400'
- }`}
- >
- <span
- className="w-3 h-3 rounded-full border border-black/10 shrink-0"
- style={{ backgroundColor: st.hex }}
- />
- <span>{st.label}</span>
- </button>
- );
- })}
- </div>
- </div>
+                  {/* 4. 肤色基调偏好 */}
+                  <div className="space-y-1.5">
+                    <span className="text-xs font-extrabold text-stone-800 block">肤色基调偏好</span>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {SKIN_TONE_CONFIGS.map((st) => {
+                        const isSelected = skinTone === st.key;
+                        return (
+                          <button
+                            key={st.key}
+                            type="button"
+                            onClick={() => setSkinTone(st.key)}
+                            title={st.label}
+                            className={`py-1.5 px-1 rounded-xl border text-[10px] font-bold flex flex-col items-center gap-1 transition-all cursor-pointer ${
+                              isSelected
+                                ? 'ring-2 ring-[#D63031] border-stone-800 bg-rose-50/50'
+                                : 'border-[#EAE6DF] hover:border-stone-400 bg-white'
+                            }`}
+                          >
+                            <span
+                              className="w-3.5 h-3.5 rounded-full border border-black/10 shrink-0"
+                              style={{ backgroundColor: st.hex }}
+                            />
+                            <span className="truncate w-full text-center text-stone-700">{st.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
 
- {/* 发型偏好 */}
- <div className="space-y-1.5">
- <span className="text-xs font-extrabold text-stone-800 block">发型风格偏好</span>
- <select
- value={hairstyle}
- onChange={(e) => setHairstyle(e.target.value)}
- className="w-full bg-[#FAF8F5] border border-[#EAE6DF] rounded-xl px-3 py-2 text-xs text-stone-800 font-bold focus:outline-none"
- >
- {(gender === 'FEMALE' ? FEMALE_HAIRSTYLES : MALE_HAIRSTYLES).map((hs) => (
- <option key={hs.key} value={hs.key}>
- {hs.label}
- </option>
- ))}
- </select>
- </div>
- </div>
+                {/* 5. 一键 AI 重构专属模特核心 CTA */}
+                <div className="space-y-2 pt-2">
+                  {reconstructProgress !== null && (
+                    <div className="space-y-1.5 p-3 bg-[#FAF8F5] rounded-xl border border-[#EAE6DF] animate-in fade-in">
+                      <div className="flex items-center justify-between text-[11px] font-bold">
+                        <span className="text-stone-700 flex items-center gap-1.5">
+                          <Sparkles className="w-3.5 h-3.5 text-[#D63031] animate-spin" />
+                          <span>{reconstructStageText}</span>
+                        </span>
+                        <span className="font-mono text-[#D63031]">{reconstructProgress}%</span>
+                      </div>
+                      <div className="w-full h-2 bg-stone-200 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-[#D63031] to-[#E17055] transition-all duration-300 rounded-full"
+                          style={{ width: `${reconstructProgress}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
 
- {bodySaveMsg && (
- <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-bold flex items-center gap-2 animate-in fade-in">
- <Check className="w-4 h-4 stroke-[2]" />
- <span>{bodySaveMsg}</span>
- </div>
- )}
+                  {reconstructMsg && (
+                    <div className="p-2.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-bold flex items-center gap-2 animate-in fade-in">
+                      <Check className="w-4 h-4 stroke-[2]" />
+                      <span>{reconstructMsg}</span>
+                    </div>
+                  )}
+                  {reconstructErr && (
+                    <div className="p-2 bg-rose-50 border border-rose-200 text-[#D63031] text-xs font-bold rounded-xl">
+                      {reconstructErr}
+                    </div>
+                  )}
 
- {/* 操作按钮区 */}
- <div className="flex flex-col sm:flex-row gap-2.5 pt-2">
- <button
- type="button"
- onClick={handleSaveBody}
- className="flex-1 py-2.5 bg-stone-900 hover:bg-black text-white rounded-xl text-xs font-bold transition-all shadow-xs"
- >
- 保存身材并同步至试衣间
- </button>
+                  <button
+                    type="button"
+                    disabled={isReconstructing}
+                    onClick={handleReconstructAvatar}
+                    className="w-full py-3 bg-gradient-to-r from-[#D63031] to-[#E17055] hover:from-[#c0392b] hover:to-[#d63031] text-white rounded-2xl text-xs font-extrabold shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    <Sparkles className={`w-4 h-4 ${isReconstructing ? 'animate-spin' : ''}`} />
+                    <span>
+                      {isReconstructing ? 'AI 正基于五维身材与面容重塑中...' : '✨ 一键 AI 重构专属模特 (消耗 1 算力)'}
+                    </span>
+                  </button>
+                  <p className="text-[9px] text-stone-400 text-center">
+                    同时同步右侧五维三围、体型形态与左侧发型面容，生成 3:4 专属 A-Pose 素体
+                  </p>
+                </div>
+              </div>
 
- <button
- type="button"
- disabled={isAiRegenerating}
- onClick={handleAiRegenerateAvatar}
- className="flex-1 py-2.5 bg-gradient-to-r from-[#D63031] to-[#E17055] hover:from-[#c0392b] hover:to-[#d63031] text-white rounded-xl text-xs font-bold shadow-md transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
- >
- <Sparkles className={`w-3.5 h-3.5 stroke-[2] ${isAiRegenerating ? 'animate-spin' : ''}`} />
- <span>{isAiRegenerating ? 'AI 生成重塑中...' : ' 基于五维身材 AI 重构模特'}</span>
- </button>
- </div>
- </div>
- )}
+              {/* ======================================================== */}
+              {/* 右栏 (58%): 性别 + 5 大体型智能联动 + 五维滑块 + 纯保存 */}
+              {/* ======================================================== */}
+              <div className="lg:col-span-7 space-y-5">
+                
+                {/* 1. 性别切换与黄金比例快捷胶囊 */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#FAF8F5] p-3 rounded-2xl border border-[#EAE6DF]">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-extrabold text-stone-900">精准身材与解剖参数</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-md font-mono bg-white border border-[#EAE6DF] text-stone-600 font-bold">
+                        {gender === 'FEMALE' ? '女性模式' : '男性模式'}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-stone-400 mt-0.5">三围数值自动防抖推导体型，亦可选择体型反向赋三围</p>
+                  </div>
 
- {/* TAB 2: 真人照片重构 (Photo Upload to Standard Mannequin) */}
- {activeTab === 'AVATAR' && (
- <div className="space-y-6 animate-in fade-in">
- <div className="flex flex-col sm:flex-row gap-6 items-center">
- <div className="w-40 h-56 bg-[#FAF8F5] rounded-2xl border border-[#EAE6DF] flex items-center justify-center overflow-hidden p-2 relative shrink-0 shadow-xs">
- {avatar?.normalizedImageUrl ? (
- <img
- src={avatar.normalizedImageUrl}
- alt="当前模特素体"
- className="max-h-full max-w-full object-contain"
- />
- ) : (
- <div className="text-xs text-stone-400 text-center">暂无模特素体</div>
- )}
- </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center bg-white p-0.5 rounded-xl border border-[#EAE6DF]">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleGender('FEMALE')}
+                        className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          gender === 'FEMALE'
+                            ? 'bg-[#D63031] text-white shadow-2xs'
+                            : 'text-stone-600 hover:text-stone-900'
+                        }`}
+                      >
+                        女性
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleGender('MALE')}
+                        className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          gender === 'MALE'
+                            ? 'bg-[#2D3436] text-white shadow-2xs'
+                            : 'text-stone-600 hover:text-stone-900'
+                        }`}
+                      >
+                        男性
+                      </button>
+                    </div>
 
- <div className="space-y-3 flex-1 text-left">
- <h4 className="text-xs font-extrabold text-stone-800">重新生成正面 A-Pose 素体</h4>
- <p className="text-xs text-stone-500 leading-relaxed">
- 上传您的正面全身或半身照，系统将 100% 锁定五官面容与发型，并根据当前五维身材解剖重构为标准试衣模特。
- </p>
+                    <button
+                      type="button"
+                      onClick={handleApplyGolden}
+                      className="px-3 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer"
+                      title="根据身高一键计算黄金三围"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-amber-600 stroke-[1.75]" />
+                      <span>黄金比例</span>
+                    </button>
+                  </div>
+                </div>
 
- <div className="flex items-center gap-3 pt-2">
- <label className="px-4 py-2 bg-[#2D3436] hover:bg-black text-white rounded-xl text-xs font-bold cursor-pointer transition-colors flex items-center gap-1.5 shadow-xs">
- <Camera className="w-3.5 h-3.5 stroke-[1.75]" />
- <span>{isAvatarGenerating ? '重构生成中...' : '上传全身照片'}</span>
- <input
- type="file"
- accept="image/*"
- disabled={isAvatarGenerating}
- onChange={handleAvatarFileChange}
- className="hidden"
- />
- </label>
- </div>
+                {/* 2. 五大体型智能联动卡片 (双向推导) */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h5 className="text-xs font-extrabold text-stone-800 flex items-center gap-1.5">
+                      <Activity className="w-3.5 h-3.5 text-[#D63031]" />
+                      <span>智能体型形态联动</span>
+                    </h5>
+                    <span className="text-[10px] text-[#D63031] font-bold">
+                      当前三围智能推导: {currentDerivedBodyType}
+                    </span>
+                  </div>
 
- {/* 进度条 */}
- {avatarUploadProgress !== null && (
- <div className="space-y-1.5 pt-2 animate-in fade-in">
- <div className="flex items-center justify-between text-[11px] font-bold">
- <span className="text-stone-700 flex items-center gap-1">
- <Sparkles className="w-3 h-3 text-[#D63031] animate-spin" />
- <span>{avatarUploadStageText}</span>
- </span>
- <span className="font-mono text-[#D63031]">{avatarUploadProgress}%</span>
- </div>
- <div className="w-full h-2 bg-[#FAF8F5] rounded-full overflow-hidden border border-[#EAE6DF]">
- <div
- className="h-full bg-gradient-to-r from-[#D63031] to-[#E17055] transition-all duration-300 rounded-full"
- style={{ width: `${avatarUploadProgress}%` }}
- />
- </div>
- </div>
- )}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
+                    {(gender === 'FEMALE' ? FEMALE_BODY_TYPE_CONFIGS : MALE_BODY_TYPE_CONFIGS).map((bt) => {
+                      const isSelected = bodyType === bt.key;
+                      const isDerived = currentDerivedBodyType === bt.key;
+                      return (
+                        <button
+                          key={bt.key}
+                          type="button"
+                          onClick={() => handleSelectBodyType(bt.key)}
+                          className={`p-2.5 rounded-2xl border text-left transition-all relative cursor-pointer ${
+                            isSelected
+                              ? 'bg-rose-50/90 border-[#D63031] ring-1 ring-[#D63031] shadow-2xs'
+                              : 'bg-white border-[#EAE6DF] hover:border-stone-400'
+                          }`}
+                        >
+                          {isDerived && (
+                            <span className="absolute -top-1.5 right-1.5 text-[8px] font-extrabold px-1.5 py-0.2 rounded-full bg-[#D63031] text-white">
+                              智能推导
+                            </span>
+                          )}
+                          <div className="text-xs font-extrabold text-stone-800">{bt.label}</div>
+                          <div className="text-[9px] text-stone-400 leading-tight mt-1 line-clamp-2">
+                            {bt.desc}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
 
- {avatarUploadMsg && (
- <div className="text-xs font-bold text-emerald-600 flex items-center gap-1">
- <Check className="w-3.5 h-3.5 stroke-[2]" />
- <span>{avatarUploadMsg}</span>
- </div>
- )}
- {avatarUploadErr && (
- <div className="text-xs font-bold text-[#D63031]">{avatarUploadErr}</div>
- )}
- </div>
- </div>
- </div>
- )}
+                {/* 3. 精准五维三围滑块 (带分类、BMI 胶囊与 WHR 胶囊) */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h5 className="text-xs font-extrabold text-stone-800">五维三围尺寸精度微调</h5>
+                    <span className="text-[10px] text-stone-400">支持 1cm/1kg 级精细调节</span>
+                  </div>
 
- {/* TAB 3: 多角色档案管理 */}
- {activeTab === 'PROFILES' && (
- <div className="space-y-5 animate-in fade-in text-left">
- <div className="flex items-center justify-between">
- <div>
- <h4 className="text-xs font-extrabold text-stone-800">家庭与好友身材档案</h4>
- <p className="text-[10px] text-stone-400">一键切换不同人物模特，各自独立保存身材与试穿搭配</p>
- </div>
- <button
- type="button"
- onClick={() => setIsCreatingProfile(true)}
- className="px-3 py-1.5 bg-[#D63031] hover:bg-[#c0392b] text-white rounded-xl text-xs font-bold flex items-center gap-1 shadow-xs transition-colors"
- >
- <Plus className="w-3.5 h-3.5 stroke-[2]" />
- <span>添加新成员</span>
- </button>
- </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* 身高 */}
+                    <div className="bg-[#FAF8F5] p-3 rounded-2xl border border-[#EAE6DF] space-y-1.5">
+                      <div className="flex justify-between items-center text-xs font-bold">
+                        <span className="text-stone-600">身高</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] px-1.5 py-0.2 rounded font-bold bg-white text-stone-600 border border-[#EAE6DF]">
+                            {heightCm < 160 ? '娇小玲珑' : heightCm > 172 ? '高挑修长' : '匀称标准'}
+                          </span>
+                          <span className="font-mono text-[#D63031] font-extrabold">{heightCm} cm</span>
+                        </div>
+                      </div>
+                      <input
+                        type="range"
+                        min="140"
+                        max="210"
+                        value={heightCm}
+                        onChange={(e) => setHeightCm(Number(e.target.value))}
+                        className="w-full accent-[#D63031] cursor-pointer"
+                      />
+                    </div>
 
- {isCreatingProfile && (
- <form onSubmit={handleCreateProfile} className="p-4 bg-[#FAF8F5] rounded-2xl border border-[#EAE6DF] space-y-3">
- <div className="text-xs font-extrabold text-stone-900">创建新角色档案</div>
- <div className="grid grid-cols-2 gap-2">
- <input
- type="text"
+                    {/* 体重 + 实时 BMI 胶囊 */}
+                    <div className="bg-[#FAF8F5] p-3 rounded-2xl border border-[#EAE6DF] space-y-1.5">
+                      <div className="flex justify-between items-center text-xs font-bold">
+                        <span className="text-stone-600">体重</span>
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className="text-[10px] px-1.5 py-0.2 rounded font-bold text-white"
+                            style={{ backgroundColor: bmiInfo.color }}
+                          >
+                            BMI {bmiInfo.bmi} ({bmiInfo.label})
+                          </span>
+                          <span className="font-mono text-[#D63031] font-extrabold">{weightKg} kg</span>
+                        </div>
+                      </div>
+                      <input
+                        type="range"
+                        min="35"
+                        max="130"
+                        value={weightKg}
+                        onChange={(e) => setWeightKg(Number(e.target.value))}
+                        className="w-full accent-[#D63031] cursor-pointer"
+                      />
+                    </div>
+
+                    {/* 胸围 */}
+                    <div className="bg-[#FAF8F5] p-3 rounded-2xl border border-[#EAE6DF] space-y-1.5">
+                      <div className="flex justify-between items-center text-xs font-bold">
+                        <span className="text-stone-600">{gender === 'MALE' ? '胸围 (胸肌)' : '胸围'}</span>
+                        <span className="font-mono text-[#D63031] font-extrabold">{bustCm} cm</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="60"
+                        max="140"
+                        value={bustCm}
+                        onChange={(e) => setBustCm(Number(e.target.value))}
+                        className="w-full accent-[#D63031] cursor-pointer"
+                      />
+                    </div>
+
+                    {/* 腰围 */}
+                    <div className="bg-[#FAF8F5] p-3 rounded-2xl border border-[#EAE6DF] space-y-1.5">
+                      <div className="flex justify-between items-center text-xs font-bold">
+                        <span className="text-stone-600">腰围</span>
+                        <span className="font-mono text-[#D63031] font-extrabold">{waistCm} cm</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="45"
+                        max="130"
+                        value={waistCm}
+                        onChange={(e) => setWaistCm(Number(e.target.value))}
+                        className="w-full accent-[#D63031] cursor-pointer"
+                      />
+                    </div>
+
+                    {/* 臀围 + 实时 WHR 腰臀比胶囊 */}
+                    <div className="bg-[#FAF8F5] p-3 rounded-2xl border border-[#EAE6DF] space-y-1.5 sm:col-span-2">
+                      <div className="flex justify-between items-center text-xs font-bold">
+                        <span className="text-stone-600">臀围</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                            腰臀比 {whrInfo.whr} ({whrInfo.label})
+                          </span>
+                          <span className="font-mono text-[#D63031] font-extrabold">{hipsCm} cm</span>
+                        </div>
+                      </div>
+                      <input
+                        type="range"
+                        min="65"
+                        max="140"
+                        value={hipsCm}
+                        onChange={(e) => setHipsCm(Number(e.target.value))}
+                        className="w-full accent-[#D63031] cursor-pointer"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 4. 右侧底部独立保存操作栏 */}
+                <div className="pt-2 flex items-center justify-between border-t border-[#EAE6DF]">
+                  <div className="text-[10px] text-stone-400">
+                    只想修改三围？点击此处纯保存，不消耗任何算力
+                  </div>
+                  <button
+                    type="button"
+                    disabled={isBodySaving}
+                    onClick={handleSaveOnlyBody}
+                    className="px-5 py-2.5 bg-stone-900 hover:bg-black text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>{isBodySaving ? '正在保存...' : '💾 仅保存身材数据 (0 算力)'}</span>
+                  </button>
+                </div>
+              </div>
+
+            </div>
+          )}
+
+          {/* TAB 2: 多角色档案管理 */}
+          {activeTab === 'PROFILES' && (
+            <div className="space-y-5 animate-in fade-in text-left">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-extrabold text-stone-800">家庭与好友身材档案</h4>
+                  <p className="text-[10px] text-stone-400">一键切换不同人物模特，各自独立保存身材与试穿搭配</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsCreatingProfile(true)}
+                  className="px-3 py-1.5 bg-[#D63031] hover:bg-[#c0392b] text-white rounded-xl text-xs font-bold flex items-center gap-1 shadow-xs transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5 stroke-[2]" />
+                  <span>添加新成员</span>
+                </button>
+              </div>
+
+              {isCreatingProfile && (
+                <form onSubmit={handleCreateProfile} className="p-4 bg-[#FAF8F5] rounded-2xl border border-[#EAE6DF] space-y-3">
+                  <div className="text-xs font-extrabold text-stone-900">创建新角色档案</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      type="text"
  placeholder="角色名称 (如: 男友 / 闺蜜)"
  value={newProfileName}
  onChange={(e) => setNewProfileName(e.target.value)}

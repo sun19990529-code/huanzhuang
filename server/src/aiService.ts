@@ -85,8 +85,82 @@ export function getAdaptiveAspectRatio(
 }
 
 /**
+ * 体型形态学解剖级 Prompt 字典 (Morphology Prompts)
+ * 将形体几何特征映射为高密度解剖视觉语言，消除超模泛化先验
+ */
+export const BODY_MORPHOLOGY_PROMPTS: Record<string, string> = {
+  // 女性
+  'HOURGLASS': 'curvaceous feminine hourglass silhouette, balanced shoulder-to-hip ratio, prominent narrow defined waistline, smooth curved hip flare',
+  'PEAR': 'distinct pear-shaped silhouette, narrower delicate shoulders and modest bust, transitioning to fuller rounded hips and voluptuous thighs, low waist-to-hip ratio',
+  'RECTANGLE': 'athletic balanced athletic rectangular frame, straight vertical silhouette from shoulders to hips with subtle natural waist curve, lean uniform torso',
+  'INVERTED_TRIANGLE': 'statuesque athletic inverted triangle frame, broad sculpted shoulders and wider clavicle line, tapering down to lean athletic waist and slender hips and legs',
+  'APPLE': 'soft full-figured apple-shaped silhouette, rounded bust and midsection with softer waistline contours, paired with slender shapely legs and delicate wrists',
+
+  // 男性
+  'ATHLETIC': 'muscular athletic V-taper frame, broad masculine shoulders, sculpted chest and upper back, tapering downward to a tight firm waist and powerful quadriceps',
+  'AVERAGE': 'natural balanced everyday proportioned frame, moderate shoulders, straight natural waist, relaxed healthy posture and even limb symmetry',
+  'SLIM': 'lean slender youthful build, elongated delicate bone structure, narrow flat waist, defined clavicles and slender linear limbs',
+  'ROBUST': 'solid robust full-bodied masculine physique, broad heavy torso, thick chest, substantial waistline and powerful thick legs',
+};
+
+/**
+ * 肤色基调解剖字典
+ */
+export const SKIN_TONE_PROMPTS: Record<string, string> = {
+  'FAIR': 'porcelain fair luminous East Asian skin with delicate cool undertones',
+  'WARM_NATURAL': 'healthy warm apricot East Asian skin tone with subtle radiant golden glow',
+  'WHEAT_TAN': 'sun-kissed athletic wheat tan skin tone with rich warm undertones',
+  'BRONZE_DEEP': 'deep sun-bronzed tawny skin tone with healthy natural sheen',
+};
+
+/**
+ * 发型解剖级 Prompt 字典
+ */
+export const HAIRSTYLE_PROMPTS: Record<string, string> = {
+  // 原生发型保持
+  'KEEP_PHOTO': 'exact original hairstyle, hair length, volume, hairline, and hair texture 1:1 preserved identically from the reference photograph',
+
+  // 女性发型
+  'FRENCH_WAVY_LONG': 'voluminous French wavy long dark hair with soft natural romantic curls cascading gently over shoulders',
+  'SHOULDER_BOB': 'clean modern shoulder-length blunt bob cut, sleek glossy straight dark hair framing the jawline',
+  'CHIC_SHORT': 'sophisticated chic pixie short hair, textured airy layers, neat neck taper',
+  'HIGH_PONYTAIL': 'sleek high ponytail tied back smoothly at the crown, showcasing clean cheekbones and neckline',
+
+  // 男性发型
+  'CLEAN_SHORT': 'clean modern textured short hair, tapered sides, natural volume on top',
+  'KOREAN_SIDE_PART': 'trendy Korean 6/4 layered side part hair with gentle airy fringe',
+  'BUSINESS_POMPADOUR': 'neat gentleman business pompadour, short clipped sides, combed back with clean grooming',
+  'BUZZ_CUT': 'crisp athletic military buzz cut with defined clean hairline',
+};
+
+/**
+ * 根据身高与体重动态推导骨骼与 BMI 量感描述
+ */
+export function buildBodyVolumeAndProportionsClause(heightCm: number, weightKg: number): string {
+  const heightM = Math.max(1, heightCm) / 100;
+  const bmi = weightKg / (heightM * heightM);
+
+  const heightClause = heightCm < 160
+    ? 'petite proportions with shorter torso and leg ratio'
+    : heightCm > 172
+    ? 'statuesque elongated vertical limb proportions with tall stature'
+    : 'balanced natural height proportions';
+
+  let volumeClause = 'medium natural build with balanced soft muscle tone';
+  if (bmi < 18.5) {
+    volumeClause = 'lean slender frame with visible clavicles and slender waist';
+  } else if (bmi >= 24 && bmi < 28) {
+    volumeClause = 'full-bodied soft physique with noticeable softness around waist and hips';
+  } else if (bmi >= 28) {
+    volumeClause = 'curvy plus-size silhouette with rounded midsection, heavier thighs and fuller contours';
+  }
+
+  return `${heightClause}, ${volumeClause}`;
+}
+
+/**
  * 模块 B: [nanonanana2 专属] 标准 A-Pose 人像素体生成器
- * 精炼高密、东方青年骨骼锁定、无阴影高调纯白底
+ * 精炼高密、东方青年骨骼锁定、真实自然身材比例注入、无阴影高调纯白底
  */
 export function buildMannequinPrompt(
   gender: 'FEMALE' | 'MALE',
@@ -98,22 +172,49 @@ export function buildMannequinPrompt(
   bodyType?: string,
   skinTone?: string,
   hairstyle?: string,
-  featuresSummary?: string
+  featuresSummary?: string,
+  hasReferencePhoto: boolean = false
 ): string {
   const isMale = gender === 'MALE';
-  const morphology = bodyType || (isMale ? 'athletic V-taper frame' : 'feminine hourglass proportions');
-  const skin = skinTone || 'warm natural skin tone';
-  const hair = hairstyle || (isMale ? 'clean textured short dark hair' : 'neat sleek long dark hair tied back');
+  
+  // 1. 体型形态学
+  const morphologyDesc = (bodyType && BODY_MORPHOLOGY_PROMPTS[bodyType])
+    ? BODY_MORPHOLOGY_PROMPTS[bodyType]
+    : (isMale ? BODY_MORPHOLOGY_PROMPTS['ATHLETIC'] : BODY_MORPHOLOGY_PROMPTS['HOURGLASS']);
 
-  const appearanceClause = featuresSummary
-    ? `Preserving exact 20-year-old Chinese model face, facial features, and hair from reference: (${featuresSummary}).`
-    : `Stunning 20-year-old Chinese fashion model, delicate East Asian facial features, glowing complexion, ${skin}, ${hair}.`;
+  // 2. 身高量感与 BMI
+  const proportionsClause = buildBodyVolumeAndProportionsClause(heightCm, weightKg);
+
+  // 3. 肤色
+  const skinDesc = (skinTone && SKIN_TONE_PROMPTS[skinTone])
+    ? SKIN_TONE_PROMPTS[skinTone]
+    : 'healthy warm apricot East Asian skin tone';
+
+  // 4. 发型与面容
+  const isKeepPhoto = !hairstyle || hairstyle === 'KEEP_PHOTO';
+  const hairDesc = (hairstyle && HAIRSTYLE_PROMPTS[hairstyle])
+    ? HAIRSTYLE_PROMPTS[hairstyle]
+    : (isMale ? HAIRSTYLE_PROMPTS['CLEAN_SHORT'] : HAIRSTYLE_PROMPTS['FRENCH_WAVY_LONG']);
+
+  let appearanceClause = '';
+  if (hasReferencePhoto) {
+    if (isKeepPhoto) {
+      appearanceClause = `Strictly preserve the exact 20-year-old Chinese individual face, eyes, nose, lips, jawline AND original hairstyle/hair length 100% identically from the reference photograph in Image 1 (${featuresSummary || 'person from photo'}).`;
+    } else {
+      appearanceClause = `Strictly preserve and lock the exact 20-year-old Chinese facial identity, eyes, nose, mouth and facial bone structure from the reference photograph in Image 1 (${featuresSummary || 'person from photo'}), but restyle the hair into: ${hairDesc}.`;
+    }
+  } else {
+    appearanceClause = `20-year-old Chinese individual with authentic natural East Asian facial features, glowing clear complexion, ${skinDesc}, ${hairDesc}.`;
+  }
+
+  const heightM = Math.max(1, heightCm) / 100;
+  const bmiStr = (weightKg / (heightM * heightM)).toFixed(1);
 
   return `Commercial fashion studio full-body catalog photograph of a 20-year-old East Asian model in neutral upright A-pose: complete head-to-toe standing shot, arms relaxed at 30 degrees, bare feet firmly on the studio floor, centered front elevation view.
 
 ${appearanceClause}
 
-Body Metrics: Height ${heightCm}cm, Weight ${weightKg}kg, Chest ${bustCm}cm, Waist ${waistCm}cm, Hips ${hipsCm}cm, ${morphology}.
+Anatomical Body Proportions & Measurements: Height ${heightCm}cm, Weight ${weightKg}kg (BMI ~${bmiStr}), Bust/Chest ${bustCm}cm, Waist ${waistCm}cm, Hips ${hipsCm}cm. Physical morphology: ${morphologyDesc}. Body volume: ${proportionsClause}. Authentically embody these exact anatomical measurements without reverting to an exaggerated slim high-fashion runway model standard.
 Attire: Minimal neutral skin-tone tight seamless sports crop tank and compression shorts.
 Framing & Composition: Full-length vertical 3:4 framing, complete full body from head to feet fully in frame, floor plane visible with subtle contact shadow, zero cropping of feet or hair, wide 35mm studio lens, seamless pure solid white background #FFFFFF, shadowless high-key fashion lighting.`;
 }
@@ -193,13 +294,19 @@ export function buildVtonEditorialPrompt(
   profileName: string,
   gender: string,
   garmentsDetailedText: string,
-  bodyMeasurements?: { heightCm: number; bustCm: number; waistCm: number; hipsCm: number },
+  bodyMeasurements?: { heightCm: number; bustCm: number; waistCm: number; hipsCm: number; weightKg?: number; bodyType?: string },
   avatarFeatures?: string,
   hasCanvasSnapshot: boolean = false
 ): string {
-  const bodyStr = bodyMeasurements
-    ? `Height ${bodyMeasurements.heightCm}cm, Bust ${bodyMeasurements.bustCm}cm, Waist ${bodyMeasurements.waistCm}cm, Hips ${bodyMeasurements.hipsCm}cm`
-    : 'Slim athletic physique';
+  let bodyStr = 'Natural authentic proportions matching Image 1';
+  if (bodyMeasurements) {
+    const weight = bodyMeasurements.weightKg || (gender === 'MALE' ? 70 : 50);
+    const volume = buildBodyVolumeAndProportionsClause(bodyMeasurements.heightCm, weight);
+    const morph = (bodyMeasurements.bodyType && BODY_MORPHOLOGY_PROMPTS[bodyMeasurements.bodyType])
+      ? BODY_MORPHOLOGY_PROMPTS[bodyMeasurements.bodyType]
+      : '';
+    bodyStr = `Height ${bodyMeasurements.heightCm}cm, Bust ${bodyMeasurements.bustCm}cm, Waist ${bodyMeasurements.waistCm}cm, Hips ${bodyMeasurements.hipsCm}cm${morph ? `, ${morph}` : ''}, ${volume}`;
+  }
 
   const spatialGuidanceClause = hasCanvasSnapshot
     ? '\nSpatial Guidance & Assembly: Image 2 is the exact 2D outfit layout reference. Follow the exact spatial coordinates, garment dimensions, layer tucking (tucked/untucked), and 3:4 full-length standing alignment from Image 2. Do NOT copy flat 2D sticker edges—render natural 3D volumetric draping, gravitational folds, and realistic fabric physics.'
@@ -743,6 +850,7 @@ export class AIService {
     const defaultBust = bustCm || (isMale ? 95 : 84);
     const defaultWaist = waistCm || (isMale ? 76 : 62);
     const defaultHips = hipsCm || (isMale ? 92 : 89);
+    const hasPhoto = Boolean(photoBase64 && photoBase64.trim().length > 0 && (photoBase64.startsWith('data:image') || photoBase64.startsWith('http')));
 
     const prompt = buildMannequinPrompt(
       gender,
@@ -754,13 +862,14 @@ export class AIService {
       bodyType,
       skinTone,
       hairstyle,
-      featuresSummary
+      featuresSummary,
+      hasPhoto
     );
 
     const generated = await this.callImageGeneration(
       prompt,
       '3:4',
-      photoBase64 ? [photoBase64] : []
+      hasPhoto ? [photoBase64] : []
     );
     if (!generated) {
       throw new Error(`AI 模特素体生成服务 (${IMAGE_GENERATION_MODEL}) 未返回有效图像数据`);

@@ -210,6 +210,10 @@ app.post('/v1/auth/register', async (req: Request, res: Response) => {
     bustCm,
     waistCm,
     hipsCm,
+    bodyType,
+    skinTone,
+    hairstyle,
+    hairstyleMode,
     isCustomBodyParams,
     avatarImageUrl,
   } = req.body;
@@ -223,18 +227,25 @@ app.post('/v1/auth/register', async (req: Request, res: Response) => {
     const isMale = gender === 'MALE';
     const targetHeight = Number(heightCm) || (isMale ? 178 : 165);
     const targetWeight = Number(weightKg) || (isMale ? 70 : 50);
+    const targetBust = Number(bustCm) || (isMale ? 95 : 84);
+    const targetWaist = Number(waistCm) || (isMale ? 76 : 62);
+    const targetHips = Number(hipsCm) || (isMale ? 92 : 89);
+    const effectiveHairstyle = hairstyleMode === 'KEEP_PHOTO' ? 'KEEP_PHOTO' : (hairstyle || undefined);
 
     if (avatarImageUrl && avatarImageUrl.startsWith('data:image')) {
       try {
-        console.log(`[Register] 正在根据用户上传照片调用 gemini-3.1-flash-image 重构 3:4 A-Pose 素体...`);
+        console.log(`[Register] 正在根据用户上传照片调用 gemini-3.1-flash-image 重构 3:4 A-Pose 素体 (发型模式: ${hairstyleMode || 'DEFAULT'})...`);
         finalAvatarUrl = await AIService.generateStandardMannequinFromPhoto(
           avatarImageUrl,
           gender || 'FEMALE',
           targetHeight,
           targetWeight,
-          Number(bustCm),
-          Number(waistCm),
-          Number(hipsCm)
+          targetBust,
+          targetWaist,
+          targetHips,
+          bodyType,
+          skinTone,
+          effectiveHairstyle
         );
       } catch (photoGenErr) {
         console.warn('[Register] 真人照片素体重构异常，降级按身材参数生成素体:', photoGenErr);
@@ -248,9 +259,12 @@ app.post('/v1/auth/register', async (req: Request, res: Response) => {
           gender || 'FEMALE',
           targetHeight,
           targetWeight,
-          Number(bustCm),
-          Number(waistCm),
-          Number(hipsCm)
+          targetBust,
+          targetWaist,
+          targetHips,
+          bodyType,
+          skinTone,
+          hairstyle
         );
       } catch (genErr) {
         console.warn('[Register] 动态生图未能即时返回，使用身材基底:', genErr);
@@ -276,6 +290,12 @@ app.post('/v1/auth/register', async (req: Request, res: Response) => {
       isCustomBodyParams,
       avatarImageUrl: finalAvatarUrl,
     });
+
+    if (bodyType) (result.profile as any).bodyType = bodyType;
+    if (skinTone) (result.profile as any).skinTone = skinTone;
+    if (hairstyle) (result.profile as any).hairstyle = hairstyle;
+    if (hairstyleMode) (result.profile as any).hairstyleMode = hairstyleMode;
+    db.saveProfile(result.profile);
 
     res.status(201).json({
       code: 200,
@@ -505,13 +525,39 @@ app.get('/v1/profiles/:id/avatar', (req: Request, res: Response) => {
 app.post('/v1/profiles/:id/avatar/upload', requireAuth, async (req: Request, res: Response) => {
   try {
     const profileId = req.params.id;
-    const { imageBase64 } = req.body;
+    const {
+      imageBase64,
+      gender,
+      heightCm,
+      weightKg,
+      bustCm,
+      waistCm,
+      hipsCm,
+      bodyType,
+      skinTone,
+      hairstyle,
+      hairstyleMode,
+    } = req.body;
+
     const profile = db.profiles.get(profileId);
     if (!profile || profile.userId !== req.user!.id) {
       return res.status(403).json({ code: 403, message: '角色档案不存在或无权操作' });
     }
 
-    const deduction = db.deductCredits(req.user!.id, 1, '上传全身照生成 A-Pose 标准素体');
+    // 同步更新 profile 参数
+    if (gender) profile.gender = gender;
+    if (heightCm) profile.heightCm = Number(heightCm);
+    if (weightKg) profile.weightKg = Number(weightKg);
+    if (bustCm) profile.bustCm = Number(bustCm);
+    if (waistCm) profile.waistCm = Number(waistCm);
+    if (hipsCm) profile.hipsCm = Number(hipsCm);
+    if (bodyType) (profile as any).bodyType = bodyType;
+    if (skinTone) (profile as any).skinTone = skinTone;
+    if (hairstyle) (profile as any).hairstyle = hairstyle;
+    if (hairstyleMode) (profile as any).hairstyleMode = hairstyleMode;
+    db.saveProfile(profile);
+
+    const deduction = db.deductCredits(req.user!.id, 1, 'AI 重构专属 A-Pose 模特素体');
     if (!deduction.success) {
       return res.status(402).json({ code: 402, message: deduction.error });
     }
@@ -521,17 +567,31 @@ app.post('/v1/profiles/:id/avatar/upload', requireAuth, async (req: Request, res
       ? ((GENERATED_ASSETS as any).avatarMaleUrl || GENERATED_ASSETS.avatarUrl)
       : ((GENERATED_ASSETS as any).avatarFemaleUrl || GENERATED_ASSETS.avatarUrl);
 
+    // 获取历史头像以备用
+    let existingOriginalPhoto = '';
+    for (const av of db.avatars.values()) {
+      if (av.profileId === profileId && av.isActive && av.originalImageUrl) {
+        existingOriginalPhoto = av.originalImageUrl;
+        break;
+      }
+    }
+
+    const effectivePhoto = imageBase64 !== undefined ? imageBase64 : existingOriginalPhoto;
+    const effectiveHairstyle = hairstyleMode === 'KEEP_PHOTO'
+      ? 'KEEP_PHOTO'
+      : (hairstyle || (profile as any).hairstyle);
+
     const generatedMannequin = await AIService.generateStandardMannequinFromPhoto(
-      imageBase64 || '',
+      effectivePhoto || '',
       profile.gender as any,
       profile.heightCm,
       profile.weightKg,
       profile.bustCm,
       profile.waistCm,
       profile.hipsCm,
-      (profile as any).bodyType,
-      (profile as any).skinTone,
-      (profile as any).hairstyle
+      bodyType || (profile as any).bodyType,
+      skinTone || (profile as any).skinTone,
+      effectiveHairstyle
     );
 
     const normalizedUrl = generatedMannequin || defaultFallback;
@@ -545,7 +605,7 @@ app.post('/v1/profiles/:id/avatar/upload', requireAuth, async (req: Request, res
     const avatar = {
       id: `avatar-${profileId}-${Date.now()}`,
       profileId,
-      originalImageUrl: imageBase64 || '',
+      originalImageUrl: effectivePhoto || '',
       normalizedImageUrl: normalizedUrl,
       anchorPoints: {
         neck: [0.5, 0.28] as [number, number],
@@ -564,6 +624,7 @@ app.post('/v1/profiles/:id/avatar/upload', requireAuth, async (req: Request, res
       message: 'A-Pose 标准影棚模特素体已生成并装载！',
       data: {
         avatar,
+        profile,
         remainingDailyCredits: deduction.remainingDaily,
       },
     });
@@ -573,10 +634,10 @@ app.post('/v1/profiles/:id/avatar/upload', requireAuth, async (req: Request, res
   }
 });
 
-// 基于五维身材参数与体型偏好重新生成专属 3D 比例 A-Pose 素体模特 (无需上传照片)
+// 基于五维身材参数与体型偏好重新生成专属 3D 比例 A-Pose 素体模特 (无需重新上传照片)
 app.post('/v1/profiles/:id/regenerate-avatar-by-params', requireAuth, async (req: Request, res: Response) => {
   const profileId = req.params.id;
-  const { gender, heightCm, weightKg, bustCm, waistCm, hipsCm, bodyType, skinTone, hairstyle } = req.body;
+  const { gender, heightCm, weightKg, bustCm, waistCm, hipsCm, bodyType, skinTone, hairstyle, hairstyleMode } = req.body;
   const profile = db.profiles.get(profileId);
   if (!profile || profile.userId !== req.user!.id) {
     return res.status(403).json({ code: 403, message: '角色档案不存在或无权操作' });
@@ -592,6 +653,7 @@ app.post('/v1/profiles/:id/regenerate-avatar-by-params', requireAuth, async (req
   if (bodyType) (profile as any).bodyType = bodyType;
   if (skinTone) (profile as any).skinTone = skinTone;
   if (hairstyle) (profile as any).hairstyle = hairstyle;
+  if (hairstyleMode) (profile as any).hairstyleMode = hairstyleMode;
   db.saveProfile(profile);
 
   const deduction = db.deductCredits(req.user!.id, 1, '基于五维身材参数 AI 重塑模特素体');
@@ -600,7 +662,20 @@ app.post('/v1/profiles/:id/regenerate-avatar-by-params', requireAuth, async (req
   }
 
   try {
-    const generatedMannequin = await AIService.generateAvatarWithAI(
+    let existingOriginalPhoto = '';
+    for (const av of db.avatars.values()) {
+      if (av.profileId === profileId && av.isActive && av.originalImageUrl) {
+        existingOriginalPhoto = av.originalImageUrl;
+        break;
+      }
+    }
+
+    const effectiveHairstyle = (hairstyleMode === 'KEEP_PHOTO' || (profile as any).hairstyleMode === 'KEEP_PHOTO')
+      ? 'KEEP_PHOTO'
+      : (hairstyle || (profile as any).hairstyle);
+
+    const generatedMannequin = await AIService.generateStandardMannequinFromPhoto(
+      existingOriginalPhoto,
       profile.gender as any,
       profile.heightCm,
       profile.weightKg,
@@ -609,7 +684,7 @@ app.post('/v1/profiles/:id/regenerate-avatar-by-params', requireAuth, async (req
       profile.hipsCm,
       bodyType || (profile as any).bodyType,
       skinTone || (profile as any).skinTone,
-      hairstyle || (profile as any).hairstyle
+      effectiveHairstyle
     );
 
     for (const av of db.avatars.values()) {
@@ -621,7 +696,7 @@ app.post('/v1/profiles/:id/regenerate-avatar-by-params', requireAuth, async (req
     const avatar = {
       id: `avatar-${profileId}-${Date.now()}`,
       profileId,
-      originalImageUrl: '',
+      originalImageUrl: existingOriginalPhoto,
       normalizedImageUrl: generatedMannequin,
       anchorPoints: {
         neck: [0.5, 0.28] as [number, number],
@@ -635,9 +710,9 @@ app.post('/v1/profiles/:id/regenerate-avatar-by-params', requireAuth, async (req
 
     db.saveAvatar(avatar);
 
-    res.json({
+    res.status(200).json({
       code: 200,
-      message: '✨ 已基于您的五维身材参数通过 gemini-3.1-flash-image 成功重塑专属 A-Pose 模特！',
+      message: '专属模特素体已根据最新形体参数重新生成并装载！',
       data: {
         profile,
         avatar,
@@ -645,7 +720,7 @@ app.post('/v1/profiles/:id/regenerate-avatar-by-params', requireAuth, async (req
       },
     });
   } catch (err: any) {
-    console.error('[Regenerate Avatar Error]:', err);
+    console.error('[/v1/profiles/:id/regenerate-avatar-by-params] 生成素体异常:', err);
     db.refundCredits(req.user!.id, 1, `素体生成失败退还积分 (${err.message || '网络异常'})`);
     return res.status(500).json({ code: 500, message: `AI 模特素体生成失败: ${err.message || '网络异常'}` });
   }

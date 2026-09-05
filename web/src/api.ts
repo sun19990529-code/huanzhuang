@@ -153,6 +153,10 @@ export async function registerUser(payload: {
   waistCm?: number;
   hipsCm?: number;
   isCustomBodyParams?: boolean;
+  bodyType?: string;
+  skinTone?: string;
+  hairstyle?: string;
+  hairstyleMode?: string;
   avatarImageUrl?: string;
 }): Promise<{ user: CurrentUser; profile: UserProfile; avatar: UserAvatar }> {
   const res = await fetch(`${API_BASE}/auth/register`, {
@@ -252,21 +256,39 @@ export async function fetchProfileAvatar(profileId: string): Promise<UserAvatar>
   return data.data;
 }
 
-export async function uploadAvatarPhoto(profileId: string, imageBase64: string): Promise<UserAvatar> {
+export interface AvatarReconstructPayload {
+  imageBase64?: string;
+  gender?: 'FEMALE' | 'MALE';
+  heightCm?: number;
+  weightKg?: number;
+  bustCm?: number;
+  waistCm?: number;
+  hipsCm?: number;
+  bodyType?: string;
+  skinTone?: string;
+  hairstyle?: string;
+  hairstyleMode?: string;
+}
+
+export async function uploadAvatarPhoto(
+  profileId: string,
+  payload: string | AvatarReconstructPayload
+): Promise<{ avatar: UserAvatar; profile?: UserProfile; remainingDailyCredits?: number }> {
+  const body = typeof payload === 'string' ? { imageBase64: payload } : payload;
   const res = await fetch(`${API_BASE}/profiles/${profileId}/avatar/upload`, {
     method: 'POST',
     headers: authHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ imageBase64 }),
+    body: JSON.stringify(body),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.message || '模特素体生成失败');
-  return data.data.avatar;
+  return data.data;
 }
 
 export async function uploadAvatarAsset(profileId: string, file: File): Promise<UserAvatar> {
   const compressedBase64 = await compressImageFile(file);
-  const av = await uploadAvatarPhoto(profileId, compressedBase64);
-  return av;
+  const res = await uploadAvatarPhoto(profileId, compressedBase64);
+  return res.avatar;
 }
 
 export async function regenerateAvatarByBodyParams(
@@ -281,6 +303,7 @@ export async function regenerateAvatarByBodyParams(
     bodyType?: string;
     skinTone?: string;
     hairstyle?: string;
+    hairstyleMode?: string;
   }
 ): Promise<{ profile: UserProfile; avatar: UserAvatar; remainingDailyCredits: number }> {
   const res = await fetch(`${API_BASE}/profiles/${profileId}/regenerate-avatar-by-params`, {
