@@ -35,6 +35,7 @@ export interface DetectedGarmentItem {
   material: string;
   box_2d?: [number, number, number, number]; // [ymin, xmin, ymax, xmax] 0 ~ 1000
   previewUrl?: string;
+  layerOrder?: number; // 穿搭层级顺序 (1: 贴身内搭, 2: 中层叠穿, 3: 外套风衣, 4: 配饰鞋帽)
 }
 
 export interface GarmentPlacementMatchResult {
@@ -245,26 +246,28 @@ export function buildGhostMannequinRectificationPrompt(
   } else if (stateType === 'CLOSED') {
     stateClause = 'Styling State: Fully fastened closed silhouette. The front placket is completely buttoned up or fully zipped along the vertical centerline, cleanly closed with zero gap between left and right front panels, smooth neat midline closure (fastened formal closed-front styling).';
   } else if (stateType === 'TUCKED') {
-    stateClause = 'Styling State: Neatly tucked-in styling, smooth flat bottom hem cleanly cropped at waist level.';
+    stateClause = 'Styling State: Neatly tucked-in styling, smooth flat bottom hem cleanly cropped at waist level with subtle natural fabric gathering.';
+  } else if (stateType === 'UNTUCKED') {
+    stateClause = 'Styling State: Naturally untucked relaxed styling. The garment hangs straight down naturally outside the waistband with a smooth finished hemline and side vents fully revealed, zero tucking, natural relaxed drape.';
   }
 
   let geometryClause = '';
   switch (primaryCategory) {
     case 'TOPS':
     case 'OUTERWEAR':
-      geometryClause = 'Bilateral symmetry along vertical Y-axis, level horizontal neckline and shoulder line, symmetrical 30-degree sleeve drape, straight neat hemline. Perfectly flat rectified orthographic elevation.';
+      geometryClause = 'Bilateral symmetry along vertical Y-axis, level horizontal shoulder line, symmetrical 30-degree sleeve drape, straight neat hemline. Volumetric 3D ghost mannequin effect: open hollow neckline and collar cavity gracefully revealing the interior back lining and neckline label, hollow wrist cuffs, natural subtle fabric depth without flat flattening. Perfectly rectified orthographic elevation.';
       break;
     case 'BOTTOMS':
-      geometryClause = 'Bilateral symmetry along vertical Y-axis, level horizontal waistband, vertically aligned straight legs/skirt drape, balanced hem flare. Perfectly flat rectified orthographic elevation.';
+      geometryClause = 'Bilateral symmetry along vertical Y-axis, level horizontal waistband with volumetric 3D hollow waist opening showing subtle interior waistband lining, vertically aligned straight legs/skirt drape, balanced hem flare. Perfectly flat rectified orthographic elevation.';
       break;
     case 'FOOTWEAR':
       geometryClause = 'Anatomically matched pair of shoes designed for human avatar wearability: a complete matching left shoe and right shoe displayed side-by-side in strict bilateral mirror symmetry along the vertical Y-axis. The left shoe is positioned on the left facing slightly left-forward (outward 15-20 degrees), and the right shoe is positioned on the right facing slightly right-forward (outward 15-20 degrees), matching natural human A-pose standing feet orientation. Both soles resting perfectly flat on an invisible level horizontal ground plane with natural physiological standing spacing between feet. Simultaneously and clearly reveals the front toe box, lacing/tongue construction, side profile curvature, and sole/midsole thickness. Perfectly balanced, zero tilt, zero overlapping, zero floating, zero asymmetric angles.';
       break;
     case 'ACCESSORIES':
-      geometryClause = 'Centered balanced studio product display with crisp geometric edges and symmetrical presentation.';
+      geometryClause = 'Centered upright luxury product catalog display. Handbags, shoulder bags, and backpacks must be placed fully upright in front-facing elevation, shoulder straps neatly draped and gracefully curving symmetrically along the sides, polished metal hardware and zippers facing directly forward. Hats and headwear upright front-facing. Necklaces and belts laid out in smooth elegant symmetrical loops. Perfectly balanced, zero tangled straps, zero asymmetric tilt.';
       break;
     case 'ONE_PIECE':
-      geometryClause = 'Full-length orthographic elevation, bilateral symmetry along vertical Y-axis, smooth waist contour, balanced hemline.';
+      geometryClause = 'Full-length orthographic elevation, bilateral symmetry along vertical Y-axis, hollow open neckline revealing interior back lining, smooth waist contour, balanced hemline drape.';
       break;
   }
 
@@ -275,9 +278,14 @@ export function buildGhostMannequinRectificationPrompt(
     ? patterns
     : 'solid';
 
-  const negativeExclusions = primaryCategory === 'FOOTWEAR'
-    ? 'zero single shoe (must strictly show a matching pair of left and right shoes), zero human feet, zero bare legs, zero ankles, zero socks, zero shoe trees, zero shoe boxes'
-    : 'zero human body, zero hangers';
+  let negativeExclusions = 'zero human body, zero hangers';
+  if (primaryCategory === 'FOOTWEAR') {
+    negativeExclusions = 'zero single shoe (must strictly show a matching pair of left and right shoes), zero human feet, zero bare legs, zero ankles, zero socks, zero shoe trees, zero shoe boxes';
+  } else if (primaryCategory === 'BOTTOMS') {
+    negativeExclusions = 'zero human body, zero ghost legs, zero transparent mannequins, zero floor perspective distortion, zero hangers';
+  } else if (primaryCategory === 'ACCESSORIES') {
+    negativeExclusions = 'zero human body, zero floating mannequins, zero messy tangled straps, zero cropped buckles';
+  }
 
   return `Commercial e-commerce luxury product catalog shot, invisible ghost mannequin orthographic flat-lay: "${title}" (${primaryCategory} - ${subCategory || ''}).
 
@@ -319,8 +327,9 @@ Exact Coordinated Garment Items to Replicate from Reference Images:
 ${garmentsDetailedText}
 
 Framing & Shot Composition: Complete full-length vertical 3:4 wide shot, full-body head-to-toe standing view, visible floor plane with soft contact shadows beneath feet, generous headroom and foot clearance, entire figure fully in frame without cropping head or feet, zero close-up, zero waist-up cropping, zero knee-up cropping.
+Pose, Anatomy & Limb Clearance: Natural relaxed upright standing A-pose posture, arms resting loosely beside thighs with visible clearly-separated fingers, hands strictly outside of pockets, hands not obscuring the waistline, hips, or garment silhouette. Pant hems drape naturally and gracefully right above footwear uppers without clipping into or merging with shoe soles. True anatomical proportions preserved authentically without reverting to an exaggerated ultra-skinny runway model.
 Physics & Textile Fidelity: Authentic gravitational fabric drape conforming to 3D body contours, natural cloth folds and wrinkles, realistic tension, soft ambient occlusion. 100% preserve every garment's exact pattern, color, weave texture, and neckline/waistband construction.
-Studio Environment: Minimalist luxury neutral studio backdrop, commercial 35mm wide lens, f/4, crisp tack-sharp textile focus, balanced commercial editorial color grade.`;
+Studio Environment: Minimalist luxury neutral studio backdrop, commercial 35mm wide lens, f/4, crisp tack-sharp textile focus, balanced commercial editorial color grade, zero hands hidden in pockets, zero deformed extra fingers, zero obscured waistband.`;
 }
 
 
@@ -595,7 +604,15 @@ export class AIService {
               content: [
                 {
                   type: 'text',
-                  text: `Calculate 2D anatomical alignment on a ${stageWidth}x${stageHeight} stage for garment "${garmentTitle}" (${garmentCategory} ${garmentSubCategory || ''}). Return JSON matching: { top: number, left: number, width: number, height: number, offsetX: number, offsetY: number, scale: number, scaleX: number, scaleY: number, anatomicalAnchor: string, confidence: number, description: string }`,
+                  text: `Calculate 2D anatomical alignment on a ${stageWidth}x${stageHeight} stage for garment "${garmentTitle}" (${garmentCategory} ${garmentSubCategory || ''}).
+Standard Human 8-Head Stage Benchmark Coordinates (${stageWidth}x${stageHeight}, center horizontal X=${Math.round(stageWidth / 2)}):
+- HEAD / HAT / CROWN: top ~15-110, anatomicalAnchor: "HEAD_TOP"
+- NECK / NECKLACE: top ~80-145, anatomicalAnchor: "NECK"
+- UPPER TORSO / TOPS / OUTERWEAR: top ~125-340, width ~180-240, anatomicalAnchor: "UPPER_TORSO"
+- WAIST & HIPS / BOTTOMS: top ~240-520, width ~170-220, anatomicalAnchor: "WAIST_HIPS"
+- FULL-BODY DRESS / ONE-PIECE: top ~125-540, width ~200-260, anatomicalAnchor: "FULL_BODY_TORSO"
+- FEET / FOOTWEAR: top ~480-570, width ~130-170, anatomicalAnchor: "FEET"
+Return strict JSON: { top: number, left: number, width: number, height: number, offsetX: number, offsetY: number, scale: number, scaleX: number, scaleY: number, anatomicalAnchor: string, confidence: number, description: string }`,
                 },
                 ...(avatarImageUrl.startsWith('http') || avatarImageUrl.startsWith('data:image')
                   ? [{ type: 'image_url', image_url: { url: avatarImageUrl } }]
@@ -665,7 +682,7 @@ export class AIService {
               content: [
                 {
                   type: 'text',
-                  text: '请深度分析识别图像中的所有服装与配饰单品。必须返回严格的 JSON 数组，所有属性值全为中文：[ { "title": "中文单品标题(如: 宽松黑色仿皮飞行员夹克 / 麻灰拉链连帽卫衣 / 纯白法式短袖衬衫)", "primaryCategory": "TOPS" | "BOTTOMS" | "OUTERWEAR" | "FOOTWEAR" | "ACCESSORIES" | "ONE_PIECE", "subCategory": "子类目中文(如: 针织开衫 / 夹克外套 / 连体裙 / 阔腿西裤 / 棒球帽 / 单肩包 / 运动鞋)", "colors": ["#1A1A1A"], "colorNames": ["纯黑"], "patterns": ["纯色"], "material": "材质中文(如: 仿皮 / 纯棉混纺 / 羊毛)" } ]。\n分类判定权威准则：\n1. 针织开衫(Cardigan)、西装外套、夹克、大衣、风衣、拉链开衫卫衣等所有带前门襟(纽扣/拉链/系带)的外套，无论内搭单穿还是外穿叠搭，必须严格归类为 OUTERWEAR，严禁归为 TOPS！\n2. T恤、吊带、抹胸、背心、套头毛衣/套头针织衫、套头卫衣、基础贴身衬衫标记为 TOPS；\n3. 连身裙、旗袍、连体晚礼服标记为 ONE_PIECE；\n4. 长裤、牛仔裤、短裤、半身裙、短裙必须标记为 BOTTOMS。',
+                  text: '请深度分析识别图像中的所有服装与配饰单品。必须返回严格的 JSON 数组，所有属性值全为中文：[ { "title": "中文单品标题(如: 宽松黑色仿皮飞行员夹克 / 麻灰拉链连帽卫衣 / 纯白法式短袖衬衫)", "primaryCategory": "TOPS" | "BOTTOMS" | "OUTERWEAR" | "FOOTWEAR" | "ACCESSORIES" | "ONE_PIECE", "subCategory": "子类目中文(如: 针织开衫 / 夹克外套 / 连体裙 / 阔腿西裤 / 棒球帽 / 单肩包 / 运动鞋)", "colors": ["#1A1A1A"], "colorNames": ["纯黑"], "patterns": ["纯色"], "material": "材质中文(如: 仿皮 / 纯棉混纺 / 羊毛)", "layerOrder": 1 | 2 | 3 | 4 } ]。\n分类判定权威准则：\n1. 针织开衫(Cardigan)、西装外套、夹克、大衣、风衣、拉链开衫卫衣等所有带前门襟(纽扣/拉链/系带)的外套，无论内搭单穿还是外穿叠搭，必须严格归类为 OUTERWEAR，严禁归为 TOPS！\n2. T恤、吊带、抹胸、背心、套头毛衣/套头针织衫、套头卫衣、基础贴身衬衫标记为 TOPS；\n3. 连身裙、旗袍、连体晚礼服标记为 ONE_PIECE；\n4. 长裤、牛仔裤、短裤、半身裙、短裙必须标记为 BOTTOMS。\n5. 叠穿层级 layerOrder 判定准则：1: 贴身内搭/T恤/衬衫/下装/连身裙; 2: 中层开衫/马甲/轻薄毛衣; 3: 外套/风衣/羽绒服/大衣; 4: 外部配饰/包袋/鞋帽。',
                 },
                 ...(imageBase64.startsWith('data:image') || imageBase64.startsWith('http')
                   ? [{ type: 'image_url', image_url: { url: imageBase64 } }]
@@ -690,6 +707,7 @@ export class AIService {
               colorNames: it.colorNames ? it.colorNames.map(ensureChinese) : ['经典色'],
               patterns: it.patterns ? it.patterns.map(ensureChinese) : ['纯色'],
               material: ensureChinese(it.material),
+              layerOrder: it.layerOrder || (it.primaryCategory === 'OUTERWEAR' ? 3 : it.primaryCategory === 'ACCESSORIES' ? 4 : 1),
               previewUrl: imageBase64.startsWith('data:image') || imageBase64.startsWith('http') ? imageBase64 : undefined,
             }));
           }
@@ -708,6 +726,7 @@ export class AIService {
         colorNames: ['米杏色', '森绿色'],
         patterns: ['SOLID'],
         material: '高质感精梳棉',
+        layerOrder: 1,
         previewUrl: imageBase64.startsWith('data:image') || imageBase64.startsWith('http') ? imageBase64 : undefined,
       },
     ];
@@ -966,7 +985,7 @@ export class AIService {
     profileName: string,
     gender: string,
     garmentsSummary: string,
-    bodyMeasurements?: { heightCm: number; bustCm: number; waistCm: number; hipsCm: number },
+    bodyMeasurements?: { heightCm: number; bustCm: number; waistCm: number; hipsCm: number; weightKg?: number; bodyType?: string },
     avatarFeatures?: string,
     referenceImages: string[] = [],
     garmentDetailsList?: Array<{ title: string; category: string; subCategory?: string; colors?: string[]; material?: string; appliedState?: string }>
