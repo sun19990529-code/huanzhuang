@@ -440,9 +440,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
       className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-xs flex items-center justify-center p-0 md:p-4 animate-in fade-in"
     >
       <div
-        className={`bg-white rounded-none md:rounded-3xl border-0 md:border md:border-[#EAE6DF] shadow-2xl w-full h-full md:h-auto ${
-          activeTab === 'WORKSHOP' ? 'max-w-5xl xl:max-w-6xl' : 'max-w-2xl'
-        } max-h-[100dvh] md:max-h-[92vh] flex flex-col overflow-hidden text-left transition-all duration-300`}
+        className="bg-white rounded-none md:rounded-3xl border-0 md:border md:border-[#EAE6DF] shadow-2xl w-full h-full md:h-[88vh] max-w-5xl xl:max-w-6xl max-h-[100dvh] md:max-h-[92vh] flex flex-col overflow-hidden text-left transition-all duration-300"
       >
         {/* Header */}
         <div className="px-6 py-4 border-b border-[#EAE6DF] flex items-center justify-between bg-[#FAF8F5]/90">
@@ -1005,7 +1003,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
 
           {/* TAB 2: 多角色档案管理 */}
           {activeTab === 'PROFILES' && (
-            <div className="space-y-5 animate-in fade-in text-left">
+            <div className="max-w-3xl mx-auto space-y-5 animate-in fade-in text-left w-full">
               <div className="flex items-center justify-between">
                 <div>
                   <h4 className="text-xs font-extrabold text-stone-800">家庭与好友身材档案</h4>
@@ -1111,7 +1109,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
 
  {/* TAB 4: 积分与流水 */}
  {activeTab === 'CREDITS' && (
- <div className="space-y-5 animate-in fade-in text-left">
+            <div className="max-w-3xl mx-auto space-y-5 animate-in fade-in text-left w-full">
  <div className="p-4 bg-[#FAF8F5] rounded-2xl border border-[#EAE6DF] grid grid-cols-3 gap-2 text-center">
  <div>
  <span className="text-[10px] text-stone-400 block font-bold">每日免费积分</span>
@@ -1174,7 +1172,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
 
  {/* TAB 5: 账号安全 */}
  {activeTab === 'SECURITY' && (
- <div className="space-y-5 animate-in fade-in text-left">
+            <div className="max-w-3xl mx-auto space-y-5 animate-in fade-in text-left w-full">
  {/* 昵称修改 */}
  <div className="p-4 bg-[#FAF8F5] rounded-2xl border border-[#EAE6DF] space-y-3">
  <h5 className="text-xs font-extrabold text-stone-800">修改用户昵称</h5>

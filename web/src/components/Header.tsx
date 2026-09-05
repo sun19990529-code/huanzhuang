@@ -14,7 +14,7 @@ import {
   Users,
   ShieldCheck,
   ShoppingBag,
-  Settings,
+  Sliders,
   LogOut,
   ChevronDown,
 } from 'lucide-react';
@@ -220,23 +220,12 @@ export const Header: React.FC<HeaderProps> = ({
                   <button
                     onClick={() => {
                       setIsUserMenuOpen(false);
-                      onOpenProfileModal();
-                    }}
-                    className="w-full px-3 py-2 text-xs font-bold text-stone-700 hover:text-[#D63031] hover:bg-rose-50/50 rounded-xl flex items-center gap-2 transition-colors"
-                  >
-                    <User className="w-3.5 h-3.5 stroke-[1.75]" />
-                    <span>模特身材管理</span>
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setIsUserMenuOpen(false);
                       onOpenAccountSettings();
                     }}
-                    className="w-full px-3 py-2 text-xs font-bold text-stone-700 hover:text-[#D63031] hover:bg-rose-50/50 rounded-xl flex items-center gap-2 transition-colors"
+                    className="w-full px-3 py-2 text-xs font-bold text-stone-700 hover:text-[#D63031] hover:bg-rose-50/50 rounded-xl flex items-center gap-2 transition-colors cursor-pointer"
                   >
-                    <Settings className="w-3.5 h-3.5 stroke-[1.75]" />
-                    <span>账号设置</span>
+                    <Sliders className="w-3.5 h-3.5 stroke-[1.75] text-[#D63031]" />
+                    <span>专属模特与账号设置</span>
                   </button>
 
                   <div className="border-t border-[#EAE6DF]/60 my-1" />
