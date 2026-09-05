@@ -1733,7 +1733,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  onClick={() => setSelectedItemId(null)}
  onMouseMove={handleCanvasMouseMove}
  onMouseUp={handleCanvasMouseUp}
- className="flex-1 h-full flex flex-col justify-between relative overflow-hidden select-none z-0 isolate"
+ className="flex-1 h-full flex flex-col justify-between relative overflow-hidden select-none z-0 isolate touch-none overscroll-none"
         style={{
           background: 'radial-gradient(circle at 50% 40%, #FFFFFF 0%, #FAF8F5 55%, #EDE7DD 100%)',
         }}

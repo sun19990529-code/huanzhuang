@@ -857,8 +857,15 @@ export const App: React.FC = () => {
     setHistoryTasks([]);
   };
 
- return (
- <div className="h-screen h-[100dvh] overflow-hidden flex flex-col font-sans bg-[#FAF8F5] text-stone-800 selection:bg-rose-200">
+  // 移动端视口物理锁定保底：防止登录/注册/设置弹窗中软键盘弹出后的历史滚动偏移残留污染主工作台
+  useEffect(() => {
+    window.scrollTo(0, 0);
+    if (document.documentElement) document.documentElement.scrollTop = 0;
+    if (document.body) document.body.scrollTop = 0;
+  }, [activeView, user?.id]);
+
+  return (
+    <div className="fixed inset-0 w-full h-full h-[100dvh] overflow-hidden flex flex-col font-sans bg-[#FAF8F5] text-stone-800 selection:bg-rose-200">
  
  {/* 认证初始化静默校验中（高质感品牌启动过渡，彻底消除登录界面 FOUC 闪烁） */}
  {isAuthInitializing && (

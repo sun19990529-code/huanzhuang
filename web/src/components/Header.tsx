@@ -89,7 +89,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <>
-      <header className="sticky top-0 z-40 bg-[#FAF8F5]/90 backdrop-blur-xl border-b border-[#EAE6DF] px-2 sm:px-4 md:px-8 py-2 md:py-3 flex items-center justify-between gap-1.5 sm:gap-2 md:gap-4">
+      <header className="w-full shrink-0 z-50 bg-[#FAF8F5]/90 backdrop-blur-xl border-b border-[#EAE6DF] px-2 sm:px-4 md:px-8 py-2 md:py-3 flex items-center justify-between gap-1.5 sm:gap-2 md:gap-4">
         {/* 左侧：全新定制高定矢量 Logo + 角色形象选择器 (移至左侧) */}
         <div className="flex items-center gap-2 sm:gap-3 shrink-0 z-10">
           <BrandLogo
