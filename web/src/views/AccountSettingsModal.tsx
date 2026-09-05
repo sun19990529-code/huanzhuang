@@ -437,12 +437,12 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
-      className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 pb-8 md:pb-4 animate-in fade-in"
+      className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-xs flex items-center justify-center p-0 md:p-4 animate-in fade-in"
     >
       <div
-        className={`bg-white rounded-3xl border border-[#EAE6DF] shadow-2xl w-full ${
+        className={`bg-white rounded-none md:rounded-3xl border-0 md:border md:border-[#EAE6DF] shadow-2xl w-full h-full md:h-auto ${
           activeTab === 'WORKSHOP' ? 'max-w-5xl xl:max-w-6xl' : 'max-w-2xl'
-        } max-h-[92vh] flex flex-col overflow-hidden text-left transition-all duration-300`}
+        } max-h-[100dvh] md:max-h-[92vh] flex flex-col overflow-hidden text-left transition-all duration-300`}
       >
         {/* Header */}
         <div className="px-6 py-4 border-b border-[#EAE6DF] flex items-center justify-between bg-[#FAF8F5]/90">
@@ -498,7 +498,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
         </div>
 
         {/* 主内容区 */}
-        <div className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1 scrollbar-thin">
+        <div className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1 scrollbar-thin pb-28 md:pb-6">
           
           {/* TAB 1: 一体化【身材与模特重构工坊】 (双栏宽屏布局) */}
           {activeTab === 'WORKSHOP' && (
@@ -524,12 +524,12 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                       <span className="text-[10px] text-stone-400 font-mono">3:4 黄金画幅</span>
                     </div>
 
-                    <div className="w-full aspect-[3/4] max-h-[300px] bg-white rounded-xl border border-stone-200/80 flex items-center justify-center overflow-hidden relative shadow-inner">
+                    <div className="w-full aspect-[3/4] h-[320px] sm:h-[380px] md:h-[440px] lg:h-[480px] xl:h-[500px] bg-white rounded-2xl border border-stone-200/80 flex items-center justify-center overflow-hidden relative shadow-inner mx-auto">
                       {avatar?.normalizedImageUrl ? (
                         <img
                           src={avatar.normalizedImageUrl}
                           alt="当前试衣模特"
-                          className="max-h-full max-w-full object-contain"
+                          className="h-full w-full object-contain drop-shadow-sm"
                         />
                       ) : (
                         <div className="text-xs text-stone-400 flex flex-col items-center gap-1">
@@ -539,10 +539,10 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                       )}
 
                       {/* 悬浮微标 */}
-                      <div className="absolute bottom-2 left-2 right-2 bg-black/60 backdrop-blur-xs text-white text-[9px] px-2 py-1 rounded-lg flex items-center justify-between">
+                      <div className="absolute bottom-2 left-2 right-2 bg-black/60 backdrop-blur-xs text-white text-[9px] px-2.5 py-1.5 rounded-xl flex items-center justify-between shadow-xs">
                         <span>当前试衣间标准素体</span>
-                        <span className="font-mono text-stone-300">
-                          {heightCm}cm · {weightKg}kg
+                        <span className="font-mono text-stone-200 font-bold">
+                          {heightCm}cm · {weightKg}kg · {currentDerivedBodyType}
                         </span>
                       </div>
                     </div>
@@ -617,115 +617,6 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                       className="hidden"
                       onChange={handlePhotoSelect}
                     />
-                  </div>
-
-                  {/* 3. 发型解耦与自由切换 */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-extrabold text-stone-800 block">发型偏好与面貌设定</span>
-                      <span className="text-[9px] text-stone-400">
-                        {hairstyleMode === 'KEEP_PHOTO' ? '1:1 保留原图发型' : '换发不换脸 (面容锁定)'}
-                      </span>
-                    </div>
-
-                    {/* 首项置顶：保持照片原生发型 (当有照片时优先展示) */}
-                    {hasRealPhoto && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setHairstyleMode('KEEP_PHOTO');
-                          showToast('已锁定【保持照片原生发型】', 'info');
-                        }}
-                        className={`w-full p-2.5 rounded-xl border text-left flex items-center justify-between transition-all cursor-pointer ${
-                          hairstyleMode === 'KEEP_PHOTO'
-                            ? 'bg-rose-50 border-[#D63031] shadow-2xs ring-1 ring-[#D63031]'
-                            : 'bg-white border-[#EAE6DF] hover:border-stone-300'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="text-base">📸</span>
-                          <div>
-                            <div className="text-xs font-extrabold text-stone-800">保持照片原生发型 (推荐)</div>
-                            <div className="text-[9px] text-stone-400 mt-0.5">
-                              原汁原味继承生活照发型、长短与个人辨识度
-                            </div>
-                          </div>
-                        </div>
-                        {hairstyleMode === 'KEEP_PHOTO' && (
-                          <Check className="w-4 h-4 text-[#D63031] stroke-[2.5]" />
-                        )}
-                      </button>
-                    )}
-
-                    {/* 潮流发型库 (2列紧凑排布) */}
-                    <div className="grid grid-cols-2 gap-2">
-                      {(gender === 'FEMALE'
-                        ? [
-                            { key: 'FRENCH_WAVY_LONG', label: '法式微卷长发' },
-                            { key: 'SHOULDER_BOB', label: '及肩波波头' },
-                            { key: 'CHIC_SHORT', label: '干练短发' },
-                            { key: 'HIGH_PONYTAIL', label: '法式高马尾' },
-                          ]
-                        : [
-                            { key: 'CLEAN_SHORT', label: '清爽短发' },
-                            { key: 'KOREAN_SIDE_PART', label: '韩系侧分' },
-                            { key: 'BUSINESS_POMPADOUR', label: '商务油头' },
-                            { key: 'BUZZ_CUT', label: '清爽寸头' },
-                          ]
-                      ).map((hs) => {
-                        const isSelected = hairstyleMode === 'CUSTOM' && hairstyle === hs.key;
-                        return (
-                          <button
-                            key={hs.key}
-                            type="button"
-                            onClick={() => {
-                              setHairstyleMode('CUSTOM');
-                              setHairstyle(hs.key);
-                              showToast(`已选择发型【${hs.label}】`, 'info');
-                            }}
-                            className={`p-2 rounded-xl border text-left transition-all cursor-pointer ${
-                              isSelected
-                                ? 'bg-rose-50/80 border-[#D63031] ring-1 ring-[#D63031] text-[#D63031]'
-                                : 'bg-white border-[#EAE6DF] hover:border-stone-300 text-stone-700'
-                            }`}
-                          >
-                            <div className="text-[11px] font-bold truncate">{hs.label}</div>
-                            <div className="text-[9px] text-stone-400 mt-0.5">
-                              {isSelected ? '✓ 换发不换脸' : '选择该发型'}
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* 4. 肤色基调偏好 */}
-                  <div className="space-y-1.5">
-                    <span className="text-xs font-extrabold text-stone-800 block">肤色基调偏好</span>
-                    <div className="grid grid-cols-4 gap-1.5">
-                      {SKIN_TONE_CONFIGS.map((st) => {
-                        const isSelected = skinTone === st.key;
-                        return (
-                          <button
-                            key={st.key}
-                            type="button"
-                            onClick={() => setSkinTone(st.key)}
-                            title={st.label}
-                            className={`py-1.5 px-1 rounded-xl border text-[10px] font-bold flex flex-col items-center gap-1 transition-all cursor-pointer ${
-                              isSelected
-                                ? 'ring-2 ring-[#D63031] border-stone-800 bg-rose-50/50'
-                                : 'border-[#EAE6DF] hover:border-stone-400 bg-white'
-                            }`}
-                          >
-                            <span
-                              className="w-3.5 h-3.5 rounded-full border border-black/10 shrink-0"
-                              style={{ backgroundColor: st.hex }}
-                            />
-                            <span className="truncate w-full text-center text-stone-700">{st.label}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
                   </div>
                 </div>
 
@@ -983,8 +874,117 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                   </div>
                 </div>
 
-                {/* 4. 右侧底部独立保存操作栏 */}
-                <div className="pt-2 flex items-center justify-between border-t border-[#EAE6DF]">
+                {/* 4. 发型解耦与自由切换 (右移配置) */}
+                <div className="space-y-2 pt-1 border-t border-[#EAE6DF]">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-extrabold text-stone-800 block">发型偏好与面貌设定</span>
+                    <span className="text-[10px] text-stone-400">
+                      {hairstyleMode === 'KEEP_PHOTO' ? '1:1 保留原图发型' : '换发不换脸 (面容锁定)'}
+                    </span>
+                  </div>
+
+                  {/* 首项置顶：保持照片原生发型 (当有照片时优先展示) */}
+                  {hasRealPhoto && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setHairstyleMode('KEEP_PHOTO');
+                        showToast('已锁定【保持照片原生发型】', 'info');
+                      }}
+                      className={`w-full p-2.5 rounded-xl border text-left flex items-center justify-between transition-all cursor-pointer ${
+                        hairstyleMode === 'KEEP_PHOTO'
+                          ? 'bg-rose-50 border-[#D63031] shadow-2xs ring-1 ring-[#D63031]'
+                          : 'bg-white border-[#EAE6DF] hover:border-stone-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">📸</span>
+                        <div>
+                          <div className="text-xs font-extrabold text-stone-800">保持照片原生发型 (推荐)</div>
+                          <div className="text-[10px] text-stone-400 mt-0.5">
+                            原汁原味继承生活照发型、长短与个人辨识度
+                          </div>
+                        </div>
+                      </div>
+                      {hairstyleMode === 'KEEP_PHOTO' && (
+                        <Check className="w-4 h-4 text-[#D63031] stroke-[2.5]" />
+                      )}
+                    </button>
+                  )}
+
+                  {/* 潮流发型库 (响应式 2~4 列排布) */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {(gender === 'FEMALE'
+                      ? [
+                          { key: 'FRENCH_WAVY_LONG', label: '法式微卷长发' },
+                          { key: 'SHOULDER_BOB', label: '及肩波波头' },
+                          { key: 'CHIC_SHORT', label: '干练短发' },
+                          { key: 'HIGH_PONYTAIL', label: '法式高马尾' },
+                        ]
+                      : [
+                          { key: 'CLEAN_SHORT', label: '清爽短发' },
+                          { key: 'KOREAN_SIDE_PART', label: '韩系侧分' },
+                          { key: 'BUSINESS_POMPADOUR', label: '商务油头' },
+                          { key: 'BUZZ_CUT', label: '清爽寸头' },
+                        ]
+                    ).map((hs) => {
+                      const isSelected = hairstyleMode === 'CUSTOM' && hairstyle === hs.key;
+                      return (
+                        <button
+                          key={hs.key}
+                          type="button"
+                          onClick={() => {
+                            setHairstyleMode('CUSTOM');
+                            setHairstyle(hs.key);
+                            showToast(`已选择发型【${hs.label}】`, 'info');
+                          }}
+                          className={`p-2 rounded-xl border text-left transition-all cursor-pointer ${
+                            isSelected
+                              ? 'bg-rose-50/80 border-[#D63031] ring-1 ring-[#D63031] text-[#D63031]'
+                              : 'bg-white border-[#EAE6DF] hover:border-stone-300 text-stone-700'
+                          }`}
+                        >
+                          <div className="text-[11px] font-bold truncate">{hs.label}</div>
+                          <div className="text-[9px] text-stone-400 mt-0.5">
+                            {isSelected ? '✓ 换发不换脸' : '选择发型'}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 5. 肤色基调偏好 (右移配置) */}
+                <div className="space-y-1.5 pt-1 border-t border-[#EAE6DF]">
+                  <span className="text-xs font-extrabold text-stone-800 block">肤色基调偏好</span>
+                  <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
+                    {SKIN_TONE_CONFIGS.map((st) => {
+                      const isSelected = skinTone === st.key;
+                      return (
+                        <button
+                          key={st.key}
+                          type="button"
+                          onClick={() => setSkinTone(st.key)}
+                          title={st.label}
+                          className={`py-2 px-1.5 rounded-xl border text-[10px] font-bold flex flex-col items-center gap-1 transition-all cursor-pointer ${
+                            isSelected
+                              ? 'ring-2 ring-[#D63031] border-stone-800 bg-rose-50/50 text-[#D63031]'
+                              : 'border-[#EAE6DF] hover:border-stone-400 bg-white text-stone-700'
+                          }`}
+                        >
+                          <span
+                            className="w-4 h-4 rounded-full border border-black/10 shrink-0"
+                            style={{ backgroundColor: st.hex }}
+                          />
+                          <span className="truncate w-full text-center">{st.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 6. 右侧底部独立保存操作栏 (PC 端常驻，移动端由吸底操作栏统一承载) */}
+                <div className="pt-2 hidden md:flex items-center justify-between border-t border-[#EAE6DF]">
                   <div className="text-[10px] text-stone-400">
                     只想修改三围？点击此处纯保存，不消耗任何算力
                   </div>
@@ -1239,6 +1239,30 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
  </div>
  )}
  </div>
+
+ {/* 移动端专属吸底操作栏 (位于滚动容器外部，常驻吸附于弹窗底部) */}
+ {activeTab === 'WORKSHOP' && (
+ <div className="md:hidden border-t border-[#EAE6DF] bg-white/95 backdrop-blur-md px-4 py-2.5 flex items-center gap-2.5 shadow-lg pb-[max(env(safe-area-inset-bottom),0.75rem)] z-20 shrink-0">
+ <button
+ type="button"
+ disabled={isBodySaving}
+ onClick={handleSaveOnlyBody}
+ className="flex-1 py-2.5 bg-stone-100 hover:bg-stone-200 text-stone-800 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 border border-stone-200"
+ >
+ <Check className="w-3.5 h-3.5" />
+ <span>{isBodySaving ? '保存中...' : '仅保存 (0算力)'}</span>
+ </button>
+ <button
+ type="button"
+ disabled={isReconstructing}
+ onClick={handleReconstructAvatar}
+ className="flex-[1.3] py-2.5 bg-gradient-to-r from-[#D63031] to-[#E17055] text-white rounded-xl text-xs font-extrabold shadow-md flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+ >
+ <Sparkles className={`w-3.5 h-3.5 ${isReconstructing ? 'animate-spin' : ''}`} />
+ <span>{isReconstructing ? 'AI重塑中...' : '✨ 重构模特 (1算力)'}</span>
+ </button>
+ </div>
+ )}
  </div>
  </div>
  );

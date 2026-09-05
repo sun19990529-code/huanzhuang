@@ -474,100 +474,27 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
                         )}
                       </div>
 
-                      {/* 发型选择 */}
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-extrabold text-stone-800 block">发型设定</label>
-                        
-                        {avatarPreview && (
-                          <button
-                            type="button"
-                            onClick={() => setHairstyleMode('KEEP_PHOTO')}
-                            className={`w-full p-2.5 rounded-xl border text-left flex items-center justify-between transition-all cursor-pointer mb-1.5 ${
-                              hairstyleMode === 'KEEP_PHOTO'
-                                ? 'bg-rose-50 border-[#D63031] ring-1 ring-[#D63031]'
-                                : 'bg-white border-[#EAE6DF] hover:border-stone-300'
-                            }`}
-                          >
-                            <div className="flex items-center gap-2">
-                              <span>📸</span>
-                              <div>
-                                <div className="text-[11px] font-extrabold text-stone-800">保持照片原生发型 (推荐)</div>
-                                <div className="text-[9px] text-stone-400">保留生活照发型与个人辨识度</div>
-                              </div>
+                        {/* 专属模特生成特性卡片 */}
+                        <div className="bg-white/80 p-3.5 rounded-2xl border border-[#EAE6DF] space-y-2 text-left">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-stone-800">
+                            <Sparkles className="w-3.5 h-3.5 text-[#D63031]" />
+                            <span>专属 3:4 黄金画幅模特</span>
+                          </div>
+                          <p className="text-[10px] text-stone-500 leading-relaxed">
+                            系统将基于您的五维身材参数与所选体型，为您生成高定 3:4 A-Pose 模特素体。若上传生活照，将 100% 提取并保留真人面容五官。
+                          </p>
+                          <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-stone-100 text-[10px] text-stone-400">
+                            <div className="flex items-center gap-1">
+                              <Check className="w-3 h-3 text-[#D63031]" />
+                              <span>解剖级骨骼比例</span>
                             </div>
-                            {hairstyleMode === 'KEEP_PHOTO' && (
-                              <Check className="w-3.5 h-3.5 text-[#D63031] stroke-[2.5]" />
-                            )}
-                          </button>
-                        )}
-
-                        <div className="grid grid-cols-2 gap-1.5">
-                          {(regGender === 'FEMALE'
-                            ? [
-                                { key: 'FRENCH_WAVY_LONG', label: '法式微卷' },
-                                { key: 'SHOULDER_BOB', label: '及肩波波头' },
-                                { key: 'CHIC_SHORT', label: '干练短发' },
-                                { key: 'HIGH_PONYTAIL', label: '高马尾' },
-                              ]
-                            : [
-                                { key: 'CLEAN_SHORT', label: '清爽短发' },
-                                { key: 'KOREAN_SIDE_PART', label: '韩系侧分' },
-                                { key: 'BUSINESS_POMPADOUR', label: '商务背头' },
-                                { key: 'BUZZ_CUT', label: '寸头' },
-                              ]
-                          ).map((hs) => {
-                            const isSelected = hairstyleMode === 'CUSTOM' && hairstyle === hs.key;
-                            return (
-                              <button
-                                key={hs.key}
-                                type="button"
-                                onClick={() => {
-                                  setHairstyleMode('CUSTOM');
-                                  setHairstyle(hs.key);
-                                }}
-                                className={`p-2 rounded-xl border text-left text-[11px] font-bold transition-all cursor-pointer ${
-                                  isSelected
-                                    ? 'bg-rose-50 border-[#D63031] text-[#D63031] ring-1 ring-[#D63031]'
-                                    : 'bg-white border-[#EAE6DF] hover:border-stone-300 text-stone-700'
-                                }`}
-                              >
-                                {hs.label}
-                              </button>
-                            );
-                          })}
+                            <div className="flex items-center gap-1">
+                              <Check className="w-3 h-3 text-[#D63031]" />
+                              <span>发型面容解耦换装</span>
+                            </div>
+                          </div>
                         </div>
                       </div>
-
-                      {/* 肤色选择 */}
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-stone-500 block">肤色基调</label>
-                        <div className="grid grid-cols-4 gap-1.5">
-                          {[
-                            { key: 'FAIR', label: '瓷白', color: '#FCEFE9' },
-                            { key: 'WARM_NATURAL', label: '暖自然', color: '#F7D6BD' },
-                            { key: 'WHEAT', label: '小麦', color: '#E4B68E' },
-                            { key: 'COOL_IVORY', label: '冷白', color: '#FDF1EC' },
-                          ].map((sk) => (
-                            <button
-                              key={sk.key}
-                              type="button"
-                              onClick={() => setSkinTone(sk.key)}
-                              className={`py-1.5 px-1 rounded-xl border text-[10px] font-bold flex items-center justify-center gap-1 cursor-pointer transition-all ${
-                                skinTone === sk.key
-                                  ? 'border-[#D63031] ring-1 ring-[#D63031] bg-white text-[#D63031]'
-                                  : 'border-[#EAE6DF] bg-white text-stone-600 hover:border-stone-300'
-                              }`}
-                            >
-                              <span
-                                className="w-2.5 h-2.5 rounded-full border border-black/10 shrink-0"
-                                style={{ backgroundColor: sk.color }}
-                              />
-                              <span className="truncate">{sk.label}</span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
 
                     {/* 右侧 (58%): 体型联动 + 五维三围滑块 + BMI/WHR 反馈 */}
                     <div className="lg:col-span-7 space-y-3.5">
@@ -730,6 +657,100 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
                               className="w-full accent-[#D63031] cursor-pointer"
                             />
                           </div>
+                        </div>
+                      </div>
+
+                      {/* 发型设定 (右移配置) */}
+                      <div className="space-y-1.5 pt-1 border-t border-[#EAE6DF]">
+                        <label className="text-xs font-extrabold text-stone-800 block">发型偏好设定</label>
+                        
+                        {avatarPreview && (
+                          <button
+                            type="button"
+                            onClick={() => setHairstyleMode('KEEP_PHOTO')}
+                            className={`w-full p-2.5 rounded-xl border text-left flex items-center justify-between transition-all cursor-pointer mb-1.5 ${
+                              hairstyleMode === 'KEEP_PHOTO'
+                                ? 'bg-rose-50 border-[#D63031] ring-1 ring-[#D63031]'
+                                : 'bg-white border-[#EAE6DF] hover:border-stone-300'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span>📸</span>
+                              <div>
+                                <div className="text-[11px] font-extrabold text-stone-800">保持照片原生发型 (推荐)</div>
+                                <div className="text-[9px] text-stone-400">保留生活照发型与个人辨识度</div>
+                              </div>
+                            </div>
+                            {hairstyleMode === 'KEEP_PHOTO' && (
+                              <Check className="w-3.5 h-3.5 text-[#D63031] stroke-[2.5]" />
+                            )}
+                          </button>
+                        )}
+
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                          {(regGender === 'FEMALE'
+                            ? [
+                                { key: 'FRENCH_WAVY_LONG', label: '法式微卷' },
+                                { key: 'SHOULDER_BOB', label: '及肩波波头' },
+                                { key: 'CHIC_SHORT', label: '干练短发' },
+                                { key: 'HIGH_PONYTAIL', label: '高马尾' },
+                              ]
+                            : [
+                                { key: 'CLEAN_SHORT', label: '清爽短发' },
+                                { key: 'KOREAN_SIDE_PART', label: '韩系侧分' },
+                                { key: 'BUSINESS_POMPADOUR', label: '商务背头' },
+                                { key: 'BUZZ_CUT', label: '寸头' },
+                              ]
+                          ).map((hs) => {
+                            const isSelected = hairstyleMode === 'CUSTOM' && hairstyle === hs.key;
+                            return (
+                              <button
+                                key={hs.key}
+                                type="button"
+                                onClick={() => {
+                                  setHairstyleMode('CUSTOM');
+                                  setHairstyle(hs.key);
+                                }}
+                                className={`p-2 rounded-xl border text-left text-[11px] font-bold transition-all cursor-pointer ${
+                                  isSelected
+                                    ? 'bg-rose-50 border-[#D63031] text-[#D63031] ring-1 ring-[#D63031]'
+                                    : 'bg-white border-[#EAE6DF] hover:border-stone-300 text-stone-700'
+                                }`}
+                              >
+                                {hs.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* 肤色基调 (右移配置) */}
+                      <div className="space-y-1 pt-1 border-t border-[#EAE6DF]">
+                        <label className="text-[10px] font-bold text-stone-500 block">肤色基调</label>
+                        <div className="grid grid-cols-4 gap-1.5">
+                          {[
+                            { key: 'FAIR', label: '瓷白', color: '#FCEFE9' },
+                            { key: 'WARM_NATURAL', label: '暖自然', color: '#F7D6BD' },
+                            { key: 'WHEAT', label: '小麦', color: '#E4B68E' },
+                            { key: 'COOL_IVORY', label: '冷白', color: '#FDF1EC' },
+                          ].map((sk) => (
+                            <button
+                              key={sk.key}
+                              type="button"
+                              onClick={() => setSkinTone(sk.key)}
+                              className={`py-1.5 px-1 rounded-xl border text-[10px] font-bold flex items-center justify-center gap-1 cursor-pointer transition-all ${
+                                skinTone === sk.key
+                                  ? 'border-[#D63031] ring-1 ring-[#D63031] bg-white text-[#D63031]'
+                                  : 'border-[#EAE6DF] bg-white text-stone-600 hover:border-stone-300'
+                              }`}
+                            >
+                              <span
+                                className="w-2.5 h-2.5 rounded-full border border-black/10 shrink-0"
+                                style={{ backgroundColor: sk.color }}
+                              />
+                              <span className="truncate">{sk.label}</span>
+                            </button>
+                          ))}
                         </div>
                       </div>
 
