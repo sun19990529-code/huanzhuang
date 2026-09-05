@@ -53,26 +53,28 @@ test('3. 积分原子扣除机制（优先消耗 daily_credits，不足消耗 pe
   const origPerm = user.permanentCredits;
 
   try {
+    // 临时设置充足基准积分测试原子扣除机制
+    user.dailyCredits = 50;
+    user.permanentCredits = 20;
+
     // 扣 5 点测试
     const res1 = db.deductCredits(user.id, 5, 'AI VTON 测试');
     assert.equal(res1.success, true);
-    assert.equal(res1.remainingDaily, origDaily - 5);
-    assert.equal(res1.remainingPermanent, origPerm);
+    assert.equal(res1.remainingDaily, 45);
+    assert.equal(res1.remainingPermanent, 20);
 
     // 耗尽当前 daily
-    const res2 = db.deductCredits(user.id, res1.remainingDaily, '耗尽每日积分');
+    const res2 = db.deductCredits(user.id, 45, '耗尽每日积分');
     assert.equal(res2.success, true);
     assert.equal(res2.remainingDaily, 0);
 
     // 扣除部分 permanent
-    if (origPerm >= 10) {
-      const res3 = db.deductCredits(user.id, 10, '消耗永久积分');
-      assert.equal(res3.success, true);
-      assert.equal(res3.remainingDaily, 0);
-      assert.equal(res3.remainingPermanent, origPerm - 10);
-    }
+    const res3 = db.deductCredits(user.id, 10, '消耗永久积分');
+    assert.equal(res3.success, true);
+    assert.equal(res3.remainingDaily, 0);
+    assert.equal(res3.remainingPermanent, 10);
   } finally {
-    // 恢复测试用户的原始积分，保证不污染数据库
+    // 严格恢复测试用户的原始积分，保证不污染真实数据库资产
     user.dailyCredits = origDaily;
     user.permanentCredits = origPerm;
   }
@@ -94,20 +96,20 @@ test('4. 每日零点批量重置积分与记账流水', () => {
 });
 
 test('5. AI 上传打标与外套双态裂变入库测试', () => {
-  const user = Array.from(db.users.values()).find((u) => u.email === 'test@smartwardrobe.com')!;
-  const { taskId, estimatedSeconds } = pipeline.submitTask(
-    user.id,
-    'GARMENT_NORMALIZE',
-    1,
-    { garmentId: 'g-test-123' }
-  );
+  const gId = `g-outer-test-${Date.now()}`;
+  const openUrl = 'data:image/png;base64,mockOpenData';
+  const closedUrl = 'data:image/png;base64,mockClosedData';
 
-  assert.ok(taskId);
-  assert.ok(estimatedSeconds > 0);
+  const assets = generateFissionAssets(gId, 'OUTERWEAR', openUrl, closedUrl);
+  assert.equal(assets.length, 2);
+  const openAsset = assets.find((a) => a.stateType === 'OPEN');
+  const closedAsset = assets.find((a) => a.stateType === 'CLOSED');
 
-  const task = db.asyncTasks.get(taskId);
-  assert.ok(task);
-  assert.equal(task.costCredits, 1);
+  assert.ok(openAsset, '必须存在 OPEN 敞开切片');
+  assert.ok(closedAsset, '必须存在 CLOSED 扣合切片');
+  assert.equal(openAsset.pngUrl, openUrl);
+  assert.equal(closedAsset.pngUrl, closedUrl);
+  assert.notEqual(openAsset.pngUrl, closedAsset.pngUrl, '外套双态切片绝对禁止同图');
 });
 
 test('6. 好友借穿穿搭建议推送与采纳测试 (Suggest Outfit)', () => {
@@ -234,4 +236,8 @@ test('11. [V2.5] 灵感扭蛋机气温推演与锁轴匹配测试', () => {
   const suggestion = generateWeatherOutfitSuggestion(garments, 20);
   assert.ok(suggestion.selectedGarments.length >= 2);
   assert.ok(suggestion.description.includes('20°C'));
+});
+
+test.after(async () => {
+  await pgPool.end();
 });

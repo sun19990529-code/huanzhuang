@@ -853,6 +853,9 @@ export const WardrobeGalleryView: React.FC<WardrobeGalleryViewProps> = ({
         onWearGarment={onWearGarment}
         onCloneGarment={onClonePublicGarment}
         onDeleteGarment={onDeleteGarment}
+        onUpdateGarment={(updated) => {
+          setSelectedGarmentForDrawer(updated);
+        }}
       />
     </div>
   );

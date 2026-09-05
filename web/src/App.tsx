@@ -445,13 +445,18 @@ export const App: React.FC = () => {
   };
 
   const handleUpdateWornItem = (
- garmentId: string,
- updates: Partial<{ state: GarmentState; offsetX: number; offsetY: number; scale: number; scaleX: number; scaleY: number; zIndex: number }>
- ) => {
- setWornItems((prev) =>
- prev.map((item) => (item.garment.id === garmentId ? { ...item, ...updates } : item))
- );
- };
+    garmentId: string,
+    updates: Partial<{ state: GarmentState; offsetX: number; offsetY: number; scale: number; scaleX: number; scaleY: number; zIndex: number; garment: GarmentItem }>
+  ) => {
+    setWornItems((prev) =>
+      prev.map((item) => (item.garment.id === garmentId ? { ...item, ...updates } : item))
+    );
+    if (updates.garment) {
+      setGarments((prev: ExtendedGarmentItem[]) =>
+        prev.map((g) => (g.id === garmentId ? (updates.garment as any) : g))
+      );
+    }
+  };
 
  const handleRemoveWornItem = (garmentId: string) => {
  setWornItems((prev) => prev.filter((i) => i.garment.id !== garmentId));

@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { GarmentItem, GarmentState } from '@smart-wardrobe/shared';
+import { generateFissionStateAsset } from '../api';
 import {
   X,
   Shirt,
@@ -14,6 +15,7 @@ import {
   Check,
   Eye,
   Sliders,
+  Loader2,
 } from 'lucide-react';
 
 interface GarmentDetailDrawerProps {
@@ -24,6 +26,7 @@ interface GarmentDetailDrawerProps {
   onWearGarment: (garment: GarmentItem) => void;
   onCloneGarment?: (garmentId: string) => void;
   onDeleteGarment?: (garmentId: string) => void;
+  onUpdateGarment?: (updated: GarmentItem) => void;
 }
 
 export const GarmentDetailDrawer: React.FC<GarmentDetailDrawerProps> = ({
@@ -34,14 +37,30 @@ export const GarmentDetailDrawer: React.FC<GarmentDetailDrawerProps> = ({
   onWearGarment,
   onCloneGarment,
   onDeleteGarment,
+  onUpdateGarment,
 }) => {
   if (!isOpen || !garment) return null;
 
-  const [activeState, setActiveState] = useState<GarmentState>('DEFAULT');
+  const [activeState, setActiveState] = useState<GarmentState>(() => {
+    if (garment.assets && garment.assets.length > 0) {
+      return (garment.assets[0].stateType as GarmentState) || 'DEFAULT';
+    }
+    return 'DEFAULT';
+  });
+  const [isGeneratingState, setIsGeneratingState] = useState(false);
+
+  useEffect(() => {
+    if (garment?.assets?.length) {
+      const hasActive = garment.assets.some((a) => a.stateType === activeState);
+      if (!hasActive) {
+        setActiveState((garment.assets[0].stateType as GarmentState) || 'DEFAULT');
+      }
+    }
+  }, [garment?.id]);
 
   // 获取当前状态对应的切片 PNG URL
-  const currentAsset = garment.assets.find((a) => a.stateType === activeState) || garment.assets[0];
-  const displayImageUrl = currentAsset?.pngUrl || garment.assets[0]?.pngUrl || '';
+  const currentAsset = garment.assets?.find((a) => a.stateType === activeState) || garment.assets?.[0];
+  const displayImageUrl = currentAsset?.pngUrl || garment.assets?.[0]?.pngUrl || '';
 
   const stateLabels: { key: GarmentState; label: string }[] = [
     { key: 'DEFAULT', label: '标准形态' },
@@ -53,8 +72,39 @@ export const GarmentDetailDrawer: React.FC<GarmentDetailDrawerProps> = ({
 
   // 过滤出单品实际拥有的多态切片
   const availableStates = stateLabels.filter((s) =>
-    garment.assets.some((a) => a.stateType === s.key)
+    garment.assets?.some((a) => a.stateType === s.key)
   );
+
+  // 检测当前选中的切片是否与其它形态切片图片完全相同（历史同图缺陷）
+  const otherAsset = garment.assets?.find((a) => a.stateType !== activeState && a.pngUrl);
+  const isIdenticalAsset = !!(otherAsset && currentAsset && otherAsset.pngUrl === currentAsset.pngUrl);
+
+  const handleGenerateCustomState = async () => {
+    if (!garment || isGeneratingState) return;
+    setIsGeneratingState(true);
+    try {
+      const res = await generateFissionStateAsset(garment.id, activeState as any);
+      if (res && res.pngUrl) {
+        let updatedAssets = garment.assets || [];
+        const exists = updatedAssets.some((a) => a.stateType === activeState);
+        if (exists) {
+          updatedAssets = updatedAssets.map((a) =>
+            a.stateType === activeState ? { ...a, pngUrl: res.pngUrl } : a
+          );
+        } else if (res.asset) {
+          updatedAssets = [...updatedAssets, res.asset];
+        }
+        const updatedGarment = { ...garment, assets: updatedAssets };
+        if (onUpdateGarment) {
+          onUpdateGarment(updatedGarment);
+        }
+      }
+    } catch (err: any) {
+      alert(`生成形态失败: ${err.message || '网络繁忙'}`);
+    } finally {
+      setIsGeneratingState(false);
+    }
+  };
 
   const drawerContent = (
     <div className="fixed inset-0 z-[100] overflow-hidden bg-black/40 backdrop-blur-xs flex justify-end transition-opacity duration-300 animate-in fade-in">
@@ -105,20 +155,50 @@ export const GarmentDetailDrawer: React.FC<GarmentDetailDrawerProps> = ({
 
             {/* 多态切片切换胶囊 */}
             {availableStates.length > 1 && (
-              <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-                {availableStates.map((st) => (
-                  <button
-                    key={st.key}
-                    onClick={() => setActiveState(st.key)}
-                    className={`px-2.5 py-1 rounded-xl text-xs font-bold transition-all shrink-0 ${
-                      activeState === st.key
-                        ? 'bg-[#2D3436] text-white shadow-2xs'
-                        : 'bg-white border border-[#EAE6DF] text-stone-600 hover:bg-stone-50'
-                    }`}
-                  >
-                    {st.label}
-                  </button>
-                ))}
+              <div className="space-y-2">
+                <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none items-center justify-between">
+                  <div className="flex gap-1.5">
+                    {availableStates.map((st) => (
+                      <button
+                        key={st.key}
+                        onClick={() => setActiveState(st.key)}
+                        className={`px-2.5 py-1 rounded-xl text-xs font-bold transition-all shrink-0 ${
+                          activeState === st.key
+                            ? 'bg-[#2D3436] text-white shadow-2xs'
+                            : 'bg-white border border-[#EAE6DF] text-stone-600 hover:bg-stone-50'
+                        }`}
+                      >
+                        {st.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* 自愈生成独立形态切片按钮 */}
+                  {!garment.isPublic && (activeState === 'OPEN' || activeState === 'CLOSED' || activeState === 'TUCKED') && (
+                    <button
+                      onClick={handleGenerateCustomState}
+                      disabled={isGeneratingState}
+                      title={isIdenticalAsset ? '当前形态与另一形态共用同图，点击一键生成专属独立切片' : '重新生成该形态专属高定平铺素图'}
+                      className={`text-[10px] font-bold px-2 py-1 rounded-xl flex items-center gap-1 transition-all shrink-0 ${
+                        isIdenticalAsset
+                          ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-xs'
+                          : 'bg-stone-100 hover:bg-stone-200 text-stone-600'
+                      }`}
+                    >
+                      {isGeneratingState ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Sparkles className="w-3 h-3" />
+                      )}
+                      <span>{isGeneratingState ? '生成中...' : isIdenticalAsset ? '生成专属切片' : '重塑形态'}</span>
+                    </button>
+                  )}
+                </div>
+                {isIdenticalAsset && (
+                  <p className="text-[10px] text-amber-600 font-medium">
+                    💡 当前【{stateLabels.find((s) => s.key === activeState)?.label}】切片与另一形态共用同图，点击上方“生成专属切片”即可获取真实形态。
+                  </p>
+                )}
               </div>
             )}
           </div>

@@ -11,7 +11,7 @@ import { generate2DCanvasSnapshot } from '../utils/canvasSnapshot';
 import { downloadOriginalImage } from '../utils/imageUpscaler';
 import { InstantOotdPosterModal } from '../components/InstantOotdPosterModal';
 import { generateSmartOutfitTitle } from '../utils/outfitAiNamer';
-import { OutfitData } from '../api';
+import { OutfitData, generateFissionStateAsset } from '../api';
 import React, { useState, useRef, useEffect } from 'react';
 import {
   UserProfile,
@@ -90,7 +90,7 @@ interface FittingStudioViewProps {
  dailyCredits: number;
  onUpdateWornItem: (
  garmentId: string,
- updates: Partial<{ state: GarmentState; offsetX: number; offsetY: number; scale: number; scaleX: number; scaleY: number; zIndex: number }>
+ updates: Partial<{ state: GarmentState; offsetX: number; offsetY: number; scale: number; scaleX: number; scaleY: number; zIndex: number; garment: GarmentItem }>
  ) => void;
  onWearGarment: (
     garment: GarmentItem,
@@ -874,7 +874,7 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
  };
 
  // 形态切换 (Open / Closed / Tucked) 与 Z-Index 状态机联动
- const handleToggleGarmentState = (garmentId: string) => {
+ const handleToggleGarmentState = async (garmentId: string) => {
  const item = wornItems.find((i) => i.garment.id === garmentId);
  if (!item) return;
 
@@ -889,6 +889,26 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
 
  const newZIndex = calculateRenderZIndex(item.garment.primaryCategory, nextState);
  onUpdateWornItem(garmentId, { state: nextState, zIndex: newZIndex });
+
+ // 智能自愈：若当前外套两态共用同图切片，异步生成独立切片并热替换
+ if (item.garment.primaryCategory === 'OUTERWEAR' && !item.garment.isPublic) {
+ const currentAsset = item.garment.assets?.find((a) => a.stateType === nextState);
+ const otherAsset = item.garment.assets?.find((a) => a.stateType !== nextState && a.pngUrl);
+ if (currentAsset && otherAsset && currentAsset.pngUrl === otherAsset.pngUrl) {
+ try {
+ const res = await generateFissionStateAsset(garmentId, nextState as any);
+ if (res?.asset) {
+ const updatedAssets = (item.garment.assets || []).map((a) =>
+ a.stateType === nextState ? { ...a, pngUrl: res.pngUrl } : a
+ );
+ const updatedGarment = { ...item.garment, assets: updatedAssets };
+ onUpdateWornItem(garmentId, { garment: updatedGarment });
+ }
+ } catch (e: any) {
+ console.warn('[FittingStudio] 自愈生成外套独立切片异常:', e.message);
+ }
+ }
+ }
  };
 
   // 变换拖拽 Handle Pointer Down (移动、等比缩放、四边拉伸，统一支持鼠标、手指与手写笔)
@@ -2943,6 +2963,10 @@ export const FittingStudioView: React.FC<FittingStudioViewProps> = ({
         onWearGarment={handleWearWithPlacement}
         onCloneGarment={onClonePublicGarment}
         onDeleteGarment={onDeleteGarment}
+        onUpdateGarment={(updated) => {
+          setSelectedGarmentForDrawer(updated);
+          onUpdateWornItem(updated.id, { garment: updated });
+        }}
       />
 
       {/* 8. 试衣间内【我的搭配库】专属抽屉 */}

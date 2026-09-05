@@ -419,18 +419,52 @@ class TaskPipelineService {
           const garmentId = `garment-${Date.now()}-${index}`;
 
           let flatLayUrl = '';
-          try {
-            console.log(`[Pipeline] 正在为识别出的单品 "${item.title}" 生成 AI 幽灵模特平铺素图...`);
-            flatLayUrl = await AIService.generateGhostMannequinAsset(
-              item.title,
-              item.primaryCategory,
-              item.subCategory,
-              item.colors,
-              item.material,
-              imageBase64
-            );
-          } catch (err: any) {
-            console.warn(`[Pipeline] 单品 ${item.title} 平铺素图生成异常:`, err.message);
+          let flatLayClosedUrl = '';
+
+          if (item.primaryCategory === 'OUTERWEAR') {
+            console.log(`[Pipeline] 检测到外套单品 "${item.title}"，并行生成【OPEN 敞开】与【CLOSED 合拢】独立双态平铺素图...`);
+            try {
+              const [openResult, closedResult] = await Promise.all([
+                AIService.generateGhostMannequinAsset(
+                  item.title,
+                  item.primaryCategory,
+                  item.subCategory,
+                  item.colors,
+                  item.material,
+                  imageBase64,
+                  undefined,
+                  'OPEN'
+                ),
+                AIService.generateGhostMannequinAsset(
+                  item.title,
+                  item.primaryCategory,
+                  item.subCategory,
+                  item.colors,
+                  item.material,
+                  imageBase64,
+                  undefined,
+                  'CLOSED'
+                ),
+              ]);
+              flatLayUrl = openResult;
+              flatLayClosedUrl = closedResult;
+            } catch (err: any) {
+              console.warn(`[Pipeline] 外套双态平铺素图生成异常:`, err.message);
+            }
+          } else {
+            try {
+              console.log(`[Pipeline] 正在为识别出的单品 "${item.title}" (${item.primaryCategory}) 生成 AI 幽灵模特平铺素图...`);
+              flatLayUrl = await AIService.generateGhostMannequinAsset(
+                item.title,
+                item.primaryCategory,
+                item.subCategory,
+                item.colors,
+                item.material,
+                imageBase64
+              );
+            } catch (err: any) {
+              console.warn(`[Pipeline] 单品 ${item.title} 平铺素图生成异常:`, err.message);
+            }
           }
 
           let baseImage = flatLayUrl || item.previewUrl || imageBase64 || GENERATED_ASSETS.dressCutoutUrl;
@@ -442,7 +476,16 @@ class TaskPipelineService {
             }
           }
 
-          const assets = generateFissionAssets(garmentId, item.primaryCategory, baseImage);
+          let secondaryImage = flatLayClosedUrl;
+          if (secondaryImage && (secondaryImage.startsWith('data:image') || secondaryImage.length > 100)) {
+            try {
+              secondaryImage = await ImageProcessor.removeBackground(secondaryImage);
+            } catch (err: any) {
+              console.warn(`[Pipeline] 单品 ${item.title} 次级素图透明化异常:`, err.message);
+            }
+          }
+
+          const assets = generateFissionAssets(garmentId, item.primaryCategory, baseImage, secondaryImage);
           for (const a of assets) {
             if (a.pngUrl && (a.pngUrl.startsWith('data:image') || a.pngUrl.length > 100)) {
               try {

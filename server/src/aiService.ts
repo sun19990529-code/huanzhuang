@@ -140,9 +140,9 @@ export function buildGhostMannequinRectificationPrompt(
 
   let stateClause = '';
   if (stateType === 'OPEN') {
-    stateClause = 'Styling State: Casual open-front silhouette, unbuttoned front placket loosely parted open toward both sides to reveal inner clearance, natural relaxed lapel drape along left and right contours (unbuttoned open cardigan/jacket style).';
+    stateClause = 'Styling State: Wide open-front silhouette. The front placket is completely unbuttoned and unzipped, parted open widely toward both left and right sides to reveal generous empty inner clearance and interior lining, with lapels naturally draping outward (unfastened relaxed open-front styling).';
   } else if (stateType === 'CLOSED') {
-    stateClause = 'Styling State: Formally fastened closed silhouette, front placket neatly aligned along the vertical midline with all buttons or zippers securely fastened and closed.';
+    stateClause = 'Styling State: Fully fastened closed silhouette. The front placket is completely buttoned up or fully zipped along the vertical centerline, cleanly closed with zero gap between left and right front panels, smooth neat midline closure (fastened formal closed-front styling).';
   } else if (stateType === 'TUCKED') {
     stateClause = 'Styling State: Neatly tucked-in styling, smooth flat bottom hem cleanly cropped at waist level.';
   }
@@ -157,7 +157,7 @@ export function buildGhostMannequinRectificationPrompt(
       geometryClause = 'Bilateral symmetry along vertical Y-axis, level horizontal waistband, vertically aligned straight legs/skirt drape, balanced hem flare. Perfectly flat rectified orthographic elevation.';
       break;
     case 'FOOTWEAR':
-      geometryClause = 'Centered balanced studio display of shoes, crisp sole lines and clean structure.';
+      geometryClause = 'Anatomically matched pair of shoes designed for human avatar wearability: a complete matching left shoe and right shoe displayed side-by-side in strict bilateral mirror symmetry along the vertical Y-axis. The left shoe is positioned on the left facing slightly left-forward (outward 15-20 degrees), and the right shoe is positioned on the right facing slightly right-forward (outward 15-20 degrees), matching natural human A-pose standing feet orientation. Both soles resting perfectly flat on an invisible level horizontal ground plane with natural physiological standing spacing between feet. Simultaneously and clearly reveals the front toe box, lacing/tongue construction, side profile curvature, and sole/midsole thickness. Perfectly balanced, zero tilt, zero overlapping, zero floating, zero asymmetric angles.';
       break;
     case 'ACCESSORIES':
       geometryClause = 'Centered balanced studio product display with crisp geometric edges and symmetrical presentation.';
@@ -174,11 +174,15 @@ export function buildGhostMannequinRectificationPrompt(
     ? patterns
     : 'solid';
 
+  const negativeExclusions = primaryCategory === 'FOOTWEAR'
+    ? 'zero single shoe (must strictly show a matching pair of left and right shoes), zero human feet, zero bare legs, zero ankles, zero socks, zero shoe trees, zero shoe boxes'
+    : 'zero human body, zero hangers';
+
   return `Commercial e-commerce luxury product catalog shot, invisible ghost mannequin orthographic flat-lay: "${title}" (${primaryCategory} - ${subCategory || ''}).
 
 Geometry & Form: ${geometryClause}
 ${stateClause ? stateClause + '\n' : ''}Fabric & Material: Authentic ${material || 'premium textile'} micro-texture weave, natural surface sheen, colors (${colorStr}), pattern (${patternStr}), precise collar/stitching/button construction.
-Presentation: ${backgroundSpec}, crisp razor-sharp silhouette alpha edge, ${aspectRatio} aspect ratio, studio macro lighting, zero human body, zero hangers.`;
+Presentation: ${backgroundSpec}, crisp razor-sharp silhouette alpha edge, ${aspectRatio} aspect ratio, studio macro lighting, ${negativeExclusions}.`;
 }
 
 /**

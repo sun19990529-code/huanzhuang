@@ -777,18 +777,52 @@ app.post('/v1/garments/auto-detect-upload', requireAuth, async (req: Request, re
         
         // 调用 gemini-3.1-flash-image 为单品生成全新的电商平铺白底素图 (Ghost Mannequin / Flat Lay)
         let flatLayUrl = '';
-        try {
-          console.log(`[Ghost Mannequin] 正在为识别出的单品 "${item.title}" 生成 AI 幽灵模特平铺素图...`);
-          flatLayUrl = await AIService.generateGhostMannequinAsset(
-            item.title,
-            item.primaryCategory,
-            item.subCategory,
-            item.colors,
-            item.material,
-            imageBase64
-          );
-        } catch (err: any) {
-          console.warn(`[Ghost Mannequin] 单品 ${item.title} 平铺素图生成异常:`, err.message);
+        let flatLayClosedUrl = '';
+
+        if (item.primaryCategory === 'OUTERWEAR') {
+          console.log(`[Ghost Mannequin] 检测到外套单品 "${item.title}"，并行生成【OPEN 敞开】与【CLOSED 合拢】独立双态平铺素图...`);
+          try {
+            const [openResult, closedResult] = await Promise.all([
+              AIService.generateGhostMannequinAsset(
+                item.title,
+                item.primaryCategory,
+                item.subCategory,
+                item.colors,
+                item.material,
+                imageBase64,
+                undefined,
+                'OPEN'
+              ),
+              AIService.generateGhostMannequinAsset(
+                item.title,
+                item.primaryCategory,
+                item.subCategory,
+                item.colors,
+                item.material,
+                imageBase64,
+                undefined,
+                'CLOSED'
+              ),
+            ]);
+            flatLayUrl = openResult;
+            flatLayClosedUrl = closedResult;
+          } catch (err: any) {
+            console.warn(`[Ghost Mannequin] 外套双态平铺素图生成异常:`, err.message);
+          }
+        } else {
+          try {
+            console.log(`[Ghost Mannequin] 正在为识别出的单品 "${item.title}" (${item.primaryCategory}) 生成 AI 幽灵模特平铺素图...`);
+            flatLayUrl = await AIService.generateGhostMannequinAsset(
+              item.title,
+              item.primaryCategory,
+              item.subCategory,
+              item.colors,
+              item.material,
+              imageBase64
+            );
+          } catch (err: any) {
+            console.warn(`[Ghost Mannequin] 单品 ${item.title} 平铺素图生成异常:`, err.message);
+          }
         }
 
         let baseImage = flatLayUrl || item.previewUrl || imageBase64 || GENERATED_ASSETS.dressCutoutUrl;
@@ -800,7 +834,16 @@ app.post('/v1/garments/auto-detect-upload', requireAuth, async (req: Request, re
           }
         }
 
-        const assets = generateFissionAssets(garmentId, item.primaryCategory, baseImage);
+        let secondaryImage = flatLayClosedUrl;
+        if (secondaryImage && (secondaryImage.startsWith('data:image') || secondaryImage.length > 100)) {
+          try {
+            secondaryImage = await ImageProcessor.removeBackground(secondaryImage);
+          } catch (err: any) {
+            console.warn(`[Auto-Detect] 单品 ${item.title} 次级素图透明化异常:`, err.message);
+          }
+        }
+
+        const assets = generateFissionAssets(garmentId, item.primaryCategory, baseImage, secondaryImage);
         for (const a of assets) {
           if (a.pngUrl && (a.pngUrl.startsWith('data:image') || a.pngUrl.length > 100)) {
             try {
@@ -1014,17 +1057,26 @@ app.post('/v1/garments/:id/generate-fission-state', requireAuth, async (req: Req
       return res.status(500).json({ code: 500, message: 'AI 生成形态资产失败，请重试' });
     }
 
+    let finalPng = newPng;
+    if (finalPng && (finalPng.startsWith('data:image') || finalPng.length > 100)) {
+      try {
+        finalPng = await ImageProcessor.removeBackground(finalPng);
+      } catch (err: any) {
+        console.warn(`[State Gen] 新形态素图透明化异常:`, err.message);
+      }
+    }
+
     // 更新或新增对应形态 asset
     if (!garment.assets) garment.assets = [];
     let targetAsset = garment.assets.find((a: any) => a.stateType === stateType);
     if (targetAsset) {
-      targetAsset.pngUrl = newPng;
+      targetAsset.pngUrl = finalPng;
     } else {
       const newAsset = {
         id: `${garment.id}-asset-${stateType.toLowerCase()}`,
         garmentId: garment.id,
         stateType,
-        pngUrl: newPng,
+        pngUrl: finalPng,
         boundingBox: { x: 0.3, y: 0.27, w: 0.4, h: 0.38 },
         defaultAnchor: { x: 0.5, y: 0.28 },
         baseLayerWeight: stateType === 'CLOSED' ? 45 : 40,
@@ -1042,7 +1094,7 @@ app.post('/v1/garments/:id/generate-fission-state', requireAuth, async (req: Req
       data: {
         garmentId: garment.id,
         stateType,
-        pngUrl: newPng,
+        pngUrl: finalPng,
         asset: targetAsset,
       },
     });
@@ -1068,16 +1120,56 @@ app.post('/v1/cms/garments/upload-official', requireAdmin, async (req: Request, 
   const assets = generateFissionAssets(garmentId, primaryCategory);
 
   if (imageBase64) {
-    const cutoutUrl = await AIService.generateGhostMannequinAsset(
-      title,
-      primaryCategory,
-      subCategory || 'Casual',
-      colors || ['#333333']
-    );
-    if (cutoutUrl) {
-      assets.forEach((a: any) => {
-        a.pngUrl = cutoutUrl;
-      });
+    if (primaryCategory === 'OUTERWEAR') {
+      try {
+        const [openCutout, closedCutout] = await Promise.all([
+          AIService.generateGhostMannequinAsset(
+            title,
+            primaryCategory,
+            subCategory || 'Casual',
+            colors || ['#333333'],
+            undefined,
+            imageBase64,
+            undefined,
+            'OPEN'
+          ),
+          AIService.generateGhostMannequinAsset(
+            title,
+            primaryCategory,
+            subCategory || 'Casual',
+            colors || ['#333333'],
+            undefined,
+            imageBase64,
+            undefined,
+            'CLOSED'
+          ),
+        ]);
+        const openAsset = assets.find((a: any) => a.stateType === 'OPEN');
+        const closedAsset = assets.find((a: any) => a.stateType === 'CLOSED');
+        if (openAsset && openCutout) {
+          openAsset.pngUrl = await ImageProcessor.removeBackground(openCutout).catch(() => openCutout);
+        }
+        if (closedAsset && closedCutout) {
+          closedAsset.pngUrl = await ImageProcessor.removeBackground(closedCutout).catch(() => closedCutout);
+        }
+      } catch (e: any) {
+        console.warn(`[CMS Upload] 官方外套双态生成异常:`, e.message);
+      }
+    } else {
+      const cutoutUrl = await AIService.generateGhostMannequinAsset(
+        title,
+        primaryCategory,
+        subCategory || 'Casual',
+        colors || ['#333333'],
+        undefined,
+        imageBase64
+      );
+      if (cutoutUrl) {
+        const cleanCutout = await ImageProcessor.removeBackground(cutoutUrl).catch(() => cutoutUrl);
+        assets.forEach((a: any) => {
+          a.pngUrl = cleanCutout;
+        });
+      }
     }
   }
 

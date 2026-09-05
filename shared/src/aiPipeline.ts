@@ -112,10 +112,12 @@ export function getDefaultGarmentSvg(category: GarmentCategory, color = '#D63031
 export function generateFissionAssets(
   garmentId: string,
   category: GarmentCategory,
-  basePngUrl?: string
+  basePngUrl?: string,
+  secondaryPngUrl?: string
 ): GarmentAssetItem[] {
   const url = basePngUrl || getDefaultGarmentSvg(category);
   const isDataUrl = url.startsWith('data:image');
+  const secondaryUrl = secondaryPngUrl || (isDataUrl ? url : url.replace('.png', category === 'OUTERWEAR' ? '_closed.png' : '_tucked.png'));
 
   if (category === 'OUTERWEAR') {
     return [
@@ -132,7 +134,7 @@ export function generateFissionAssets(
         id: `${garmentId}-asset-closed`,
         garmentId,
         stateType: 'CLOSED',
-        pngUrl: isDataUrl ? url : url.replace('.png', '_closed.png'),
+        pngUrl: secondaryUrl,
         boundingBox: { x: 0.30, y: 0.27, w: 0.40, h: 0.38 },
         defaultAnchor: { x: 0.5, y: 0.28 },
         baseLayerWeight: 45,
@@ -155,7 +157,7 @@ export function generateFissionAssets(
         id: `${garmentId}-asset-tucked`,
         garmentId,
         stateType: 'TUCKED',
-        pngUrl: isDataUrl ? url : url.replace('.png', '_tucked.png'),
+        pngUrl: secondaryUrl,
         boundingBox: { x: 0.35, y: 0.28, w: 0.30, h: 0.22 },
         defaultAnchor: { x: 0.5, y: 0.28 },
         baseLayerWeight: 10,
