@@ -437,10 +437,10 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
-      className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-xs flex items-center justify-center p-0 md:p-4 animate-in fade-in"
+      className="fixed inset-0 z-[100] bg-white md:bg-black/50 md:backdrop-blur-xs flex flex-col md:items-center md:justify-center p-0 md:p-4 animate-in fade-in"
     >
       <div
-        className="bg-white rounded-none md:rounded-3xl border-0 md:border md:border-[#EAE6DF] shadow-2xl w-full h-full md:h-[88vh] max-w-5xl xl:max-w-6xl max-h-[100dvh] md:max-h-[92vh] flex flex-col overflow-hidden text-left transition-all duration-300"
+        className="bg-white rounded-none md:rounded-3xl border-0 md:border md:border-[#EAE6DF] shadow-2xl w-full flex-1 md:flex-initial md:h-[88vh] max-w-5xl xl:max-w-6xl h-full md:max-h-[92vh] flex flex-col overflow-hidden text-left transition-all duration-300"
       >
         {/* Header */}
         <div className="px-6 py-4 border-b border-[#EAE6DF] flex items-center justify-between bg-[#FAF8F5]/90">
@@ -496,7 +496,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
         </div>
 
         {/* 主内容区 */}
-        <div className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1 scrollbar-thin pb-28 md:pb-6">
+        <div className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1 min-h-0 scrollbar-thin pb-36 md:pb-6">
           
           {/* TAB 1: 一体化【身材与模特重构工坊】 (双栏宽屏布局) */}
           {activeTab === 'WORKSHOP' && (
@@ -1181,7 +1181,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
  type="text"
  value={nickname}
  onChange={(e) => setNickname(e.target.value)}
- className="flex-1 bg-white border border-[#EAE6DF] rounded-xl px-3 py-1.5 text-xs text-stone-800 focus:outline-none"
+ className="flex-1 bg-white border border-[#EAE6DF] rounded-xl px-3 py-1.5 text-base sm:text-xs text-stone-800 focus:outline-none"
  placeholder="输入新昵称"
  />
  <button
@@ -1202,7 +1202,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
  type="password"
  value={oldPass}
  onChange={(e) => setOldPass(e.target.value)}
- className="w-full bg-white border border-[#EAE6DF] rounded-xl px-3 py-1.5 text-xs text-stone-800 focus:outline-none"
+ className="w-full bg-white border border-[#EAE6DF] rounded-xl px-3 py-1.5 text-base sm:text-xs text-stone-800 focus:outline-none"
  placeholder="当前密码"
  required
  />
@@ -1210,7 +1210,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
  type="password"
  value={newPass}
  onChange={(e) => setNewPass(e.target.value)}
- className="w-full bg-white border border-[#EAE6DF] rounded-xl px-3 py-1.5 text-xs text-stone-800 focus:outline-none"
+ className="w-full bg-white border border-[#EAE6DF] rounded-xl px-3 py-1.5 text-base sm:text-xs text-stone-800 focus:outline-none"
  placeholder="新密码 (不少于6位)"
  required
  />
@@ -1218,7 +1218,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
  type="password"
  value={confirmPass}
  onChange={(e) => setConfirmPass(e.target.value)}
- className="w-full bg-white border border-[#EAE6DF] rounded-xl px-3 py-1.5 text-xs text-stone-800 focus:outline-none"
+ className="w-full bg-white border border-[#EAE6DF] rounded-xl px-3 py-1.5 text-base sm:text-xs text-stone-800 focus:outline-none"
  placeholder="确认新密码"
  required
  />
