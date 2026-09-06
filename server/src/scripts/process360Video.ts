@@ -6,14 +6,15 @@ import { EquiangularResampler } from '../equiangularResampler';
 async function main() {
   const args = process.argv.slice(2);
   const inputArg = args[0] || 'web/public/experiments/orbit_v4.mp4';
-  const outputDirArg = args[1] || 'web/public/experiments/frames_v4_equiangular';
+  const outputDirArg = args[1] || 'web/public/experiments/frames_v4_180fps';
+  const targetFrames = parseInt(args[2] || '180', 10);
 
   const rootDir = path.resolve(__dirname, '../../..');
   const inputPath = path.resolve(rootDir, inputArg);
   const outputDir = path.resolve(rootDir, outputDirArg);
 
   console.log('========================================================');
-  console.log('🚀 360° 空间环视等角重采样与全自动切片处理流水线启动');
+  console.log(`🚀 360° 空间环视等角重采样流水线启动 (目标 ${targetFrames} 帧 · ${(360 / targetFrames).toFixed(1)}°/帧)`);
   console.log(`输入源: ${inputPath}`);
   console.log(`输出目录: ${outputDir}`);
   console.log('========================================================');
@@ -36,7 +37,7 @@ async function main() {
   const result = await EquiangularResampler.resample({
     inputDir: framesSourceDir,
     outputDir: outputDir,
-    targetTotalFrames: 144,
+    targetTotalFrames: targetFrames,
     enableBlending: true,
   });
 
