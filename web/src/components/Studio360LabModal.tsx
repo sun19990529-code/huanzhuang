@@ -24,19 +24,19 @@ export interface Studio360LabModalProps {
   initialFrontImageUrl?: string | null;
 }
 
-// 4 个标准关键视角定义（四方位精准吸附）
+// 4 个标准关键视角定义（四方位精准吸附，精准对齐实测关键帧）
 const STANDARD_ANGLES = [
   { key: 'FRONT', label: '正面', degree: 0, frame: 1, desc: '正立挺拔 · 前胸腰线 · 鞋履正面' },
-  { key: 'SIDE_RIGHT', label: '右侧', degree: 90, frame: 61, desc: '侧面剪裁 · 袖部垂坠 · 侧廓线条' },
-  { key: 'BACK', label: '背面', degree: 180, frame: 121, desc: '后背版型 · 后腰褶皱 · 背影轮廓' },
-  { key: 'SIDE_LEFT', label: '左侧', degree: 270, frame: 181, desc: '左侧身形 · 利落开合 · 全景环视' },
+  { key: 'SIDE_RIGHT', label: '右侧', degree: 90, frame: 71, desc: '侧面剪裁 · 袖部垂坠 · 侧廓线条' },
+  { key: 'BACK', label: '背面', degree: 180, frame: 101, desc: '后背版型 · 后腰褶皱 · 背影轮廓' },
+  { key: 'SIDE_LEFT', label: '左侧', degree: 270, frame: 121, desc: '左侧身形 · 利落开合 · 全景环视' },
 ];
 
-// 固定 240 帧全帧率超清序列 (每 1.5° 一帧，共 240 帧，提供电影级 60fps 无级旋转)
-const TOTAL_FRAMES = 240;
+// 最新 6 秒 144 帧轻量超清序列 (720P，全量仅 5.57 MB，0ms 延迟无缝转盘)
+const TOTAL_FRAMES = 144;
 const FRAMES_LIST = Array.from(
   { length: TOTAL_FRAMES },
-  (_, i) => `/experiments/frames_v2/frame_${String(i + 1).padStart(3, '0')}.jpg`
+  (_, i) => `/experiments/frames_v3/frame_${String(i + 1).padStart(3, '0')}.jpg`
 );
 
 export const Studio360LabModal: React.FC<Studio360LabModalProps> = ({
@@ -215,12 +215,12 @@ export const Studio360LabModal: React.FC<Studio360LabModalProps> = ({
                     <h3 className="text-base font-extrabold text-white tracking-wide">
                       360° 空间多视角环视实验室
                     </h3>
-                    <span className="px-2 py-0.5 text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-full">
-                      240 帧电影级无级转盘
+                    <span className="px-2 py-0.5 text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded-full">
+                      6秒 144 帧轻量流 (5.5MB)
                     </span>
                   </div>
                   <p className="text-xs text-stone-400">
-                    每 1.5° 一帧 · 物理阻尼平滑插值 · 0ms 延迟无缝转盘
+                    每 2.5° 一帧 · 物理阻尼平滑插值 · 0ms 延迟无缝转盘
                   </p>
                 </div>
               </div>
@@ -251,7 +251,7 @@ export const Studio360LabModal: React.FC<Studio360LabModalProps> = ({
                   onTouchMove={handleTouchMove}
                   onTouchEnd={handleTouchEnd}
                 >
-                  {/* 大片展示：240 帧无缝连续切片 */}
+                  {/* 大片展示：144 帧无缝连续切片 */}
                   <img
                     src={currentImageUrl}
                     alt={`360度视角 ${Math.round(displayDegree)}°`}
@@ -264,7 +264,7 @@ export const Studio360LabModal: React.FC<Studio360LabModalProps> = ({
                     <Compass className="w-3.5 h-3.5 animate-pulse" />
                     <span>{Math.round(displayDegree)}°</span>
                     <span className="text-stone-400">
-                      (第 {currentFrameIndex + 1}/240 帧 · 1.5°/帧)
+                      (第 {currentFrameIndex + 1}/144 帧 · 2.5°/帧)
                     </span>
                   </div>
 
@@ -321,17 +321,17 @@ export const Studio360LabModal: React.FC<Studio360LabModalProps> = ({
                     <div className="flex items-center gap-2">
                       <Film className="w-4 h-4 text-amber-400" />
                       <h4 className="text-sm font-extrabold text-white">
-                        240 帧电影级无缝连续转盘
+                        144 帧轻量无缝连续转盘
                       </h4>
                     </div>
                     <span className="text-[10px] text-emerald-400 font-mono flex items-center gap-1">
                       <CheckCircle2 className="w-3 h-3" />
-                      240 帧全部就绪
+                      144 帧全部就绪
                     </span>
                   </div>
 
                   <p className="text-xs text-stone-400 leading-relaxed">
-                    已将最新 360° 轨道视频解算为 240 帧超高密序列（每帧相差 1.5°），配合硬件级物理阻尼平滑插值（RAF Lerp），实现原生 60fps 电影级无级旋转与自由定格。
+                    已将最新 6 秒 360° 轨道视频解算为 144 帧超清序列（全量仅 5.57 MB），配合硬件级物理阻尼平滑插值（RAF Lerp），实现原生 60fps 丝滑无级旋转与超低流量秒开。
                   </p>
                 </div>
 
@@ -346,9 +346,9 @@ export const Studio360LabModal: React.FC<Studio360LabModalProps> = ({
 
                   <div className="grid grid-cols-2 gap-2.5">
                     {STANDARD_ANGLES.map((ang) => {
+                      const targetDeg = Math.round(((ang.frame - 1) / TOTAL_FRAMES) * 360);
                       const isCurrentActive =
-                        Math.abs(displayDegree - ang.degree) < 15 ||
-                        Math.abs(displayDegree - ang.degree) > 345;
+                        Math.abs(currentFrameIndex + 1 - ang.frame) <= 3;
 
                       return (
                         <button
@@ -356,7 +356,7 @@ export const Studio360LabModal: React.FC<Studio360LabModalProps> = ({
                           type="button"
                           onClick={() => {
                             setIsAutoSpinning(false);
-                            setTargetDegree(ang.degree);
+                            setTargetDegree(targetDeg);
                           }}
                           className={`relative p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col gap-1 ${
                             isCurrentActive
@@ -411,9 +411,9 @@ export const Studio360LabModal: React.FC<Studio360LabModalProps> = ({
             <div className="px-6 py-2.5 border-t border-stone-800/80 bg-stone-950/80 text-[11px] text-stone-500 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Info className="w-3.5 h-3.5 text-amber-500" />
-                <span>沙盒隔离模式：240 帧高密无缝旋转，手势阻尼平滑插值，零污染主库</span>
+                <span>沙盒隔离模式：6秒 144 帧轻量无缝旋转，手势阻尼平滑插值，零污染主库</span>
               </div>
-              <span className="font-mono text-[10px] text-stone-600">Smart Wardrobe 240-Frame Orbit Engine</span>
+              <span className="font-mono text-[10px] text-stone-600">Smart Wardrobe 144-Frame Orbit Engine</span>
             </div>
           </div>
         </div>,
