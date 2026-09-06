@@ -24,20 +24,44 @@ export interface Studio360LabModalProps {
   initialFrontImageUrl?: string | null;
 }
 
-// 4 个标准关键视角定义（四方位精准吸附，精准对齐实测关键帧）
+// 4 个标准关键视角定义（四方位精准吸附，精准对齐 v4 关键帧）
 const STANDARD_ANGLES = [
   { key: 'FRONT', label: '正面', degree: 0, frame: 1, desc: '正立挺拔 · 前胸腰线 · 鞋履正面' },
-  { key: 'SIDE_RIGHT', label: '右侧', degree: 90, frame: 71, desc: '侧面剪裁 · 袖部垂坠 · 侧廓线条' },
-  { key: 'BACK', label: '背面', degree: 180, frame: 101, desc: '后背版型 · 后腰褶皱 · 背影轮廓' },
-  { key: 'SIDE_LEFT', label: '左侧', degree: 270, frame: 121, desc: '左侧身形 · 利落开合 · 全景环视' },
+  { key: 'SIDE_RIGHT', label: '右侧', degree: 90, frame: 60, desc: '侧面剪裁 · 袖部垂坠 · 侧廓线条' },
+  { key: 'BACK', label: '背面', degree: 180, frame: 84, desc: '后背版型 · 后腰褶皱 · 背影轮廓' },
+  { key: 'SIDE_LEFT', label: '左侧', degree: 270, frame: 108, desc: '左侧身形 · 利落开合 · 全景环视' },
 ];
 
-// 最新 6 秒 144 帧轻量超清序列 (720P，全量仅 5.57 MB，0ms 延迟无缝转盘)
+// 角度到关键帧的非线性校准映射锚点 (抹平大模型角速度不均匀，实现物理级绝对匀速手感)
+const CALIBRATION_ANCHORS = [
+  { deg: 0, frameIdx: 0 },
+  { deg: 90, frameIdx: 59 },    // 90° 对应第 60 帧
+  { deg: 180, frameIdx: 83 },   // 180° 对应第 84 帧
+  { deg: 270, frameIdx: 107 },  // 270° 对应第 108 帧
+  { deg: 360, frameIdx: 143 },  // 360° 闭环回到第 144 帧
+];
+
+// 最新 6 秒 144 帧轻量超清序列 (720P，全量 6.22 MB，0ms 延迟无缝转盘)
 const TOTAL_FRAMES = 144;
 const FRAMES_LIST = Array.from(
   { length: TOTAL_FRAMES },
-  (_, i) => `/experiments/frames_v3/frame_${String(i + 1).padStart(3, '0')}.jpg`
+  (_, i) => `/experiments/frames_v4/frame_${String(i + 1).padStart(3, '0')}.jpg`
 );
+
+// 核心自适应插值算法：将用户拖拽手势的匀速物理角度 (0~360°)，平滑逆映射到视频的非线性时间轴帧
+function degreeToCalibratedFrameIndex(degree: number): number {
+  const normDeg = ((degree % 360) + 360) % 360;
+  for (let i = 0; i < CALIBRATION_ANCHORS.length - 1; i++) {
+    const a1 = CALIBRATION_ANCHORS[i];
+    const a2 = CALIBRATION_ANCHORS[i + 1];
+    if (normDeg >= a1.deg && normDeg <= a2.deg) {
+      const progress = (normDeg - a1.deg) / (a2.deg - a1.deg);
+      const rawIdx = a1.frameIdx + progress * (a2.frameIdx - a1.frameIdx);
+      return Math.max(0, Math.min(TOTAL_FRAMES - 1, Math.round(rawIdx)));
+    }
+  }
+  return 0;
+}
 
 export const Studio360LabModal: React.FC<Studio360LabModalProps> = ({
   isOpen,
@@ -117,10 +141,9 @@ export const Studio360LabModal: React.FC<Studio360LabModalProps> = ({
     };
   }, [isAutoSpinning]);
 
-  // 当前高密帧索引计算 (0 ~ 239)
+  // 当前高密帧索引计算 (通过非线性自适应校准算法，消除前慢后快，实现视觉绝对匀速)
   const currentFrameIndex = useMemo(() => {
-    const rawIdx = Math.floor((displayDegree / 360) * TOTAL_FRAMES);
-    return Math.max(0, Math.min(TOTAL_FRAMES - 1, rawIdx));
+    return degreeToCalibratedFrameIndex(displayDegree);
   }, [displayDegree]);
 
   // 当前展示大片 URL
@@ -216,11 +239,11 @@ export const Studio360LabModal: React.FC<Studio360LabModalProps> = ({
                       360° 空间多视角环视实验室
                     </h3>
                     <span className="px-2 py-0.5 text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded-full">
-                      6秒 144 帧轻量流 (5.5MB)
+                      v4 匀速自适应校准 (6.2MB)
                     </span>
                   </div>
                   <p className="text-xs text-stone-400">
-                    每 2.5° 一帧 · 物理阻尼平滑插值 · 0ms 延迟无缝转盘
+                    非线性角度校准映射 · 物理阻尼平滑插值 · 彻底解决前慢后快
                   </p>
                 </div>
               </div>
@@ -264,7 +287,7 @@ export const Studio360LabModal: React.FC<Studio360LabModalProps> = ({
                     <Compass className="w-3.5 h-3.5 animate-pulse" />
                     <span>{Math.round(displayDegree)}°</span>
                     <span className="text-stone-400">
-                      (第 {currentFrameIndex + 1}/144 帧 · 2.5°/帧)
+                      (第 {currentFrameIndex + 1}/144 帧 · 绝对匀速校准)
                     </span>
                   </div>
 
@@ -331,7 +354,7 @@ export const Studio360LabModal: React.FC<Studio360LabModalProps> = ({
                   </div>
 
                   <p className="text-xs text-stone-400 leading-relaxed">
-                    已将最新 6 秒 360° 轨道视频解算为 144 帧超清序列（全量仅 5.57 MB），配合硬件级物理阻尼平滑插值（RAF Lerp），实现原生 60fps 丝滑无级旋转与超低流量秒开。
+                    已解算最新 6 秒 144 帧超清序列（6.22 MB），搭载<strong>非线性角度自适应校准算法</strong>，将视频前慢后快的非线性时序重映射为严格匀速旋转，实现 100% 匀速跟手质感。
                   </p>
                 </div>
 
@@ -346,9 +369,10 @@ export const Studio360LabModal: React.FC<Studio360LabModalProps> = ({
 
                   <div className="grid grid-cols-2 gap-2.5">
                     {STANDARD_ANGLES.map((ang) => {
-                      const targetDeg = Math.round(((ang.frame - 1) / TOTAL_FRAMES) * 360);
                       const isCurrentActive =
-                        Math.abs(currentFrameIndex + 1 - ang.frame) <= 3;
+                        Math.abs(currentFrameIndex + 1 - ang.frame) <= 3 ||
+                        Math.abs(displayDegree - ang.degree) < 12 ||
+                        Math.abs(displayDegree - ang.degree) > 348;
 
                       return (
                         <button
@@ -356,7 +380,7 @@ export const Studio360LabModal: React.FC<Studio360LabModalProps> = ({
                           type="button"
                           onClick={() => {
                             setIsAutoSpinning(false);
-                            setTargetDegree(targetDeg);
+                            setTargetDegree(ang.degree);
                           }}
                           className={`relative p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col gap-1 ${
                             isCurrentActive
