@@ -27,6 +27,7 @@ export interface FlowTask {
 export class FlowBridgeManager {
   private static instance: FlowBridgeManager;
   private activeWs: WebSocket | null = null;
+  private lastHttpHeartbeat: number = 0;
   private tasks: Map<string, FlowTask> = new Map();
   private tempBaseDir: string;
 
@@ -61,7 +62,7 @@ export class FlowBridgeManager {
     });
 
     wss.on('connection', (ws: WebSocket) => {
-      console.log('🔗 [FlowBridge] Google Labs 浏览器助手已接入连接！');
+      console.log('🔗 [FlowBridge] Google Labs 浏览器助手已接入 WebSocket 连接！');
       this.activeWs = ws;
 
       ws.send(JSON.stringify({
@@ -80,16 +81,43 @@ export class FlowBridgeManager {
       });
 
       ws.on('close', () => {
-        console.warn('⚠️ [FlowBridge] Google Labs 浏览器助手断开连接');
+        console.warn('⚠️ [FlowBridge] Google Labs 浏览器助手断开 WebSocket 连接');
         if (this.activeWs === ws) this.activeWs = null;
+      });
+    });
+
+    // REST: 支持 HTTP 轮询心跳与指令拉取 (专治严苛 CSP 环境)
+    app.post('/v1/flow/poll', (req: Request, res: Response) => {
+      this.lastHttpHeartbeat = Date.now();
+      const { lastHandledTaskId, url } = req.body || {};
+      if (Math.random() < 0.2) {
+        console.log(`💓 [FlowBridge Heartbeat] 网页助手在线, 当前页面: ${url}`);
+      }
+      const pendingTask = Array.from(this.tasks.values()).find(
+        t => t.status === 'GENERATING' && t.taskId !== lastHandledTaskId
+      );
+
+      res.json({
+        code: 200,
+        timestamp: Date.now(),
+        command: pendingTask ? {
+          type: pendingTask.currentAttempt > 1 ? 'RETRY_GENERATION' : 'DISPATCH_GENERATION',
+          taskId: pendingTask.taskId,
+          prompt: pendingTask.prompt,
+          attempt: pendingTask.currentAttempt,
+          rejectReason: pendingTask.history[pendingTask.history.length - 1]?.gateResult?.reason,
+        } : null,
       });
     });
 
     // REST: 获取当前助手在线状态及活跃任务
     app.get('/v1/flow/status', (_req: Request, res: Response) => {
+      const isHttpAlive = (Date.now() - this.lastHttpHeartbeat) < 6000;
+      const isWsAlive = this.activeWs !== null && this.activeWs.readyState === WebSocket.OPEN;
       res.json({
         code: 200,
-        isHelperConnected: this.activeWs !== null && this.activeWs.readyState === WebSocket.OPEN,
+        isHelperConnected: isWsAlive || isHttpAlive,
+        channel: isWsAlive ? 'WEBSOCKET' : isHttpAlive ? 'HTTP_POLL' : 'DISCONNECTED',
         activeTasks: Array.from(this.tasks.values()),
       });
     });
@@ -101,7 +129,9 @@ export class FlowBridgeManager {
         return res.status(400).json({ code: 400, message: '必须指定生成提示词 prompt' });
       }
 
-      if (!this.activeWs || this.activeWs.readyState !== WebSocket.OPEN) {
+      const isHttpAlive = (Date.now() - this.lastHttpHeartbeat) < 6000;
+      const isWsAlive = this.activeWs !== null && this.activeWs.readyState === WebSocket.OPEN;
+      if (!isWsAlive && !isHttpAlive) {
         return res.status(503).json({
           code: 503,
           message: 'Google Labs 网页助手未连接！请先在 Chrome 浏览器中打开 Google Labs 页面并启动油猴助手。',
@@ -121,6 +151,8 @@ export class FlowBridgeManager {
       };
 
       this.tasks.set(taskId, task);
+      task.status = 'GENERATING';
+
       this.sendToHelper({
         type: 'DISPATCH_GENERATION',
         taskId,
@@ -128,7 +160,6 @@ export class FlowBridgeManager {
         attempt: 1,
       });
 
-      task.status = 'GENERATING';
       res.json({ code: 200, message: '生成任务已成功下发至浏览器助手', taskId });
     });
 

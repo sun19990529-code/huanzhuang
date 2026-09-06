@@ -33,3 +33,5 @@ database/ledgers.json
 database/public_requests.json
 database/friend_requests.json
 database/shared_access.json
+server/temp/
+web/public/experiments/orbit_*.mp4
