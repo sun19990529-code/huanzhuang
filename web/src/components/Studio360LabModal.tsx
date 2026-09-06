@@ -27,16 +27,16 @@ export interface Studio360LabModalProps {
 // 4 个标准关键视角定义（四方位精准吸附）
 const STANDARD_ANGLES = [
   { key: 'FRONT', label: '正面', degree: 0, frame: 1, desc: '正立挺拔 · 前胸腰线 · 鞋履正面' },
-  { key: 'SIDE_RIGHT', label: '右侧', degree: 90, frame: 37, desc: '侧面剪裁 · 袖部垂坠 · 侧廓线条' },
-  { key: 'BACK', label: '背面', degree: 180, frame: 73, desc: '后背版型 · 后腰褶皱 · 背影轮廓' },
-  { key: 'SIDE_LEFT', label: '左侧', degree: 270, frame: 109, desc: '左侧身形 · 利落开合 · 全景环视' },
+  { key: 'SIDE_RIGHT', label: '右侧', degree: 90, frame: 61, desc: '侧面剪裁 · 袖部垂坠 · 侧廓线条' },
+  { key: 'BACK', label: '背面', degree: 180, frame: 121, desc: '后背版型 · 后腰褶皱 · 背影轮廓' },
+  { key: 'SIDE_LEFT', label: '左侧', degree: 270, frame: 181, desc: '左侧身形 · 利落开合 · 全景环视' },
 ];
 
-// 固定 144 帧全帧率高清序列 (每 2.5° 一帧，共 144 帧，提供 60fps 电影级无缝连续旋转)
-const TOTAL_FRAMES = 144;
-const FRAMES_144 = Array.from(
+// 固定 240 帧全帧率超清序列 (每 1.5° 一帧，共 240 帧，提供电影级 60fps 无级旋转)
+const TOTAL_FRAMES = 240;
+const FRAMES_LIST = Array.from(
   { length: TOTAL_FRAMES },
-  (_, i) => `/experiments/frames/frame_144_${String(i + 1).padStart(3, '0')}.jpg`
+  (_, i) => `/experiments/frames_v2/frame_${String(i + 1).padStart(3, '0')}.jpg`
 );
 
 export const Studio360LabModal: React.FC<Studio360LabModalProps> = ({
@@ -57,10 +57,10 @@ export const Studio360LabModal: React.FC<Studio360LabModalProps> = ({
   const autoSpinTimerRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
 
-  // 预热加载 144 帧全量序列图片，保证 0 延迟跟手
+  // 预热加载 240 帧全量序列图片，保证 0 延迟跟手
   useEffect(() => {
     if (isOpen) {
-      FRAMES_144.forEach((src) => {
+      FRAMES_LIST.forEach((src) => {
         const img = new Image();
         img.src = src;
       });
@@ -117,14 +117,14 @@ export const Studio360LabModal: React.FC<Studio360LabModalProps> = ({
     };
   }, [isAutoSpinning]);
 
-  // 当前高密帧索引计算 (0 ~ 143)
+  // 当前高密帧索引计算 (0 ~ 239)
   const currentFrameIndex = useMemo(() => {
     const rawIdx = Math.floor((displayDegree / 360) * TOTAL_FRAMES);
     return Math.max(0, Math.min(TOTAL_FRAMES - 1, rawIdx));
   }, [displayDegree]);
 
   // 当前展示大片 URL
-  const currentImageUrl = FRAMES_144[currentFrameIndex] || FRAMES_144[0];
+  const currentImageUrl = FRAMES_LIST[currentFrameIndex] || FRAMES_LIST[0];
 
   // 手势拖拽事件：鼠标
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -216,11 +216,11 @@ export const Studio360LabModal: React.FC<Studio360LabModalProps> = ({
                       360° 空间多视角环视实验室
                     </h3>
                     <span className="px-2 py-0.5 text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-full">
-                      144 帧极致丝滑
+                      240 帧电影级无级转盘
                     </span>
                   </div>
                   <p className="text-xs text-stone-400">
-                    每 2.5° 一帧 · 物理阻尼平滑插值 · 0ms 延迟无级转盘
+                    每 1.5° 一帧 · 物理阻尼平滑插值 · 0ms 延迟无缝转盘
                   </p>
                 </div>
               </div>
@@ -251,7 +251,7 @@ export const Studio360LabModal: React.FC<Studio360LabModalProps> = ({
                   onTouchMove={handleTouchMove}
                   onTouchEnd={handleTouchEnd}
                 >
-                  {/* 大片展示：144 帧无缝连续切片 */}
+                  {/* 大片展示：240 帧无缝连续切片 */}
                   <img
                     src={currentImageUrl}
                     alt={`360度视角 ${Math.round(displayDegree)}°`}
@@ -264,7 +264,7 @@ export const Studio360LabModal: React.FC<Studio360LabModalProps> = ({
                     <Compass className="w-3.5 h-3.5 animate-pulse" />
                     <span>{Math.round(displayDegree)}°</span>
                     <span className="text-stone-400">
-                      (第 {currentFrameIndex + 1}/144 帧 · 2.5°/帧)
+                      (第 {currentFrameIndex + 1}/240 帧 · 1.5°/帧)
                     </span>
                   </div>
 
@@ -321,17 +321,17 @@ export const Studio360LabModal: React.FC<Studio360LabModalProps> = ({
                     <div className="flex items-center gap-2">
                       <Film className="w-4 h-4 text-amber-400" />
                       <h4 className="text-sm font-extrabold text-white">
-                        144 帧高密无缝连续转盘
+                        240 帧电影级无缝连续转盘
                       </h4>
                     </div>
                     <span className="text-[10px] text-emerald-400 font-mono flex items-center gap-1">
                       <CheckCircle2 className="w-3 h-3" />
-                      144 帧全部就绪
+                      240 帧全部就绪
                     </span>
                   </div>
 
                   <p className="text-xs text-stone-400 leading-relaxed">
-                    已将 360° 轨道视频解算为 144 帧高密序列（每帧相差 2.5°），配合硬件级物理阻尼平滑插值（RAF Lerp），实现 60fps 丝滑无级旋转与自由定格。
+                    已将最新 360° 轨道视频解算为 240 帧超高密序列（每帧相差 1.5°），配合硬件级物理阻尼平滑插值（RAF Lerp），实现原生 60fps 电影级无级旋转与自由定格。
                   </p>
                 </div>
 
@@ -411,9 +411,9 @@ export const Studio360LabModal: React.FC<Studio360LabModalProps> = ({
             <div className="px-6 py-2.5 border-t border-stone-800/80 bg-stone-950/80 text-[11px] text-stone-500 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Info className="w-3.5 h-3.5 text-amber-500" />
-                <span>沙盒隔离模式：144 帧高密无缝旋转，手势阻尼平滑插值，零污染主库</span>
+                <span>沙盒隔离模式：240 帧高密无缝旋转，手势阻尼平滑插值，零污染主库</span>
               </div>
-              <span className="font-mono text-[10px] text-stone-600">Smart Wardrobe 144-Frame Orbit Engine</span>
+              <span className="font-mono text-[10px] text-stone-600">Smart Wardrobe 240-Frame Orbit Engine</span>
             </div>
           </div>
         </div>,
