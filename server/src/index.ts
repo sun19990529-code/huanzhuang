@@ -23,6 +23,7 @@ import {
   generateFissionAssets,
 } from '@smart-wardrobe/shared';
 import { GENERATED_ASSETS } from './generatedAssets';
+import { FlowBridgeManager } from './flowBridgeServer';
 
 // 扩展 Express Request 类型
 declare global {
@@ -2124,6 +2125,7 @@ app.post('/v1/experiments/vton-360-preview', requireAuth, async (req: Request, r
 // --------------------------------------------------------------------
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: '/v1/ws/tasks' });
+FlowBridgeManager.getInstance().attach(server, app);
 
 wss.on('connection', (ws: WebSocket, req: any) => {
   let userId: string | undefined;
